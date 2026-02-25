@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debussy</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1a1a1e;--paper:#f5f2eb;--pw:#ede8dd;--ac:#8b4513;--al:#a0522d;--ok:#2d6a4f;--warn:#b8860b;--crit:#8b0000;--info:#2c5282;--brd:#d4cfc5;--shd:rgba(26,26,30,.08);--r:6px}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'DM Sans',sans-serif;background:var(--paper);color:var(--ink);line-height:1.6}
+header{background:var(--ink);color:var(--paper);padding:.8rem 2rem;display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--ac)}
+header h1{font-family:'DM Serif Display',serif;font-size:1.5rem;font-weight:400;letter-spacing:.02em}
+header h1 em{color:var(--al);font-style:italic;font-size:.7em;margin-left:.5rem}
+.sbar{display:flex;gap:1rem;align-items:center;font-size:.78rem}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}.dot.on{background:#4ade80}.dot.off{background:#ef4444}
+.nav{display:flex;background:var(--ink);padding:0 1rem;gap:0;flex-wrap:wrap}
+.nt{padding:.55rem 1rem;font-size:.78rem;font-weight:600;cursor:pointer;color:#777;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
+.nt:hover{color:var(--paper)}.nt.a{color:var(--paper);border-bottom-color:var(--ac)}
+main{max-width:1400px;margin:0 auto;padding:1.5rem}
+.pg{display:none}.pg.a{display:block}
+.g2{display:grid;grid-template-columns:340px 1fr;gap:1.5rem}
+@media(max-width:960px){.g2{grid-template-columns:1fr}}
+.sb{display:flex;flex-direction:column;gap:1rem}
+.c{background:#fff;border:1px solid var(--brd);border-radius:var(--r);padding:1rem;box-shadow:0 1px 3px var(--shd)}
+.c h2{font-family:'DM Serif Display',serif;font-size:.95rem;font-weight:400;margin-bottom:.5rem;padding-bottom:.35rem;border-bottom:1px solid var(--brd);color:var(--ac)}
+.c h3{font-size:.82rem;font-weight:600;margin:.6rem 0 .3rem;color:var(--ink)}
+select,textarea,input[type=text],input[type=number]{width:100%;padding:.45rem;font-family:'DM Sans',sans-serif;font-size:.8rem;border:1px solid var(--brd);border-radius:var(--r);background:#fff;margin-top:.2rem}
+textarea{font-family:'JetBrains Mono',monospace;font-size:.72rem;resize:vertical}
+label{display:block;font-size:.75rem;font-weight:600;margin-top:.5rem;color:#555}label:first-child{margin-top:0}
+.cl{max-height:200px;overflow-y:auto}.ci{display:flex;align-items:center;gap:.5rem;padding:.3rem 0;font-size:.8rem}.ci input{flex-shrink:0}.ci .m{font-family:'JetBrains Mono',monospace;font-size:.7rem;color:#888;margin-left:auto}
+.btn{display:inline-flex;align-items:center;gap:.3rem;padding:.5rem .9rem;background:var(--ac);color:#fff;border:none;border-radius:var(--r);font-family:'DM Sans',sans-serif;font-size:.8rem;font-weight:600;cursor:pointer;transition:.15s;margin-top:.5rem}
+.btn:hover{background:var(--al);transform:translateY(-1px)}.btn:disabled{background:#999;cursor:not-allowed;transform:none}.btn.f{width:100%}.btn.s{background:var(--ink)}.btn.sm{padding:.25rem .6rem;font-size:.72rem;margin-top:0}
+.uz{border:2px dashed var(--brd);border-radius:var(--r);padding:1rem;text-align:center;cursor:pointer;transition:.2s;background:var(--paper)}.uz:hover,.uz.dr{border-color:var(--ac);background:var(--pw)}.uz input{display:none}
+.sg{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:.7rem;margin-bottom:1rem}
+.mt{background:#fff;border:1px solid var(--brd);border-radius:var(--r);padding:.7rem;text-align:center;box-shadow:0 1px 3px var(--shd)}.mt .v{font-family:'DM Serif Display',serif;font-size:1.6rem;line-height:1.2}.mt .l{font-size:.65rem;text-transform:uppercase;letter-spacing:.08em;color:#666;margin-top:.1rem}
+.mt.cr .v{color:var(--crit)}.mt.wr .v{color:var(--warn)}.mt.in .v{color:var(--info)}.mt.su .v{color:var(--ok)}
+.fd{background:#fff;border-left:4px solid var(--brd);border-radius:0 var(--r) var(--r) 0;padding:.5rem .7rem;margin-bottom:.35rem;font-size:.8rem;box-shadow:0 1px 2px var(--shd)}.fd.critical{border-left-color:var(--crit)}.fd.warning{border-left-color:var(--warn)}.fd.info{border-left-color:var(--info)}
+.sv{font-family:'JetBrains Mono',monospace;font-size:.65rem;font-weight:600;text-transform:uppercase}.sv.critical{color:var(--crit)}.sv.warning{color:var(--warn)}.sv.info{color:var(--info)}
+.pt{width:100%;border-collapse:collapse;font-size:.75rem;margin-top:.3rem}.pt th{text-align:left;padding:.3rem .4rem;border-bottom:2px solid var(--ink);font-size:.65rem;text-transform:uppercase;letter-spacing:.06em;color:#555}.pt td{padding:.25rem .4rem;border-bottom:1px solid var(--paper);font-family:'JetBrains Mono',monospace;font-size:.7rem}.pt tr:hover td{background:var(--paper)}
+.fb0{display:inline-block;height:5px;border-radius:3px;vertical-align:middle;margin-right:.3rem}
+.fl{display:flex;gap:.3rem;margin-bottom:.7rem;flex-wrap:wrap}.fb2{padding:.2rem .6rem;border:1px solid var(--brd);border-radius:20px;background:#fff;font-size:.72rem;cursor:pointer;transition:.15s}.fb2:hover{border-color:var(--ac)}.fb2.a{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tabs{display:flex;gap:0;border-bottom:2px solid var(--brd);margin-bottom:.7rem}.tab{padding:.35rem .8rem;font-size:.75rem;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;color:#888;transition:.15s}.tab:hover{color:var(--ink)}.tab.a{color:var(--ac);border-bottom-color:var(--ac)}.tp{display:none}.tp.a{display:block}
+.ft{display:flex;align-items:center;gap:.5rem;padding:.4rem 0;border-bottom:1px solid var(--paper);font-size:.8rem}.bg{font-size:.58rem;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:.12rem .45rem;border-radius:3px;flex-shrink:0}.bg.ac{background:#dcfce7;color:var(--ok)}.bg.pl{background:#fef3c7;color:var(--warn)}.bg.no{background:#fee2e2;color:var(--crit)}.ft .d{color:#666;font-size:.72rem}
+.ar{background:var(--pw);border-radius:var(--r);padding:.7rem;margin-top:.4rem;white-space:pre-wrap;font-family:'JetBrains Mono',monospace;font-size:.7rem;max-height:250px;overflow-y:auto}
+.po{display:none;position:fixed;inset:0;background:rgba(26,26,30,.6);z-index:100;justify-content:center;align-items:center}.po.a{display:flex}
+.pc{background:#fff;border-radius:var(--r);padding:2rem 3rem;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.2);max-width:360px}.pc h3{font-family:'DM Serif Display',serif;margin-bottom:.8rem}
+.sp{width:24px;height:24px;border:3px solid var(--brd);border-top-color:var(--ac);border-radius:50%;animation:spin .8s linear infinite;margin:.6rem auto}@keyframes spin{to{transform:rotate(360deg)}}
+.em{text-align:center;padding:2.5rem 2rem;color:#888}.em h3{font-family:'DM Serif Display',serif;color:var(--ink);margin-bottom:.3rem}
+/* Entity table */
+.etbl{width:100%;border-collapse:collapse;font-size:.78rem}.etbl th{text-align:left;padding:.3rem .5rem;border-bottom:2px solid var(--ink);font-size:.65rem;text-transform:uppercase;color:#555;position:sticky;top:0;background:#fff}.etbl td{padding:.25rem .5rem;border-bottom:1px solid #eee}.etbl tr:hover td{background:var(--pw)}
+.etype{display:inline-block;padding:.1rem .4rem;border-radius:3px;font-size:.65rem;font-weight:700;font-family:'JetBrains Mono',monospace}
+.etype-PER{background:#ede9fe;color:#6d28d9}.etype-ORG{background:#dbeafe;color:#1d4ed8}.etype-LOC{background:#d1fae5;color:#065f46}.etype-GPE{background:#cffafe;color:#0e7490}.etype-FAC{background:#fef3c7;color:#92400e}.etype-EVT{background:#fce7f3;color:#9d174d}.etype-WRK{background:#e0e7ff;color:#3730a3}.etype-DAT{background:#f3f4f6;color:#374151}.etype-ETH{background:#fff7ed;color:#9a3412}.etype-CON{background:#f5f5f4;color:#57534e}
+.conf-bar{display:inline-block;height:6px;border-radius:3px;vertical-align:middle;margin-right:.3rem}
+.scroll-box{max-height:500px;overflow-y:auto}
+</style>
+</head>
+<body>
+<header>
+<h1>Debussy<em>Curation Workbench</em></h1>
+<div class="sbar"><span class="dot off" id="gd"></span><span id="gl">GPUStack …</span></div>
+</header>
+<div class="nav">
+<div class="nt a" data-p="data">Daten</div>
+<div class="nt" data-p="ner">NER & Entities</div>
+<div class="nt" data-p="dates">Datierung</div>
+<div class="nt" data-p="config">KI-Konfiguration</div>
+<div class="nt" data-p="export">Export</div>
+<div class="nt" data-p="catalog">Funktionskatalog</div>
+</div>
+<main>
+
+<!-- ===== DATEN ===== -->
+<div class="pg a" data-p="data"><div class="g2"><div class="sb">
+<div class="c"><h2>Daten laden</h2><div class="uz" id="uz" onclick="$('fi').click()"><input type="file" id="fi" accept=".csv,.tsv" multiple><p style="font-size:.82rem">📂 CSV/TSV hierher ziehen</p></div></div>
+<div class="c" id="fc" style="display:none"><h2>Dateien</h2><div class="cl" id="fcl"></div><button class="btn f" onclick="runStruct()">Strukturelle Analyse</button></div>
+<div class="c"><h2>GPUStack</h2><div id="gi" style="font-size:.78rem">Prüfe …</div></div>
+</div><div>
+<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.82rem">Lade CSV-Dateien und wähle, welche analysiert werden sollen.</p></div>
+<div id="dr" style="display:none"><div class="sg" id="dsg"></div>
+<div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="prof">Profile</div><div class="tab" data-t="cold">Spalten</div><div class="tab" data-t="md">Markdown</div></div>
+<div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
+<div class="tp" data-t="prof"><div id="parea"></div></div>
+<div class="tp" data-t="cold"><div id="cdarea"></div></div>
+<div class="tp" data-t="md"><textarea id="mdx" readonly rows="18"></textarea><button class="btn sm s" style="margin-top:.3rem" onclick="navigator.clipboard.writeText($('mdx').value)">Kopieren</button></div>
+</div></div></div></div>
+
+<!-- ===== NER ===== -->
+<div class="pg" data-p="ner"><div class="g2"><div class="sb">
+<div class="c"><h2>NER-Konfiguration</h2>
+<label>Datensatz</label><select id="ner-ds" onchange="loadCols('ner-ds','ner-cols')"><option value="">—</option></select>
+<label>Spalten (mehrere möglich)</label><div id="ner-cols" class="cl" style="margin-top:.3rem"></div>
+<label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy + LLM)</option></select>
+<label>Samples</label><input type="number" id="ner-n" value="10" min="1" max="500">
+<button class="btn f" onclick="runNER()">NER starten</button>
+</div>
+<div class="c"><h2>Dataset-Scan</h2>
+<p style="font-size:.75rem;color:#666">Suche nach problematischen Begriffen im gesamten Datensatz.</p>
+<label>Datensatz</label><select id="scan-ds"><option value="">—</option></select>
+<label>Samples</label><input type="number" id="scan-n" value="20" min="1" max="500">
+<button class="btn f s" onclick="runScan()">Problematische Begriffe suchen</button>
+</div>
+</div><div>
+<div id="ner-e" class="em"><h3>Named Entity Recognition</h3><p style="font-size:.82rem">Erkennt Personen, Orte, Organisationen, Bauwerke, Datierungen u.a.</p>
+<div style="display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center;margin-top:1rem">
+<span class="etype etype-PER">PER Person</span><span class="etype etype-ORG">ORG Organisation</span>
+<span class="etype etype-LOC">LOC Geografie</span><span class="etype etype-GPE">GPE Geo-politisch</span>
+<span class="etype etype-FAC">FAC Bauwerk</span><span class="etype etype-EVT">EVT Ereignis</span>
+<span class="etype etype-WRK">WRK Werk</span><span class="etype etype-DAT">DAT Datum</span>
+<span class="etype etype-ETH">ETH Ethnie</span><span class="etype etype-CON">CON Konzept</span></div>
+</div>
+<div id="ner-r" style="display:none"><div class="c"><h2>Entities</h2>
+<div class="fl" id="ner-filter"></div>
+<div class="scroll-box"><table class="etbl" id="ner-tbl"><thead><tr><th>Entity</th><th>Typ</th><th>Konfidenz</th><th>Begründung</th><th>Record</th><th>Quelle</th></tr></thead><tbody id="ner-body"></tbody></table></div>
+<div style="margin-top:.6rem"><button class="btn sm" onclick="exportNER()">CSV exportieren</button></div>
+</div></div>
+<div id="scan-r" style="display:none"><div class="c" style="margin-top:1rem"><h2>Problematische Begriffe</h2><div id="scan-body"></div></div></div>
+</div></div></div>
+
+<!-- ===== DATIERUNG ===== -->
+<div class="pg" data-p="dates"><div class="g2"><div class="sb">
+<div class="c"><h2>EDTF-Konvertierung</h2>
+<label>Datensatz</label><select id="edtf-ds" onchange="loadDateCols()"><option value="">—</option></select>
+<label>Datums-Spalte</label><select id="edtf-col"><option value="">—</option></select>
+<label>Samples (0 = alle)</label><input type="number" id="edtf-n" value="0" min="0" max="10000">
+<label>Nicht erkannte mit LLM?</label><select id="edtf-llm"><option value="0">Nein (nur Regeln)</option><option value="1">Ja</option></select>
+<button class="btn f" onclick="runEDTF()">Konvertieren</button>
+</div>
+<div class="c"><h2>EDTF-Regeln</h2>
+<div style="font-size:.72rem;font-family:'JetBrains Mono',monospace;line-height:1.8">
+<div>"1920" → <strong>1920</strong></div>
+<div>"ca. 1920" → <strong>1920~</strong></div>
+<div>"um 1850" → <strong>1850~</strong></div>
+<div>"vor 1920" → <strong>../1920</strong></div>
+<div>"nach 1920" → <strong>1920/..</strong></div>
+<div>"1920-1930" → <strong>1920/1930</strong></div>
+<div>"1920er" → <strong>192X</strong></div>
+<div>"19. Jh." → <strong>18XX</strong></div>
+<div>"[1920]" → <strong>1920?</strong></div>
+<div>"o.D." → <strong>(leer)</strong></div>
+</div></div>
+</div><div>
+<div id="edtf-e" class="em"><h3>Datierungen → EDTF</h3><p style="font-size:.82rem">LOC Extended Date/Time Format nach Library of Congress Standard.</p></div>
+<div id="edtf-r" style="display:none"><div class="c"><h2>Konvertierung</h2>
+<div class="sg" id="edtf-sg"></div>
+<div class="scroll-box"><table class="etbl" id="edtf-tbl"><thead><tr><th>Original</th><th>EDTF</th><th>Konfidenz</th><th>Methode</th><th>Hinweis</th></tr></thead><tbody id="edtf-body"></tbody></table></div>
+</div></div>
+</div></div></div>
+
+<!-- ===== KI-KONFIGURATION ===== -->
+<div class="pg" data-p="config"><div style="max-width:900px">
+<div class="c"><h2>Modelle</h2>
+<div class="g2" style="grid-template-columns:1fr 1fr;gap:1rem">
+<div><label>Text-Modell</label><select id="cfg-mt"></select></div>
+<div><label>Vision-Modell</label><select id="cfg-mv"></select></div>
+</div>
+<div id="cfg-models" style="font-size:.72rem;font-family:'JetBrains Mono',monospace;margin-top:.5rem"></div>
+</div>
+<div class="c" style="margin-top:1rem"><h2>System-Instruktionen</h2>
+<label>Aktive System-Instruktion</label>
+<select id="cfg-preset" onchange="loadPreset()">
+<option value="meta_de">Metadaten-Experte (DE)</option>
+<option value="meta_en">Metadaten-Experte (EN)</option>
+<option value="vision_de">Vision-Experte (DE)</option>
+<option value="ner_de">NER-Experte (DE)</option>
+<option value="edtf_de">EDTF-Experte (DE)</option>
+<option value="scan_de">Problematik-Scanner (DE)</option>
+<option value="custom">Eigene Instruktion</option>
+</select>
+<textarea id="cfg-sys" rows="8" style="margin-top:.3rem"></textarea>
+<div style="margin-top:.3rem"><button class="btn sm" onclick="loadPreset()">Zurücksetzen</button></div>
+</div>
+<div class="c" style="margin-top:1rem"><h2>Aufgaben-Vorlagen</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.5rem">Vordefinierte KI-Aufgaben, die in den jeweiligen Modulen verwendet werden.</p>
+<div id="cfg-tasks"></div>
+</div>
+<div class="c" style="margin-top:1rem"><h2>Verbindungstest</h2>
+<button class="btn" onclick="testConn()">GPUStack testen</button>
+<div id="cfg-test" class="ar" style="display:none;margin-top:.5rem"></div>
+</div>
+</div></div>
+
+<!-- ===== EXPORT ===== -->
+<div class="pg" data-p="export"><div style="max-width:900px">
+<div class="c"><h2>Goobi-Import XML</h2>
+<p style="font-size:.8rem;color:#666;margin-bottom:.5rem">Vorschau des XML-Exports für Goobi Workflow (goobi-import Format).</p>
+<label>Datensatz</label><select id="exp-ds"><option value="">—</option></select>
+<label>Record-ID</label><select id="exp-rec"><option value="">—</option></select>
+<button class="btn" onclick="previewXML()">XML-Vorschau</button>
+<div id="exp-xml" class="ar" style="display:none;margin-top:.5rem"></div>
+</div>
+<div class="c" style="margin-top:1rem"><h2>CSV Export</h2>
+<p style="font-size:.8rem;color:#666">Export des bereinigten Datensatzes (inkl. NER-Ergebnisse und EDTF-Datierungen).</p>
+<button class="btn s" disabled>CSV herunterladen (Phase 3)</button>
+</div>
+</div></div>
+
+<!-- ===== KATALOG ===== -->
+<div class="pg" data-p="catalog"><div style="max-width:900px">
+<div class="c"><h2>Funktionskatalog</h2>
+<p style="font-size:.8rem;color:#666;margin-bottom:.8rem">Status aller Funktionen mit Teststatus. Aktualisiert sich automatisch.</p>
+<table class="etbl" id="cat-tbl"><thead><tr><th>ID</th><th>Funktion</th><th>Modul</th><th>Status</th><th>Tests</th><th>Hinweis</th></tr></thead><tbody id="cat-body"></tbody></table>
+</div>
+</div></div>
+
+<div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="sp"></div><p id="pp" style="font-size:.82rem"></p></div></div>
+
+<script>
+const $=id=>document.getElementById(id);
+const PRESETS=__PRESETS_JSON__;
+const TASKS=__TASKS_JSON__;
+const CATALOG=__CATALOG_JSON__;
+let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
+
+// === NAV ===
+document.querySelector('.nav').onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))};
+function bindTabs(id){$(id).onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;e.currentTarget.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));e.currentTarget.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
+bindTabs('dt');
+
+// === UPLOAD ===
+const uz=$('uz'),fi=$('fi');
+fi.onchange=e=>hf(e.target.files);uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)};
+function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
+function rfl(){
+  const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
+  $('fcl').innerHTML=n.map(x=>`<div class="ci"><input type="checkbox" checked value="${x}" class="fcb"><span>${x}</span><span class="m">${(ufiles[x].size/1024).toFixed(0)}KB</span></div>`).join('');
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds']){const s=$(id);s.innerHTML='<option value="">—</option>'+n.map(x=>`<option value="${x}">${x}</option>`).join('')}
+}
+
+// === LOAD COLUMNS ===
+async function loadCols(dsId,targetId){
+  const ds=$(dsId).value;const t=$(targetId);
+  if(!ds){t.innerHTML='<p style="font-size:.75rem;color:#888">Erst Datensatz wählen</p>';return}
+  try{const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/columns')).json();
+    t.innerHTML=d.columns.map(c=>`<div class="ci"><input type="checkbox" value="${c.name}" ${c.fill_rate>.1?'checked':''}><span>${c.name}</span><span class="m">${Math.round(c.fill_rate*100)}%</span></div>`).join('')
+  }catch(e){t.innerHTML='Fehler'}
+}
+async function loadDateCols(){
+  const ds=$('edtf-ds').value;const s=$('edtf-col');
+  if(!ds){s.innerHTML='<option value="">—</option>';return}
+  try{const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/columns')).json();
+    s.innerHTML=d.columns.map(c=>`<option value="${c.name}">${c.name} (${Math.round(c.fill_rate*100)}%)</option>`).join('')
+  }catch(e){s.innerHTML='<option>Fehler</option>'}
+}
+
+// === STRUCTURAL ANALYSIS ===
+async function runStruct(){
+  const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
+  if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
+  sp('Strukturelle Analyse …',sel.length+' Datei(en)');
+  const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
+  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();if(r.error)throw Error(r.error);curRep=r;rrep(r)}catch(e){alert(e.message)}finally{hp()}
+}
+
+// === NER ===
+async function runNER(){
+  const ds=$('ner-ds').value;if(!ds){alert('Datensatz wählen');return}
+  const cols=[...document.querySelectorAll('#ner-cols .ci input:checked')].map(c=>c.value);
+  if(!cols.length){alert('Mindestens eine Spalte wählen');return}
+  const method=$('ner-method').value,n=parseInt($('ner-n').value)||10;
+  sp('NER läuft …',method+', '+n+' Samples');
+  try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r)}catch(e){alert(e.message)}finally{hp()}
+}
+function renderNER(r){
+  $('ner-e').style.display='none';$('ner-r').style.display='block';
+  const types=[...new Set(nerData.map(e=>e.type))];
+  $('ner-filter').innerHTML=`<div class="fb2 a" onclick="filterNER('all',this)">Alle (${nerData.length})</div>`+types.map(t=>`<div class="fb2" onclick="filterNER('${t}',this)"><span class="etype etype-${t}">${t}</span> (${nerData.filter(e=>e.type===t).length})</div>`).join('');
+  fillNERTable(nerData);
+}
+function filterNER(t,b){document.querySelectorAll('#ner-filter .fb2').forEach(x=>x.classList.remove('a'));if(b)b.classList.add('a');fillNERTable(t==='all'?nerData:nerData.filter(e=>e.type===t))}
+function fillNERTable(ents){
+  $('ner-body').innerHTML=ents.map(e=>`<tr>
+    <td style="font-family:'DM Sans',sans-serif;font-weight:600">${e.text}</td>
+    <td><span class="etype etype-${e.type}">${e.type}</span> <span style="font-size:.65rem;color:#888">${e.type_label||''}</span></td>
+    <td><span class="conf-bar" style="width:${Math.round(e.confidence*40)}px;background:${e.confidence>.7?'var(--ok)':e.confidence>.4?'var(--warn)':'var(--crit)'}"></span>${(e.confidence*100).toFixed(0)}%</td>
+    <td style="font-family:'DM Sans',sans-serif;font-size:.72rem">${e.reasoning||''}</td>
+    <td>${e.record_id||''}</td>
+    <td style="font-size:.65rem">${e.source||''}</td>
+  </tr>`).join('');
+}
+function exportNER(){
+  if(!nerData.length)return;
+  const hdr='text,type,type_label,confidence,reasoning,record_id,column,source\n';
+  const rows=nerData.map(e=>[e.text,e.type,e.type_label,e.confidence,e.reasoning,e.record_id,e.column,e.source].map(v=>'"'+(v||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');
+  const blob=new Blob([hdr+rows],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='debussy_ner_export.csv';a.click()
+}
+
+// === SCAN ===
+async function runScan(){
+  const ds=$('scan-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('Scan läuft …','Suche nach problematischen Begriffen');
+  try{const r=await(await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds,sample_size:parseInt($('scan-n').value)||20,system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);renderScan(r)}catch(e){alert(e.message)}finally{hp()}
+}
+function renderScan(r){
+  $('scan-r').style.display='block';
+  const issues=r.issues||[];
+  if(!issues.length){$('scan-body').innerHTML='<p style="color:var(--ok);padding:.5rem">✅ Keine problematischen Begriffe gefunden.</p>';return}
+  $('scan-body').innerHTML=issues.map(i=>`<div class="fd ${i.severity==='high'?'critical':i.severity==='medium'?'warning':'info'}">
+    <span class="sv ${i.severity==='high'?'critical':'warning'}">${i.severity||'?'}</span>
+    <strong style="margin-left:.4rem">${i.term||'?'}</strong>
+    <span style="font-size:.72rem;color:#888;margin-left:.3rem">Record: ${i.record_id||'?'}</span>
+    <div style="font-size:.78rem;margin-top:.15rem">${i.reason||''}</div>
+    ${i.suggestion?`<div style="font-style:italic;color:var(--ac);font-size:.75rem;margin-top:.15rem">→ ${i.suggestion}</div>`:''}
+  </div>`).join('');
+}
+
+// === EDTF ===
+async function runEDTF(){
+  const ds=$('edtf-ds').value,col=$('edtf-col').value;
+  if(!ds||!col){alert('Datensatz und Spalte wählen');return}
+  sp('EDTF-Konvertierung …',col);
+  try{const r=await(await fetch('/api/edtf',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds,column:col,sample_size:parseInt($('edtf-n').value)||0,use_llm:$('edtf-llm').value==='1',system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r)}catch(e){alert(e.message)}finally{hp()}
+}
+function renderEDTF(r){
+  $('edtf-e').style.display='none';$('edtf-r').style.display='block';
+  $('edtf-sg').innerHTML=`<div class="mt su"><div class="v">${r.total||0}</div><div class="l">Total</div></div>
+    <div class="mt su"><div class="v">${r.converted||0}</div><div class="l">Konvertiert</div></div>
+    <div class="mt wr"><div class="v">${r.failed||0}</div><div class="l">Fehlgeschlagen</div></div>
+    <div class="mt in"><div class="v">${r.undated||0}</div><div class="l">Undatiert</div></div>`;
+  $('edtf-body').innerHTML=(r.results||[]).map(e=>`<tr>
+    <td style="font-family:'DM Sans',sans-serif">${e.original||'—'}</td>
+    <td><strong>${e.edtf||'—'}</strong></td>
+    <td><span class="conf-bar" style="width:${Math.round((e.confidence||0)*40)}px;background:${(e.confidence||0)>.7?'var(--ok)':'var(--warn)'}"></span>${((e.confidence||0)*100).toFixed(0)}%</td>
+    <td style="font-size:.68rem">${e.method||''}</td>
+    <td style="font-size:.72rem">${e.note||''}</td>
+  </tr>`).join('');
+}
+
+// === EXPORT ===
+async function previewXML(){
+  const ds=$('exp-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('XML generieren …','');
+  try{const r=await(await fetch('/api/export/goobi-preview',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds,record_id:$('exp-rec').value})})).json();
+    if(r.error)throw Error(r.error);$('exp-xml').style.display='block';$('exp-xml').textContent=r.xml||'(leer)'
+  }catch(e){alert(e.message)}finally{hp()}
+}
+$('exp-ds').onchange=async function(){
+  const ds=this.value;const s=$('exp-rec');
+  if(!ds){s.innerHTML='<option value="">—</option>';return}
+  try{const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/records')).json();
+    s.innerHTML=d.record_ids.slice(0,50).map(r=>`<option value="${r}">${r}</option>`).join('')}catch(e){}
+}
+
+// === CONFIG ===
+function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
+async function testConn(){
+  sp('Verbindungstest …','');$('cfg-test').style.display='none';
+  try{const r=await(await fetch('/api/gpu/test',{method:'POST'})).json();
+    $('cfg-test').style.display='block';$('cfg-test').textContent=JSON.stringify(r,null,2)
+  }catch(e){$('cfg-test').style.display='block';$('cfg-test').textContent='Fehler: '+e.message}finally{hp()}
+}
+
+// === RENDER REPORT ===
+function rrep(d){$('de').style.display='none';$('dr').style.display='block';const s=d.summary||{};
+  $('dsg').innerHTML=`<div class="mt su"><div class="v">${(s.total_records||0).toLocaleString()}</div><div class="l">Records</div></div><div class="mt"><div class="v">${s.total_columns||0}</div><div class="l">Spalten</div></div><div class="mt cr"><div class="v">${s.critical||0}</div><div class="l">Kritisch</div></div><div class="mt wr"><div class="v">${s.warnings||0}</div><div class="l">Warnungen</div></div><div class="mt in"><div class="v">${s.info||0}</div><div class="l">Hinweise</div></div>`;
+  const fs=d.findings||[];$('fbar').innerHTML=`<div class="fb2 a" onclick="ff('all',this)">Alle (${fs.length})</div><div class="fb2" onclick="ff('critical',this)">Kritisch (${s.critical||0})</div><div class="fb2" onclick="ff('warning',this)">Warnungen (${s.warnings||0})</div><div class="fb2" onclick="ff('info',this)">Hinweise (${s.info||0})</div>`;
+  rfnd(fs);rprf(d.datasets||[]);rcd(d.datasets||[]);$('mdx').value=d.markdown||''
+}
+function ff(f,b){document.querySelectorAll('#fbar .fb2').forEach(x=>x.classList.remove('a'));if(b)b.classList.add('a');rfnd(f==='all'?(curRep?.findings||[]):(curRep?.findings||[]).filter(x=>x.severity===f))}
+function rfnd(fs){$('flist').innerHTML=fs.length?fs.map(f=>`<div class="fd ${f.severity}"><span class="sv ${f.severity}">${f.severity}</span> <span style="font-size:.65rem;color:#888">${f.category}</span><div style="margin-top:.1rem">${f.message}</div>${f.column?`<div style="font-size:.7rem;color:#666">Spalte: ${f.column}</div>`:''}${f.suggestion?`<div style="font-style:italic;color:var(--ac);font-size:.75rem;margin-top:.15rem">💡 ${f.suggestion}</div>`:''}</div>`).join(''):'<p style="color:#888;padding:.5rem">Keine Findings.</p>'}
+function rprf(ds){$('parea').innerHTML=ds.map(d=>`<h3 style="font-family:'DM Serif Display',serif;margin:.6rem 0 .3rem">${d.source_name}</h3><p style="font-size:.75rem;color:#666;margin-bottom:.3rem">${(d.row_count||0).toLocaleString()} Zeilen · ${d.column_count} Spalten · ID: <code>${d.id_column||'—'}</code></p><table class="pt"><thead><tr><th>Spalte</th><th>Gefüllt</th><th>Unique</th><th>Beispiel</th></tr></thead><tbody>${(d.columns||[]).map(c=>`<tr><td>${c.name}</td><td><span class="fb0" style="width:${Math.round(c.fill_rate*50)}px;background:${c.fill_rate>.8?'var(--ok)':c.fill_rate>.3?'var(--warn)':'var(--crit)'}"></span>${Math.round(c.fill_rate*100)}%</td><td>${(c.unique_count||0).toLocaleString()}</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${(c.sample_values?.[0]||'—').substring(0,40)}</td></tr>`).join('')}</tbody></table>`).join('')}
+function rcd(ds){$('cdarea').innerHTML=ds.map(d=>`<h3 style="font-family:'DM Serif Display',serif;margin:.6rem 0 .3rem">${d.source_name}</h3><table class="pt"><thead><tr><th>Spalte</th><th>Gefüllt</th><th>Unique</th><th>Beschreibung</th></tr></thead><tbody>${(d.columns||[]).map(c=>{const sm=(c.sample_values||[]).slice(0,3).join(', ');return`<tr><td><strong>${c.name}</strong></td><td>${Math.round(c.fill_rate*100)}%</td><td>${c.unique_count}</td><td style="font-family:'DM Sans',sans-serif;font-size:.75rem">${c.fill_rate<.01?'Fast leer':Math.round(c.fill_rate*100)+'% gefüllt. Bsp: '+sm}</td></tr>`}).join('')}</tbody></table>`).join('')+'<button class="btn sm" style="margin-top:.5rem" onclick="genAIDesc()">🤖 KI-Beschreibungen</button>'}
+async function genAIDesc(){sp('KI …','');try{const r=await(await fetch('/api/ai/describe-columns',{method:'POST'})).json();if(r.error)throw Error(r.error);$('cdarea').innerHTML=(r.datasets||[]).map(d=>`<h3 style="font-family:'DM Serif Display',serif;margin:.6rem 0 .3rem">${d.name}</h3><table class="pt"><thead><tr><th>Spalte</th><th>Gefüllt</th><th>KI-Beschreibung</th></tr></thead><tbody>${(d.columns||[]).map(c=>`<tr><td><strong>${c.name}</strong></td><td>${Math.round(c.fill_rate*100)}%</td><td style="font-family:'DM Sans',sans-serif;font-size:.75rem">${c.ai_description||c.description||''}</td></tr>`).join('')}</tbody></table>`).join('')}catch(e){alert(e.message)}finally{hp()}}
+
+// === GPU ===
+async function chkGPU(){
+  try{const d=await(await fetch('/api/gpu/status')).json();
+    $('gd').className='dot '+(d.available?'on':'off');$('gl').textContent='GPUStack: '+(d.available?(d.models?.length||0)+' Modelle':'offline');
+    gpuM=d.models||[];const cfg=d.config||{};
+    if(d.available){$('gi').innerHTML='<div style="font-size:.72rem;font-family:\'JetBrains Mono\',monospace">'+gpuM.map(m=>`<div>📦 ${m}${m===cfg.gpustack_model_text?' <span style="background:#dbeafe;color:#1e40af;font-size:.58rem;font-weight:700;padding:.08rem .3rem;border-radius:3px">TEXT</span>':''}${m===cfg.gpustack_model_vision?' <span style="background:#fce7f3;color:#9d174d;font-size:.58rem;font-weight:700;padding:.08rem .3rem;border-radius:3px">VISION</span>':''}</div>`).join('')+'</div>';
+      for(const sid of['cfg-mt','cfg-mv']){$(sid).innerHTML=gpuM.map(m=>`<option value="${m}" ${(sid==='cfg-mt'&&m===cfg.gpustack_model_text)||(sid==='cfg-mv'&&m===cfg.gpustack_model_vision)?'selected':''}>${m}</option>`).join('')}
+      $('cfg-models').innerHTML='Konfiguriert: Text=<strong>'+cfg.gpustack_model_text+'</strong>, Vision=<strong>'+cfg.gpustack_model_vision+'</strong>'
+    }else{$('gi').innerHTML='<p style="color:#888">Nicht verbunden.</p>'}
+  }catch(e){$('gd').className='dot off';$('gl').textContent='Fehler'}
+}
+
+// === CATALOG ===
+function renderCatalog(){
+  $('cat-body').innerHTML=CATALOG.map(c=>`<tr>
+    <td style="font-size:.65rem">${c.id}</td>
+    <td style="font-family:'DM Sans',sans-serif;font-weight:600">${c.name}</td>
+    <td style="font-size:.7rem">${c.module}</td>
+    <td><span class="bg ${c.status==='done'?'ac':c.status==='partial'?'pl':'no'}">${c.status_label}</span></td>
+    <td style="font-size:.7rem">${c.tests||'—'}</td>
+    <td style="font-size:.72rem;color:#666">${c.note||''}</td>
+  </tr>`).join('')
+}
+
+// === PROGRESS ===
+function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classList.add('a')}
+function hp(){$('po').classList.remove('a')}
+
+// === INIT ===
+(function(){
+  loadPreset();
+  $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>`<div class="ft"><span class="bg ac">${t.type||'text'}</span><div><strong>${t.name}</strong><br><span class="d">${t.description}</span></div></div>`).join('');
+  renderCatalog();
+  chkGPU();
+})();
+</script>
+</body>
+</html>
