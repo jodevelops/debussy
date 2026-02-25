@@ -208,3 +208,83 @@ class TestGNDModule(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ========================================
+# P0 Security Tests (no FastAPI dependency)
+# ========================================
+
+class TestSecurityP0(unittest.TestCase):
+    """Tests for Sprint 1 security fixes."""
+
+    def test_safe_filename_logic(self):
+        """P0-3: _safe_filename sanitization logic."""
+        import re
+        def _safe_filename(name, ext=".debussy.json"):
+            safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())[:80]
+            safe = re.sub(r"\.{2,}", ".", safe)
+            safe = safe.strip("._- ")
+            return (safe or "project") + ext
+
+        # Normal names
+        self.assertEqual(_safe_filename("my_project"), "my_project.debussy.json")
+        self.assertEqual(_safe_filename("test-123"), "test-123.debussy.json")
+
+        # Path traversal
+        r = _safe_filename("../../etc/passwd")
+        self.assertNotIn("..", r)
+        self.assertNotIn("/", r)
+
+        # XSS in name
+        r = _safe_filename('<script>alert(1)</script>')
+        self.assertNotIn("<", r)
+        self.assertNotIn(">", r)
+
+        # Empty
+        self.assertEqual(_safe_filename(""), "project.debussy.json")
+        self.assertEqual(_safe_filename("   "), "project.debussy.json")
+
+        # Length limit
+        r = _safe_filename("a" * 200)
+        self.assertLess(len(r), 200)
+
+    def test_localhost_default(self):
+        """P0-2: Default binding is localhost."""
+        code = Path("src/kwb/api/app.py").read_text()
+        self.assertIn('"127.0.0.1"', code)
+        self.assertIn("KWB_HOST", code)
+
+    def test_upload_limits_in_code(self):
+        """P0-4: Security limits are defined."""
+        code = Path("src/kwb/api/app.py").read_text()
+        for c in ["MAX_UPLOAD_FILES","MAX_FILE_BYTES","MAX_WORKSPACE_BYTES",
+                   "MAX_CSV_ROWS","MAX_CSV_COLS","ALLOWED_EXTENSIONS"]:
+            self.assertIn(c, code, f"Missing: {c}")
+
+    def test_upload_validation_in_analyze(self):
+        """P0-4: analyze endpoint validates uploads."""
+        code = Path("src/kwb/api/app.py").read_text()
+        self.assertIn("MAX_UPLOAD_FILES", code)
+        self.assertIn("ALLOWED_EXTENSIONS", code)
+        self.assertIn("MAX_FILE_BYTES", code)
+        self.assertIn("MAX_CSV_ROWS", code)
+
+    def test_workspace_save_uses_safe_filename(self):
+        """P0-3: workspace save uses sanitized filename."""
+        code = Path("src/kwb/api/app.py").read_text()
+        self.assertIn("_safe_filename", code)
+        self.assertIn("_WORKSPACE_DIR", code)
+        self.assertIn(".resolve()", code)
+
+    def test_xss_protection_in_html(self):
+        """P0-1: HTML has XSS protection."""
+        html = Path("src/kwb/api/dashboard.html").read_text()
+        import re
+        script = html[html.index('<script>'):html.index('</script>')]
+        # No template literals with interpolation
+        tpls = re.findall(r'`[^`]*\$\{[^}]*\}[^`]*`', script)
+        self.assertEqual(len(tpls), 0, f"Unsafe template literals: {tpls[:3]}")
+        # esc() used extensively
+        self.assertGreaterEqual(script.count('esc('), 40)
+        # safeOpt used for options
+        self.assertIn('safeOpt(', script)

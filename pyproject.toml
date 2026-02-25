@@ -1,12 +1,12 @@
 [project]
 name = "debussy"
-version = "0.1.0"
+version = "0.5.1"
 description = "AI-assisted curation workbench for GLAM collection data"
 readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "Johannes", email = "TODO@unibe.ch"},
+    {name = "Johannes", email = "dcb@unibe.ch"},
 ]
 keywords = ["GLAM", "metadata", "curation", "digital-humanities", "AI"]
 classifiers = [
@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-api = ["fastapi>=0.100", "uvicorn>=0.20"]
+api = ["fastapi>=0.100", "uvicorn[standard]>=0.20", "python-multipart>=0.0.6"]
 ai = ["httpx>=0.24"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1"]
 all = ["kuratierwerkbank[api,ai,dev]"]

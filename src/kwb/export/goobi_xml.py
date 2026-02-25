@@ -147,7 +147,7 @@ def export_goobi_batch(
     records = export_goobi_xml(df, workspace, record_id_col, field_map)
     parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<goobi-import-batch>']
     for rid, xml in records:
-        parts.append(f"  <!-- Record: {rid} -->")
+        # Record separator (no XML comment — rid could contain "--")
         # Indent each record
         for line in xml.split("\n"):
             parts.append(f"  {line}")

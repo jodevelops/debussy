@@ -3,7 +3,7 @@ Debussy v0.5 — KI-gestützte Kuratierungswerkbank.
 PYTHONPATH=src python -m kwb.api.app → http://localhost:8765
 """
 from __future__ import annotations
-import json, sys, tempfile, time
+import json, os, re, sys, tempfile, time
 from pathlib import Path
 from typing import Any
 import pandas as pd
@@ -35,7 +35,33 @@ from kwb.ai.prompts import (
 )
 from kwb.report.markdown import render_report
 
-app = FastAPI(title="Debussy", version="0.5.0")
+app = FastAPI(title="Debussy", version="0.5.1")
+
+# --- Security limits (P0-4) ---
+MAX_UPLOAD_FILES = 10
+MAX_FILE_BYTES = 50 * 1024 * 1024       # 50 MB per file
+MAX_WORKSPACE_BYTES = 20 * 1024 * 1024   # 20 MB workspace JSON
+MAX_CSV_ROWS = 500_000
+MAX_CSV_COLS = 200
+ALLOWED_EXTENSIONS = {".csv", ".tsv"}
+ALLOWED_WS_EXT = {".json"}
+
+# --- Workspace storage (P0-3) ---
+_WORKSPACE_DIR = Path(os.environ.get(
+    "KWB_WORKSPACE_DIR",
+    str(Path(tempfile.gettempdir()) / "debussy_workspaces")
+))
+_WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+
+def _safe_filename(name: str, ext: str = ".debussy.json") -> str:
+    """Sanitize user-provided name into safe filename."""
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())[:80]
+    safe = re.sub(r"\.{2,}", ".", safe)   # collapse .. → .
+    safe = safe.strip("._- ")             # no leading/trailing dots
+    if not safe:
+        safe = "project"
+    return safe + ext
+
 _state: dict[str, Any] = {
     "datasets": {},
     "report": None,
@@ -173,16 +199,26 @@ async def gpu_test():
 
 @app.post("/api/analyze")
 async def analyze(files: list[UploadFile] = File(...)):
+    if len(files) > MAX_UPLOAD_FILES:
+        return JSONResponse({"error": f"Maximal {MAX_UPLOAD_FILES} Dateien erlaubt"}, 400)
     _state["datasets"] = {}
     datasets = []
     ws = _ws(); ws.source_files = []
     for u in files:
+        suffix = Path(u.filename or "").suffix.lower()
+        if suffix not in ALLOWED_EXTENSIONS:
+            return JSONResponse({"error": f"'{u.filename}': Nur {', '.join(ALLOWED_EXTENSIONS)} erlaubt"}, 400)
         content = await u.read()
-        suffix = Path(u.filename).suffix or ".csv"
+        if len(content) > MAX_FILE_BYTES:
+            return JSONResponse({"error": f"'{u.filename}': Max {MAX_FILE_BYTES // (1024*1024)} MB"}, 400)
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content); tp = Path(tmp.name)
         try:
             df, pr = ingest_csv(tp)
+            if len(df) > MAX_CSV_ROWS:
+                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_ROWS:,} Zeilen (hat {len(df):,})"}, 400)
+            if len(df.columns) > MAX_CSV_COLS:
+                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_COLS} Spalten"}, 400)
             pr.source_name = Path(u.filename).stem; pr.source_path = u.filename
             datasets.append((df, pr)); _state["datasets"][u.filename] = (df, pr)
             ws.source_files.append(u.filename)
@@ -417,14 +453,24 @@ async def workspace_dictionary():
 
 @app.post("/api/workspace/save")
 async def workspace_save(request: dict):
-    name = request.get("name","project")
-    path = Path(tempfile.gettempdir()) / f"{name}.debussy.json"
-    _ws().name = name; _ws().save(path)
-    return {"path":str(path),"summary":_ws().to_summary()}
+    name = request.get("name", "project")
+    filename = _safe_filename(name)
+    path = (_WORKSPACE_DIR / filename).resolve()
+    # Path boundary check
+    if not str(path).startswith(str(_WORKSPACE_DIR.resolve())):
+        return JSONResponse({"error": "Ungültiger Projektname"}, 400)
+    _ws().name = name
+    _ws().save(path)
+    return {"path": str(path), "summary": _ws().to_summary()}
 
 @app.post("/api/workspace/load")
 async def workspace_load(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in ALLOWED_WS_EXT:
+        return JSONResponse({"error": "Nur .json Dateien erlaubt"}, 400)
     content = await file.read()
+    if len(content) > MAX_WORKSPACE_BYTES:
+        return JSONResponse({"error": f"Workspace-Datei zu gross (max {MAX_WORKSPACE_BYTES // (1024*1024)} MB)"}, 400)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         tmp.write(content); tp = Path(tmp.name)
     try:
@@ -473,7 +519,12 @@ def _report_json(report, md):
         "markdown":md}
 
 if __name__ == "__main__":
+    import os
+    host = os.environ.get("KWB_HOST", "127.0.0.1")
+    port = int(os.environ.get("KWB_PORT", "8765"))
+    if host != "127.0.0.1":
+        print(f"⚠️  Binding to {host} — no auth configured!")
     print("=" * 50)
-    print("  Debussy v0.5  —  http://localhost:8765")
+    print(f"  Debussy v0.5  —  http://{host}:{port}")
     print("=" * 50)
-    uvicorn.run(app, host="0.0.0.0", port=8765)
+    uvicorn.run(app, host=host, port=port)
