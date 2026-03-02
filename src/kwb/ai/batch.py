@@ -7,18 +7,20 @@ Handles the reality of processing 8,000+ records through a local LLM:
 - Rate limiting
 - Result collection with provenance
 """
-
 from __future__ import annotations
 
-import json
 import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from kwb.ai.provider import AIMessage, AIProvider, AIResponse
+from kwb.core.utils import try_parse_json  # canonical location
 
 logger = logging.getLogger(__name__)
+
+# Backward-compatible alias so existing imports don't break
+_try_parse_json = try_parse_json
 
 
 @dataclass
@@ -50,20 +52,6 @@ class BatchReport:
     def avg_duration(self) -> float:
         durations = [r.duration_seconds for r in self.results if r.success]
         return sum(durations) / len(durations) if durations else 0.0
-
-
-def _try_parse_json(text: str) -> dict[str, Any] | None:
-    """Try to parse JSON from LLM response, handling common issues."""
-    text = text.strip()
-    # Strip markdown code fences if present
-    if text.startswith("```"):
-        lines = text.split("\n")
-        text = "\n".join(lines[1:-1] if lines[-1].strip() == "```" else lines[1:])
-        text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        return None
 
 
 def process_batch(
@@ -109,7 +97,7 @@ def process_batch(
                 temperature=temperature,
                 max_tokens=max_tokens,
             )
-            parsed = _try_parse_json(response.content)
+            parsed = try_parse_json(response.content)
             duration = time.time() - item_start
 
             result = BatchResult(

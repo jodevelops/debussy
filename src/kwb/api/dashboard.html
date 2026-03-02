@@ -15,7 +15,7 @@ header h1 em{color:var(--al);font-style:italic;font-size:.65em;margin-left:.5rem
 .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}.dot.on{background:#4ade80}.dot.off{background:#ef4444}
 .nav{display:flex;background:var(--ink);padding:0 1rem;gap:0;flex-wrap:wrap}
 .nt{padding:.5rem 1rem;font-size:.75rem;font-weight:600;cursor:pointer;color:#666;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
-.nt:hover{color:var(--paper)}.nt.a{color:var(--paper);border-bottom-color:var(--ac)}.nt.disabled{opacity:.4;cursor:not-allowed}
+.nt:hover{color:var(--paper)}.nt.a{color:var(--paper);border-bottom-color:var(--ac)}
 main{max-width:1400px;margin:0 auto;padding:1.5rem}
 .pg{display:none}.pg.a{display:block}
 .g2{display:grid;grid-template-columns:340px 1fr;gap:1.5rem}
@@ -56,6 +56,15 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 .hint{font-size:.73rem;color:#888;padding:.6rem;background:var(--pw);border-radius:var(--r);margin-bottom:.6rem}
 .ws-bar{background:var(--pw);padding:.4rem 2rem;font-size:.72rem;display:flex;gap:1.5rem;align-items:center;border-bottom:1px solid var(--brd)}
 .ws-bar .wsi{color:#666}.ws-bar strong{color:var(--ac)}
+/* Field mapping table */
+.fmtbl{width:100%;border-collapse:collapse;font-size:.75rem}.fmtbl th{text-align:left;padding:.25rem .4rem;border-bottom:2px solid var(--ink);font-size:.62rem;text-transform:uppercase;color:#555}.fmtbl td{padding:.2rem .4rem;border-bottom:1px solid #f0ece5}
+.fmtbl input,.fmtbl select{margin-top:0;padding:.2rem .3rem;font-size:.72rem}
+/* GND result table */
+.gndtbl{width:100%;border-collapse:collapse;font-size:.73rem}.gndtbl th{text-align:left;padding:.25rem .4rem;border-bottom:2px solid var(--ink);font-size:.62rem;text-transform:uppercase;color:#555;background:#fff}.gndtbl td{padding:.2rem .4rem;border-bottom:1px solid #f0ece5}.gndtbl tr:hover td{background:var(--paper)}
+.gnd-match{color:var(--ok);font-weight:600}.gnd-none{color:#aaa}
+/* Entity status pill */
+.est{font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .35rem;border-radius:10px}
+.est-pending{background:#f3f4f6;color:#6b7280}.est-accepted{background:#dcfce7;color:var(--ok)}.est-rejected{background:#fee2e2;color:var(--crit)}
 </style>
 </head>
 <body>
@@ -74,6 +83,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="nt a" data-p="data">📂 Daten</div>
 <div class="nt" data-p="ner">🔍 NER & Entities</div>
 <div class="nt" data-p="dates">📅 Datierung</div>
+<div class="nt" data-p="images">🖼️ Bild-Analyse</div>
 <div class="nt" data-p="export">📦 Export</div>
 <div class="nt" data-p="config">⚙️ KI-Konfiguration</div>
 <div class="nt" data-p="catalog">📋 Funktionskatalog</div>
@@ -86,7 +96,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="c" id="fc" style="display:none"><h2>Dateien</h2><div class="cl" id="fcl"></div><button class="btn f" onclick="runStruct()">🔬 Strukturelle Analyse starten</button></div>
 <div class="c"><h2>GPUStack</h2><div id="gi" style="font-size:.75rem">Prüfe …</div></div>
 </div><div>
-<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs für NER, EDTF und Export.</p></div>
+<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
 <div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="prof">Profile</div><div class="tab" data-t="cold">Spalten</div><div class="tab" data-t="md">Markdown</div></div>
 <div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
@@ -94,24 +104,24 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="tp" data-t="cold"><div id="cdarea"></div></div>
 <div class="tp" data-t="md"><textarea id="mdx" readonly rows="18"></textarea><button class="btn sm s" style="margin-top:.3rem" onclick="navigator.clipboard.writeText($('mdx').value)">Kopieren</button></div>
 </div></div></div></div></div>
+
 <!-- ===== NER ===== -->
 <div class="pg" data-p="ner"><div class="g2"><div class="sb">
 <div class="c"><h2>NER-Konfiguration</h2>
-<div class="hint" id="ner-hint">Erst im Daten-Tab CSV laden und Analyse starten.</div>
+<div class="hint" id="ner-hint">Erst im Daten-Tab CSV laden.</div>
 <label>Datensatz</label><select id="ner-ds" onchange="loadCols('ner-ds','ner-cols')"><option value="">— Erst Daten laden —</option></select>
-<label>Spalten (mehrere möglich)</label><div id="ner-cols" class="cl" style="margin-top:.3rem"><p style="font-size:.73rem;color:#888">Datensatz oben wählen</p></div>
-<label>Methode</label><select id="ner-method"><option value="llm">LLM (KI-Modell)</option><option value="spacy">SpaCy (lokal)</option><option value="hybrid">Hybrid (SpaCy + LLM)</option></select>
+<label>Spalten</label><div id="ner-cols" class="cl" style="margin-top:.3rem"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
+<label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy+LLM)</option></select>
 <label>Samples</label><input type="number" id="ner-n" value="10" min="1" max="500">
 <button class="btn f" onclick="runNER()">🔍 NER starten</button>
 </div>
 <div class="c"><h2>Problematische Begriffe</h2>
-<p style="font-size:.73rem;color:#666">Ganzes Datenset nach veralteter/kolonialer Terminologie durchsuchen.</p>
 <label>Datensatz</label><select id="scan-ds"><option value="">—</option></select>
 <label>Samples</label><input type="number" id="scan-n" value="20" min="1" max="500">
 <button class="btn f s" onclick="runScan()">🔎 Scan starten</button>
 </div>
 </div><div>
-<div id="ner-e" class="em"><h3>Named Entity Recognition</h3><p style="font-size:.8rem">Erkennt Personen, Orte, Organisationen, Bauwerke, Datierungen u.a. in Metadaten.</p>
+<div id="ner-e" class="em"><h3>Named Entity Recognition</h3>
 <div style="display:flex;flex-wrap:wrap;gap:.4rem;justify-content:center;margin-top:1rem">
 <span class="etype etype-PER">PER Person</span><span class="etype etype-ORG">ORG Organisation</span>
 <span class="etype etype-LOC">LOC Geografie</span><span class="etype etype-GPE">GPE Geo-politisch</span>
@@ -119,41 +129,58 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <span class="etype etype-WRK">WRK Werk</span><span class="etype etype-DAT">DAT Datum</span>
 <span class="etype etype-ETH">ETH Ethnie</span><span class="etype etype-CON">CON Konzept</span></div>
 </div>
-<div id="ner-r" style="display:none"><div class="c"><h2>Erkannte Entities <span id="ner-count" style="font-size:.7rem;color:#888"></span></h2>
+<div id="ner-r" style="display:none">
+<div class="c">
+<h2>Erkannte Entities <span id="ner-count" style="font-size:.7rem;color:#888"></span></h2>
+<!-- Status filter -->
+<div class="fl" id="ner-status-bar" style="margin-bottom:.3rem">
+<strong style="font-size:.7rem;align-self:center">Status:</strong>
+<div class="fb2 a" onclick="filterStatus('all',this)">Alle</div>
+<div class="fb2" onclick="filterStatus('pending',this)">Offen</div>
+<div class="fb2" onclick="filterStatus('accepted',this)">Akzeptiert</div>
+<div class="fb2" onclick="filterStatus('rejected',this)">Abgelehnt</div>
+</div>
+<!-- Type filter -->
 <div class="fl" id="ner-filter"></div>
-<div class="scroll-box"><table class="etbl" id="ner-tbl"><thead><tr><th>Entity</th><th>Typ</th><th>Konfidenz</th><th>Begründung</th><th>Record</th><th>Quelle</th><th>Aktion</th></tr></thead><tbody id="ner-body"></tbody></table></div>
-<div style="margin-top:.5rem;display:flex;gap:.5rem">
-<button class="btn sm" onclick="batchEntities('accepted')">Alle akzeptieren</button>
-<button class="btn sm s" onclick="batchEntities('rejected')">Alle ablehnen</button>
+<div class="scroll-box"><table class="etbl" id="ner-tbl"><thead><tr><th>Entity</th><th>Typ</th><th>Konfidenz</th><th>Begründung</th><th>Record</th><th>Quelle</th><th>Status</th><th>Aktion</th></tr></thead><tbody id="ner-body"></tbody></table></div>
+<div style="margin-top:.5rem;display:flex;gap:.5rem;flex-wrap:wrap">
+<button class="btn sm" onclick="batchEntities('accepted')">✓ Alle akzeptieren</button>
+<button class="btn sm s" onclick="batchEntities('rejected')">✗ Alle ablehnen</button>
 <button class="btn sm" onclick="exportNER()">CSV Export</button>
-<button class="btn sm" onclick="runGNDLookup()">GND-Lookup</button>
-</div></div></div>
+<button class="btn sm" onclick="runGNDLookup()">🔍 GND-Lookup</button>
+</div>
+</div>
+<!-- GND results table -->
+<div id="gnd-r" style="display:none;margin-top:1rem">
+<div class="c"><h2>GND-Lookup Ergebnisse</h2>
+<div class="scroll-box"><table class="gndtbl" id="gnd-tbl"><thead><tr><th>Term</th><th>Typ</th><th>GND-ID</th><th>Vorzugsname</th><th>Typ (GND)</th><th>Alternativen</th></tr></thead><tbody id="gnd-body"></tbody></table></div>
+</div></div>
+<!-- Scan results -->
 <div id="scan-r" style="display:none"><div class="c" style="margin-top:1rem"><h2>Problematische Begriffe</h2><div id="scan-body"></div></div></div>
+</div>
 </div></div></div>
 
 <!-- ===== DATIERUNG ===== -->
 <div class="pg" data-p="dates"><div class="g2"><div class="sb">
 <div class="c"><h2>EDTF-Konvertierung</h2>
-<div class="hint" id="edtf-hint">Erst im Daten-Tab CSV laden und Analyse starten.</div>
+<div class="hint" id="edtf-hint">Erst im Daten-Tab CSV laden.</div>
 <label>Datensatz</label><select id="edtf-ds" onchange="loadDateCols()"><option value="">— Erst Daten laden —</option></select>
 <label>Datums-Spalte</label><select id="edtf-col"><option value="">—</option></select>
 <label>Samples (0 = alle)</label><input type="number" id="edtf-n" value="0" min="0" max="10000">
-<label>Nicht erkannte mit LLM?</label><select id="edtf-llm"><option value="0">Nein (nur Regeln)</option><option value="1">Ja (LLM-Fallback)</option></select>
+<label>LLM-Fallback?</label><select id="edtf-llm"><option value="0">Nein (nur Regeln)</option><option value="1">Ja (LLM-Fallback)</option></select>
 <button class="btn f" onclick="runEDTF()">📅 Konvertieren</button>
 </div>
 <div class="c"><h2>EDTF-Regeln (LOC Standard)</h2>
 <div style="font-size:.7rem;font-family:monospace;line-height:1.8">
 <div>"1920" → <b>1920</b></div><div>"17.05.1923" → <b>1923-05-17</b></div>
-<div>"ca. 1920" → <b>1920~</b> (approx.)</div><div>"um 1850" → <b>1850~</b></div>
-<div>"1920?" → <b>1920?</b> (uncertain)</div>
-<div>"vor 1900" → <b>../1900</b></div><div>"nach 1950" → <b>1950/..</b></div>
-<div>"1920-1930" → <b>1920/1930</b> (range)</div>
-<div>"1920er" → <b>192X</b> (decade)</div><div>"19. Jh." → <b>18XX</b> (century)</div>
-<div>"Sommer 1923" → <b>1923-22</b> (season)</div>
+<div>"ca. 1920" → <b>1920~</b></div><div>"um 1850" → <b>1850~</b></div>
+<div>"1920?" → <b>1920?</b></div><div>"vor 1900" → <b>../1900</b></div>
+<div>"nach 1950" → <b>1950/..</b></div><div>"1920-1930" → <b>1920/1930</b></div>
+<div>"1920er" → <b>192X</b></div><div>"19. Jh." → <b>18XX</b></div>
 <div>"undatiert" → <b>(leer)</b></div>
 </div></div>
 </div><div>
-<div id="edtf-e" class="em"><h3>Datierungen → EDTF</h3><p style="font-size:.8rem">Konvertiert Datumsangaben in LOC Extended Date/Time Format.</p></div>
+<div id="edtf-e" class="em"><h3>Datierungen → EDTF</h3><p>Konvertiert Datumsangaben in LOC Extended Date/Time Format.</p></div>
 <div id="edtf-r" style="display:none"><div class="c"><h2>Konvertierung</h2>
 <div class="sg" id="edtf-sg"></div>
 <div class="scroll-box"><table class="etbl" id="edtf-tbl"><thead><tr><th>Original</th><th>→ EDTF</th><th>Konfidenz</th><th>Methode</th><th>Hinweis</th></tr></thead><tbody id="edtf-body"></tbody></table></div>
@@ -161,10 +188,67 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div></div></div>
 
 <!-- ===== EXPORT ===== -->
-<div class="pg" data-p="export"><div style="max-width:1000px">
-<div class="hint" id="exp-hint">Erst Daten laden und optional NER/EDTF ausführen, dann hierher kommen.</div>
+<div class="pg" data-p="images"><div style="max-width:1100px">
+<h2>🖼️ Bild-Analyse</h2>
+<div class="hint" id="img-hint">Bilder hochladen (JPEG, PNG, TIFF, WebP), dann mit dem Vision-Modell analysieren.</div>
+
+<div class="g2"><div class="sb">
+<h3>Upload</h3>
+<div style="margin-bottom:.5rem">
+  <label class="lbl">Bilder wählen</label>
+  <input type="file" id="img-files" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.webp" style="font-size:.75rem;width:100%">
+</div>
+<button class="btn f" onclick="uploadImages()">⬆️ Hochladen</button>
+<div id="img-upload-status" class="em" style="margin-top:.4rem"></div>
+
+<h3 style="margin-top:1rem">Analyse</h3>
+<div style="margin-bottom:.4rem">
+  <label class="lbl">Modell</label>
+  <select id="img-model" class="sel" style="width:100%">
+    <option value="">Standard (aus Konfiguration)</option>
+  </select>
+</div>
+<div style="margin-bottom:.4rem">
+  <label class="lbl">System-Prompt</label>
+  <select id="img-preset" class="sel" style="width:100%" onchange="applyImgPreset()">
+    <option value="vision_de">Vision (DE)</option>
+    <option value="custom">Eigener Prompt</option>
+  </select>
+  <textarea id="img-sp" class="ta" style="height:4rem;margin-top:.3rem"></textarea>
+</div>
+<button class="btn f" onclick="analyzeImages()">🔍 Analysieren</button>
+</div>
+
+<div>
+<h3>Hochgeladene Bilder</h3>
+<div id="img-list-empty" class="em" style="font-size:.78rem">Noch keine Bilder hochgeladen.</div>
+<div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.4rem"></div>
+
+<h3 style="margin-top:1rem">Analyseergebnisse</h3>
+<div id="img-results-empty" class="em" style="font-size:.78rem">Noch keine Ergebnisse.</div>
+<div id="img-results"></div>
+</div></div>
+</div></div>
+
+<!-- ===== EXPORT ===== -->
+<div class="hint" id="exp-hint">Daten laden, optional NER/EDTF ausführen, dann hierher kommen.</div>
+
+<!-- Field Mapping Panel -->
+<div class="c" style="margin-bottom:1rem"><h2>🗺️ Feld-Mapping: CSV → Goobi</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.6rem">Ordne CSV-Spalten den Goobi-Metadatenfeldern zu. Nur gemappte Spalten werden exportiert.</p>
+<label>Datensatz für Mapping</label><select id="fm-ds" onchange="loadFMCols()"><option value="">— Erst Daten laden —</option></select>
+<div id="fm-table-wrap" style="margin-top:.6rem;display:none">
+<table class="fmtbl" id="fm-tbl">
+<thead><tr><th>CSV-Spalte</th><th>Goobi Label</th><th>Goobi Typ</th><th></th></tr></thead>
+<tbody id="fm-body"></tbody>
+</table>
+<button class="btn sm" style="margin-top:.5rem" onclick="saveFM()">💾 Mapping speichern</button>
+<span id="fm-saved" style="font-size:.7rem;color:var(--ok);margin-left:.5rem;display:none">✓ Gespeichert</span>
+</div>
+</div>
+
+<!-- Goobi Export Panel -->
 <div class="c"><h2>Goobi-Import XML</h2>
-<p style="font-size:.78rem;color:#666;margin-bottom:.5rem">Exportiert kuratierte Daten im goobi-import XML Format. Entities werden als &lt;person&gt;, &lt;corporate&gt; oder &lt;metadata SubjectTopic&gt; exportiert.</p>
 <label>Datensatz</label><select id="exp-ds"><option value="">— Erst Daten laden —</option></select>
 <label>Record-ID (Vorschau)</label><select id="exp-rec"><option value="">—</option></select>
 <div style="display:flex;gap:.5rem;margin-top:.5rem">
@@ -173,10 +257,11 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div>
 <div id="exp-xml" class="ar" style="display:none;margin-top:.5rem"></div>
 </div>
+
 <div class="c" style="margin-top:1rem"><h2>Workspace-Export</h2>
 <div style="display:flex;gap:.5rem">
-<button class="btn" onclick="saveWS()">💾 Workspace speichern (.debussy.json)</button>
-<label class="btn s" style="cursor:pointer">📁 Workspace laden <input type="file" accept=".json" style="display:none" onchange="loadWS(this.files[0])"></label>
+<button class="btn" onclick="saveWS()">💾 Workspace speichern</button>
+<label class="btn s" style="cursor:pointer">📁 Workspace laden<input type="file" accept=".json" style="display:none" onchange="loadWS(this.files[0])"></label>
 </div>
 </div>
 </div></div>
@@ -184,12 +269,20 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <!-- ===== CONFIG ===== -->
 <div class="pg" data-p="config"><div style="max-width:900px">
 <div class="c"><h2>Modelle</h2>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem"><div><label>Text-Modell</label><select id="cfg-mt"></select></div><div><label>Vision-Modell</label><select id="cfg-mv"></select></div></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
+<div><label>Text-Modell</label><select id="cfg-mt"></select></div>
+<div><label>Vision-Modell</label><select id="cfg-mv"></select></div>
+</div>
 <div id="cfg-models" style="font-size:.7rem;font-family:monospace;margin-top:.4rem"></div>
 </div>
 <div class="c" style="margin-top:1rem"><h2>System-Instruktionen</h2>
 <label>Aktive Instruktion</label>
-<select id="cfg-preset" onchange="loadPreset()"><option value="meta_de">Metadaten (DE)</option><option value="meta_en">Metadaten (EN)</option><option value="vision_de">Vision (DE)</option><option value="ner_de">NER</option><option value="edtf_de">EDTF</option><option value="scan_de">Scan</option><option value="custom">Eigene</option></select>
+<select id="cfg-preset" onchange="loadPreset()">
+<option value="meta_de">Metadaten (DE)</option><option value="meta_en">Metadaten (EN)</option>
+<option value="vision_de">Vision (DE)</option><option value="ner_de">NER</option>
+<option value="edtf_de">EDTF</option><option value="scan_de">Scan</option>
+<option value="custom">Eigene</option>
+</select>
 <textarea id="cfg-sys" rows="6" style="margin-top:.3rem"></textarea>
 <button class="btn sm" onclick="loadPreset()">Zurücksetzen</button>
 </div>
@@ -202,11 +295,9 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 
 <!-- ===== KATALOG ===== -->
 <div class="pg" data-p="catalog"><div style="max-width:1000px">
-<div class="c"><h2>Funktionskatalog (56 Anforderungen)</h2>
-<p style="font-size:.78rem;color:#666;margin-bottom:.6rem">Alle Funktionen mit Status und Testabdeckung.</p>
+<div class="c"><h2>Funktionskatalog</h2>
 <div class="scroll-box"><table class="etbl" id="cat-tbl"><thead><tr><th>ID</th><th>Funktion</th><th>Modul</th><th>Status</th><th>Tests</th><th>Hinweis</th></tr></thead><tbody id="cat-body"></tbody></table></div>
-</div>
-</div></div>
+</div></div></div>
 
 <!-- Progress overlay -->
 <div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="sp"></div><p id="pp" style="font-size:.8rem"></p></div></div>
@@ -216,9 +307,19 @@ const $=id=>document.getElementById(id);
 const PRESETS=__PRESETS_JSON__;
 const TASKS=__TASKS_JSON__;
 const CATALOG=__CATALOG_JSON__;
-let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[],analysed=false;
 
-// === SECURITY HELPERS ===
+// Goobi metadata types (common)
+const GOOBI_TYPES=[
+  "CatalogIDDigital","TitleDocMain","Description","PublicationYear",
+  "DocLanguage","singleDigCollection","Author","SubjectTopic",
+  "PlaceOfPublication","Publisher","Format","Source",
+];
+
+let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
+let nerStatusFilter='all', nerTypeFilter='all';
+let fmMapping={}; // current field mapping state
+
+// === SECURITY ===
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function safeOpt(val,label){return '<option value="'+esc(val)+'">'+esc(label)+'</option>'}
 function dl(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
@@ -238,13 +339,16 @@ function rfl(){
 }
 function populateDS(){
   const n=Object.keys(ufiles);
-  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds']){const s=$(id);if(!s)continue;
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','fm-ds']){
+    const s=$(id);if(!s)continue;
     s.innerHTML=n.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
-  if(n.length>0){loadCols('ner-ds','ner-cols');loadDateCols();loadRecords();
-    ['ner-hint','edtf-hint','exp-hint'].forEach(id=>{const el=$(id);if(el)el.style.display='none'})}
+  if(n.length>0){
+    loadCols('ner-ds','ner-cols');loadDateCols();loadRecords();loadFMCols();
+    ['ner-hint','edtf-hint','exp-hint'].forEach(id=>{const el=$(id);if(el)el.style.display='none'})
+  }
 }
 
-// === LOAD COLUMNS ===
+// === COLUMNS ===
 async function loadCols(dsId,targetId){
   const ds=$(dsId).value;const t=$(targetId);
   if(!ds){t.textContent='Datensatz wählen';return}
@@ -269,6 +373,65 @@ async function loadRecords(){
 }
 $('exp-ds').onchange=loadRecords;
 
+// === FIELD MAPPING ===
+let fmCols=[];
+async function loadFMCols(){
+  const ds=$('fm-ds').value;
+  if(!ds){$('fm-table-wrap').style.display='none';return}
+  try{
+    const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/columns')).json();
+    if(d.error)return;
+    fmCols=d.columns;
+    // Load existing mapping
+    const ex=await(await fetch('/api/workspace/field-mapping')).json();
+    fmMapping=ex.mapping||{};
+    renderFMTable();
+    $('fm-table-wrap').style.display='block';
+  }catch(e){}
+}
+function renderFMTable(){
+  const typeOpts=GOOBI_TYPES.map(t=>safeOpt(t,t)).join('');
+  $('fm-body').innerHTML=fmCols.map(c=>{
+    const mapped=fmMapping[c.name];
+    const label=mapped?(Array.isArray(mapped)?mapped[0]:mapped):'';
+    const type=mapped?(Array.isArray(mapped)?mapped[1]:''):'';
+    return '<tr>'+
+      '<td><strong>'+esc(c.name)+'</strong><br><span style="font-size:.65rem;color:#888">'+Math.round(c.fill_rate*100)+'%</span></td>'+
+      '<td><input type="text" id="fm-lbl-'+esc(c.name)+'" value="'+esc(label)+'" placeholder="z.B. Titel" style="width:120px"></td>'+
+      '<td><select id="fm-typ-'+esc(c.name)+'" style="width:160px"><option value="">— kein Export —</option>'+typeOpts+'</select></td>'+
+      '<td><button class="btn sm" onclick="clearFMRow(\''+esc(c.name)+'\')">✕</button></td>'+
+    '</tr>';
+  }).join('');
+  // Set current type values
+  fmCols.forEach(c=>{
+    const mapped=fmMapping[c.name];
+    if(mapped){
+      const type=Array.isArray(mapped)?mapped[1]:mapped;
+      const sel=$('fm-typ-'+c.name);
+      if(sel)sel.value=type;
+    }
+  });
+}
+function clearFMRow(col){
+  const lbl=$('fm-lbl-'+col);const typ=$('fm-typ-'+col);
+  if(lbl)lbl.value='';if(typ)typ.value='';
+}
+async function saveFM(){
+  const mapping={};
+  fmCols.forEach(c=>{
+    const lbl=$('fm-lbl-'+c.name);const typ=$('fm-typ-'+c.name);
+    if(lbl&&typ&&typ.value){
+      mapping[c.name]=[lbl.value||typ.value,typ.value];
+    }
+  });
+  try{
+    await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mapping})});
+    fmMapping=mapping;
+    $('fm-saved').style.display='inline';
+    setTimeout(()=>{$('fm-saved').style.display='none'},2000);
+  }catch(e){alert('Fehler: '+e.message)}
+}
+
 // === STRUCTURAL ANALYSIS ===
 async function runStruct(){
   const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
@@ -276,7 +439,7 @@ async function runStruct(){
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
   const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
   try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();
-    if(r.error)throw Error(r.error);curRep=r;analysed=true;rrep(r);populateDS();updWS()
+    if(r.error)throw Error(r.error);curRep=r;rrep(r);populateDS();updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
 
@@ -288,50 +451,121 @@ async function runNER(){
   const method=$('ner-method').value,n=parseInt($('ner-n').value)||10;
   sp('NER läuft …',method+', '+n+' Samples');
   try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,model:$('cfg-mt').value||'',system_prompt:$('cfg-sys').value})})).json();
+    body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,
+      model:$('cfg-mt').value||'',
+      system_prompt:$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
+
 function renderNER(r){
   $('ner-e').style.display='none';$('ner-r').style.display='block';
   $('ner-count').textContent='('+nerData.length+' gefunden, Modell: '+(r.model||'?')+')';
   const types=[...new Set(nerData.map(e=>e.type))].sort();
-  $('ner-filter').innerHTML='<div class="fb2 a" onclick="filterNER(\'all\',this)">Alle ('+nerData.length+')</div>'+types.map(t=>'<div class="fb2" onclick="filterNER(\''+esc(t)+'\',this)"><span class="etype etype-'+esc(t)+'">'+esc(t)+'</span> '+nerData.filter(e=>e.type===t).length+'</div>').join('');
-  fillNERTable(nerData);
+  $('ner-filter').innerHTML='<div class="fb2 a" onclick="setNerType(\'all\',this)">Alle Typen</div>'+
+    types.map(t=>'<div class="fb2" onclick="setNerType(\''+esc(t)+'\',this)"><span class="etype etype-'+esc(t)+'">'+esc(t)+'</span> '+nerData.filter(e=>e.type===t).length+'</div>').join('');
+  applyNERFilters();
 }
-function filterNER(t,b){document.querySelectorAll('#ner-filter .fb2').forEach(x=>x.classList.remove('a'));if(b)b.classList.add('a');fillNERTable(t==='all'?nerData:nerData.filter(e=>e.type===t))}
+
+function setNerType(t,b){
+  nerTypeFilter=t;
+  document.querySelectorAll('#ner-filter .fb2').forEach(x=>x.classList.remove('a'));
+  if(b)b.classList.add('a');
+  applyNERFilters();
+}
+function filterStatus(s,b){
+  nerStatusFilter=s;
+  document.querySelectorAll('#ner-status-bar .fb2').forEach(x=>x.classList.remove('a'));
+  if(b)b.classList.add('a');
+  applyNERFilters();
+}
+function applyNERFilters(){
+  let ents=nerData;
+  if(nerTypeFilter!=='all')ents=ents.filter(e=>e.type===nerTypeFilter);
+  if(nerStatusFilter!=='all')ents=ents.filter(e=>(e.status||'pending')===nerStatusFilter);
+  fillNERTable(ents);
+}
+
 function fillNERTable(ents){
-  $('ner-body').innerHTML=ents.map((e,i)=>'<tr>'+
-    '<td style="font-weight:600">'+esc(e.text)+'</td>'+
-    '<td><span class="etype etype-'+esc(e.type)+'">'+esc(e.type)+'</span></td>'+
-    '<td><span class="conf-bar" style="width:'+Math.round((e.confidence||0)*40)+'px;background:'+((e.confidence||0)>.7?'var(--ok)':(e.confidence||0)>.4?'var(--warn)':'var(--crit)')+'"></span>'+((e.confidence||0)*100).toFixed(0)+'%</td>'+
-    '<td style="font-size:.7rem">'+esc(e.reasoning||'')+'</td>'+
-    '<td style="font-size:.68rem">'+esc(e.record_id||'')+'</td>'+
-    '<td style="font-size:.62rem">'+esc(e.source||'')+'</td>'+
-    '<td><button class="btn sm" onclick="setEntity('+i+',\'accepted\')">✓</button> <button class="btn sm s" onclick="setEntity('+i+',\'rejected\')">✗</button></td>'+
-  '</tr>').join('');
+  $('ner-body').innerHTML=ents.map((e,i)=>{
+    const status=e.status||'pending';
+    return '<tr>'+
+      '<td style="font-weight:600">'+esc(e.text)+(e.gnd_preferred?'<br><span style="font-size:.65rem;color:var(--ok)">GND: '+esc(e.gnd_preferred)+'</span>':'')+'</td>'+
+      '<td><span class="etype etype-'+esc(e.type)+'">'+esc(e.type)+'</span></td>'+
+      '<td><span class="conf-bar" style="width:'+Math.round((e.confidence||0)*40)+'px;background:'+((e.confidence||0)>.7?'var(--ok)':(e.confidence||0)>.4?'var(--warn)':'var(--crit)')+'"></span>'+((e.confidence||0)*100).toFixed(0)+'%</td>'+
+      '<td style="font-size:.7rem">'+esc(e.reasoning||'')+'</td>'+
+      '<td style="font-size:.68rem">'+esc(e.record_id||'')+'</td>'+
+      '<td style="font-size:.62rem">'+esc(e.source||'')+'</td>'+
+      '<td><span class="est est-'+esc(status)+'">'+esc(status)+'</span></td>'+
+      '<td><button class="btn sm" onclick="setEntity('+i+',\'accepted\')">✓</button> <button class="btn sm s" onclick="setEntity('+i+',\'rejected\')">✗</button></td>'+
+    '</tr>';
+  }).join('');
 }
-async function setEntity(idx,status){try{await fetch('/api/workspace/entity/'+idx,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});updWS()}catch(e){}}
-async function batchEntities(status){if(!nerData.length)return;const indices=nerData.map((_,i)=>i);
-  try{await fetch('/api/workspace/entity/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indices,updates:{status}})});updWS();alert(indices.length+' Entities → '+status)}catch(e){alert(e.message)}}
+
+async function setEntity(idx,status){
+  try{await fetch('/api/workspace/entity/'+idx,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});
+    nerData[idx].status=status;applyNERFilters();updWS()
+  }catch(e){}
+}
+async function batchEntities(status){if(!nerData.length)return;
+  // Only apply to currently visible (filtered) entities
+  let ents=nerData;
+  if(nerTypeFilter!=='all')ents=ents.filter(e=>e.type===nerTypeFilter);
+  const indices=ents.map((_,i)=>nerData.indexOf(ents[i])).filter(i=>i>=0);
+  try{
+    await fetch('/api/workspace/entity/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({indices:nerData.map((_,i)=>i),updates:{status}})});
+    nerData.forEach(e=>e.status=status);applyNERFilters();updWS();
+  }catch(e){alert(e.message)}
+}
+
 async function runGNDLookup(){if(!nerData.length){alert('Erst NER ausführen');return}
   sp('GND-Lookup …','lobid.org');
   try{const r=await(await fetch('/api/gnd/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({limit:50})})).json();
-    if(r.error)throw Error(r.error);alert('GND: '+r.matched+'/'+r.total+' gefunden');updWS()
+    if(r.error)throw Error(r.error);renderGNDResults(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}}
+
+function renderGNDResults(r){
+  $('gnd-r').style.display='block';
+  const results=r.results||[];
+  $('gnd-body').innerHTML=results.map(gr=>{
+    const tm=gr.top_match;
+    return '<tr>'+
+      '<td style="font-weight:600">'+esc(gr.text||'')+'</td>'+
+      '<td><span class="etype etype-'+esc(gr.type||'CON')+'">'+esc(gr.type||'')+'</span></td>'+
+      '<td>'+(tm?'<code class="gnd-match">'+esc(tm.gnd_id)+'</code>':'<span class="gnd-none">—</span>')+'</td>'+
+      '<td>'+(tm?esc(tm.preferred_name):'')+'</td>'+
+      '<td style="font-size:.68rem">'+(tm?esc(tm.type||''):'')+'</td>'+
+      '<td style="font-size:.68rem">'+(tm?(tm.alternative_names||[]).slice(0,2).map(n=>esc(n)).join(', '):'')+'</td>'+
+    '</tr>';
+  }).join('');
+  // Update nerData with GND info
+  results.forEach(gr=>{
+    if(gr.top_match){
+      nerData.filter(e=>e.text===gr.text&&e.type===gr.type).forEach(e=>{
+        e.gnd_id=gr.top_match.gnd_id;e.gnd_preferred=gr.top_match.preferred_name;
+      });
+    }
+  });
+  applyNERFilters();
+}
+
 function exportNER(){if(!nerData.length)return;
-  const hdr='text,type,confidence,reasoning,record_id,source\n';
-  const rows=nerData.map(e=>[e.text,e.type,e.confidence,e.reasoning,e.record_id,e.source].map(v=>'"'+(v||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');
+  const hdr='text,type,confidence,reasoning,record_id,source,status,gnd_id,gnd_preferred\n';
+  const rows=nerData.map(e=>[e.text,e.type,e.confidence,e.reasoning,e.record_id,e.source,e.status||'',e.gnd_id||'',e.gnd_preferred||''].map(v=>'"'+(v||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');
   dl('debussy_ner.csv',hdr+rows,'text/csv')}
 
 // === SCAN ===
 async function runScan(){const ds=$('scan-ds').value;if(!ds){alert('Datensatz wählen');return}
   sp('Scan …','');
   try{const r=await(await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,sample_size:parseInt($('scan-n').value)||20,system_prompt:$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);renderScan(r)}catch(e){alert(e.message)}finally{hp()}}
+    body:JSON.stringify({dataset:ds,sample_size:parseInt($('scan-n').value)||20,
+      model:$('cfg-mt').value||'',
+      system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);renderScan(r)
+  }catch(e){alert(e.message)}finally{hp()}}
+
 function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||[];
-  if(!issues.length){$('scan-body').textContent='Keine problematischen Begriffe gefunden.';return}
+  if(!issues.length){$('scan-body').innerHTML='<p style="color:var(--ok)">Keine problematischen Begriffe gefunden.</p>';return}
   $('scan-body').innerHTML=issues.map(i=>'<div class="fd '+(i.severity==='high'?'critical':'warning')+'">'+
     '<strong>'+esc(i.term||'?')+'</strong> <span style="font-size:.7rem;color:#888">'+esc(i.record_id||'')+'</span>'+
     '<div style="font-size:.75rem">'+esc(i.reason||'')+'</div>'+
@@ -343,10 +577,15 @@ async function runEDTF(){const ds=$('edtf-ds').value,col=$('edtf-col').value;
   if(!ds||!col){alert('Datensatz und Spalte wählen');return}
   sp('EDTF …',esc(col));
   try{const r=await(await fetch('/api/edtf',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,column:col,sample_size:parseInt($('edtf-n').value)||0,use_llm:$('edtf-llm').value==='1',system_prompt:$('cfg-sys').value})})).json();
+    body:JSON.stringify({dataset:ds,column:col,sample_size:parseInt($('edtf-n').value)||0,
+      use_llm:$('edtf-llm').value==='1',
+      model:$('cfg-mt').value||'',
+      system_prompt:$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}}
-function renderEDTF(r){$('edtf-e').style.display='none';$('edtf-r').style.display='block';
+
+function renderEDTF(r){
+  $('edtf-e').style.display='none';$('edtf-r').style.display='block';
   $('edtf-sg').innerHTML='<div class="mt su"><div class="v">'+(r.total||0)+'</div><div class="l">Total</div></div><div class="mt su"><div class="v">'+(r.converted||0)+'</div><div class="l">Konvertiert</div></div><div class="mt wr"><div class="v">'+(r.failed||0)+'</div><div class="l">Fehlgeschlagen</div></div><div class="mt in"><div class="v">'+(r.undated||0)+'</div><div class="l">Undatiert</div></div>';
   $('edtf-body').innerHTML=(r.results||[]).map(e=>'<tr><td>'+esc(e.original||'—')+'</td><td><strong>'+esc(e.edtf||'—')+'</strong></td><td><span class="conf-bar" style="width:'+Math.round((e.confidence||0)*40)+'px;background:'+((e.confidence||0)>.7?'var(--ok)':'var(--warn)')+'"></span>'+((e.confidence||0)*100).toFixed(0)+'%</td><td style="font-size:.65rem">'+esc(e.method||'')+'</td><td style="font-size:.7rem">'+esc(e.note||'')+'</td></tr>').join('')}
 
@@ -357,6 +596,7 @@ async function previewXML(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz 
     body:JSON.stringify({dataset:ds,record_id:$('exp-rec').value})})).json();
     if(r.error)throw Error(r.error);$('exp-xml').style.display='block';$('exp-xml').textContent=r.xml||'(leer)'
   }catch(e){alert(e.message)}finally{hp()}}
+
 async function batchXML(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz wählen');return}
   sp('Batch-Export …','');
   try{const r=await(await fetch('/api/export/goobi-batch',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -405,6 +645,87 @@ async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json()
     }else{$('gi').textContent='Nicht verbunden. .env prüfen.'}
   }catch(e){$('gd').className='dot off';$('gl').textContent='Fehler'}}
 
+// === IMAGES ===
+let uploadedImages = [];
+
+function applyImgPreset(){
+  const key = $('img-preset').value;
+  if(key !== 'custom') $('img-sp').value = PRESETS[key] || '';
+}
+
+async function uploadImages(){
+  const inp = $('img-files');
+  if(!inp.files.length){alert('Keine Dateien gewählt.');return}
+  const fd = new FormData();
+  for(const f of inp.files) fd.append('files', f);
+  sp('Bilder werden hochgeladen…','');
+  try{
+    const r = await fetch('/api/images/upload',{method:'POST',body:fd});
+    const data = await r.json();
+    if(data.error){$('img-upload-status').textContent='Fehler: '+data.error;hp();return}
+    uploadedImages = data.images || [];
+    $('img-upload-status').textContent = data.uploaded + ' Bild(er) hochgeladen.';
+    renderImgGrid();
+    hp();
+  }catch(e){$('img-upload-status').textContent='Fehler: '+e;hp();}
+}
+
+function renderImgGrid(){
+  const grid = $('img-grid');
+  const empty = $('img-list-empty');
+  if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
+  empty.style.display='none';
+  grid.innerHTML = uploadedImages.map(img => `
+    <div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa">
+      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="${esc(img.filename)}">${esc(img.filename)}</div>
+      <div style="color:#888;font-size:.65rem">${(img.size_bytes/1024).toFixed(1)} KB</div>
+      <div style="margin-top:.2rem"><span class="bg ${img.analyzed?'ac':'no'}">${img.analyzed?'analysiert':'ausstehend'}</span></div>
+    </div>`).join('');
+}
+
+async function analyzeImages(){
+  if(!uploadedImages.length){alert('Erst Bilder hochladen.');return}
+  const mod = $('img-model').value;
+  const sp_text = $('img-sp').value;
+  const ids = uploadedImages.map(i=>i.id);
+  sp('Bildanalyse läuft…', ids.length + ' Bild(er)');
+  try{
+    const r = await fetch('/api/images/analyze',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text})
+    });
+    const data = await r.json();
+    if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
+    renderImgResults(data.results||[]);
+    hp();
+    // Update analyzed flag
+    (data.results||[]).forEach(res=>{
+      const img = uploadedImages.find(i=>i.id===res.id);
+      if(img) img.analyzed = !!res.result;
+    });
+    renderImgGrid();
+  }catch(e){$('img-results-empty').textContent='Fehler: '+e;hp();}
+}
+
+function renderImgResults(results){
+  const el=$('img-results');
+  const empty=$('img-results-empty');
+  if(!results.length){empty.style.display='block';el.innerHTML='';return}
+  empty.style.display='none';
+  el.innerHTML = results.map(res=>{
+    if(res.error) return `<div class="card" style="border-color:#e55"><strong>${esc(res.id||res.filename||'')}</strong><br><span style="color:#c00">${esc(res.error)}</span></div>`;
+    const r = res.result || {};
+    return `<div class="card" style="margin-bottom:.5rem">
+      <strong style="font-size:.8rem">${esc(res.filename||res.id)}</strong>
+      <p style="font-size:.78rem;margin:.3rem 0">${esc(r.description||'')}</p>
+      ${r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':''}
+      ${r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':''}
+      ${r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':''}
+    </div>`;
+  }).join('');
+}
+
 // === CATALOG ===
 function renderCatalog(){$('cat-body').innerHTML=CATALOG.map(c=>'<tr><td style="font-size:.62rem">'+esc(c.id)+'</td><td style="font-weight:600">'+esc(c.name)+'</td><td style="font-size:.68rem">'+esc(c.module)+'</td><td><span class="bg '+(c.status==='done'?'ac':c.status==='partial'?'pl':'no')+'">'+esc(c.status_label)+'</span></td><td style="font-size:.68rem">'+esc(c.tests||'—')+'</td><td style="font-size:.7rem;color:#666">'+esc(c.note||'')+'</td></tr>').join('')}
 
@@ -413,10 +734,9 @@ function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classLi
 function hp(){$('po').classList.remove('a')}
 
 // === INIT ===
-(function(){loadPreset();
+(function(){loadPreset(); applyImgPreset();
   $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
   renderCatalog();chkGPU();updWS()})();
 </script>
-
 </body>
 </html>

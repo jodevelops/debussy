@@ -1,103 +1,65 @@
-"""
-Configuration management.
-
-Reads settings from (in order of priority):
-1. Environment variables (KWB_GPUSTACK_URL, KWB_GPUSTACK_KEY, etc.)
-2. .env file in project root
-3. Defaults
-
-API keys are NEVER hardcoded or logged.
-"""
-
+"""Configuration management — reads from env vars and .env file."""
 from __future__ import annotations
-
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-
 from kwb.ai.provider import ProviderConfig
 
-
-def _load_dotenv(path: Path | None = None) -> dict[str, str]:
-    """Minimal .env parser — no external dependency needed."""
+def _load_dotenv(path=None):
     if path is None:
-        # Walk up from CWD to find .env
-        for candidate in [Path.cwd(), Path.cwd().parent, Path(__file__).parent.parent.parent.parent]:
-            env_file = candidate / ".env"
-            if env_file.exists():
-                path = env_file
+        for c in [Path.cwd(), Path.cwd().parent, Path(__file__).parent.parent.parent.parent]:
+            if (c / ".env").exists():
+                path = c / ".env"
                 break
-
-    if path is None or not path.exists():
+    if not path or not Path(path).exists():
         return {}
-
     result = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
+    for line in Path(path).read_text("utf-8").splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         if "=" in line:
-            key, _, value = line.partition("=")
-            key = key.strip()
-            value = value.strip().strip("\"'")
-            result[key] = value
+            k, _, v = line.partition("=")
+            result[k.strip()] = v.strip().strip("\"'")
     return result
 
-
-def _get(key: str, dotenv: dict[str, str], default: str = "") -> str:
-    """Get a config value: env var > .env > default."""
+def _get(key, dotenv, default=""):
     return os.environ.get(key, dotenv.get(key, default))
-
 
 @dataclass
 class KWBConfig:
-    """Central configuration for the Kuratierwerkbank."""
-
-    # GPUStack / AI provider
     gpustack_url: str = ""
     gpustack_key: str = ""
     gpustack_model_text: str = ""
     gpustack_model_vision: str = ""
-
-    # Processing
     batch_size: int = 50
     batch_delay_seconds: float = 0.1
     max_retries: int = 3
     timeout_seconds: int = 120
-
-    # Output
     language: str = "de"
 
     @property
-    def is_gpustack_configured(self) -> bool:
-        return bool(self.gpustack_url)
+    def is_gpustack_configured(self): return bool(self.gpustack_url)
 
-    def to_provider_config(self) -> ProviderConfig:
-        """Convert to a ProviderConfig for the AI provider."""
+    def to_provider_config(self):
         return ProviderConfig(
-            base_url=self.gpustack_url,
-            api_key=self.gpustack_key,
+            base_url=self.gpustack_url, api_key=self.gpustack_key,
             default_model=self.gpustack_model_text,
-            timeout_seconds=self.timeout_seconds,
-            max_retries=self.max_retries,
+            timeout_seconds=self.timeout_seconds, max_retries=self.max_retries,
         )
 
-    def display_safe(self) -> dict[str, str]:
-        """Return config as dict with secrets masked."""
+    def display_safe(self):
+        from kwb.core.utils import mask_secret
         return {
             "gpustack_url": self.gpustack_url or "(nicht gesetzt)",
-            "gpustack_key": "***" if self.gpustack_key else "(nicht gesetzt)",
+            "gpustack_key": mask_secret(self.gpustack_key),
             "gpustack_model_text": self.gpustack_model_text or "(nicht gesetzt)",
             "gpustack_model_vision": self.gpustack_model_vision or "(nicht gesetzt)",
-            "batch_size": str(self.batch_size),
-            "language": self.language,
+            "batch_size": str(self.batch_size), "language": self.language,
         }
 
-
-def load_config(dotenv_path: Path | None = None) -> KWBConfig:
-    """Load configuration from environment and .env file."""
+def load_config(dotenv_path=None):
     dotenv = _load_dotenv(dotenv_path)
-
     return KWBConfig(
         gpustack_url=_get("KWB_GPUSTACK_URL", dotenv),
         gpustack_key=_get("KWB_GPUSTACK_KEY", dotenv),

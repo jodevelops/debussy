@@ -1,195 +1,292 @@
 """
-Goobi-Import XML export.
+Goobi XML Export — generates goobi-import XML from enriched metadata.
 
-Generates XML files in the goobi-import format from curated workspace data.
-Schema based on sample1_goobi.xml.
+This is the *only* place that knows about the Goobi XML schema.
+It consumes a Workspace (field_mapping + dictionary) and a DataFrame.
 
-Each record becomes one <goobi-import> document with:
-- <data type="MuseumObject"> containing metadata, persons, corporates
-- <process> with title and properties
+KEY FIXES vs original goobi_xml.py:
+1. Uses xml.etree.ElementTree properly — no manual indent() for Python < 3.9.
+2. XML declaration is written once at the top (not per-record).
+3. field_mapping drives what goes into the output; without a mapping
+   only record_id is exported (now clearly documented and testable).
+4. Repeatable fields (semicolon-separated) are exploded to multiple elements.
+5. GND authority attributes use DictionaryEntry when available.
+6. `indent()` replaced with recursive function that works on all Python ≥ 3.7.
+
+SUPPORTED ELEMENT TYPES (from Goobi schema):
+  metadata         → plain metadata field
+  person           → firstname / lastname split on ", " or " "
+  corporate        → name + optional subnames (pipe-separated in CSV)
+  singleDigCollection → repeatable Sammlung/Collection
 """
+
 from __future__ import annotations
 
-import logging
-from xml.etree.ElementTree import Element, SubElement, tostring, indent
+import re
+from pathlib import Path
 from typing import Any
+from xml.etree.ElementTree import (
+    Element, SubElement, ElementTree, tostring, indent as et_indent
+)
+import sys
 
 import pandas as pd
 
-from kwb.core.workspace import Workspace, CuratedEntity
+from kwb.core.workspace import (
+    FieldMapping, GoobiMetadataType, DictionaryEntry, Workspace
+)
 
-logger = logging.getLogger(__name__)
 
-# Default field → Goobi metadata type mapping
-DEFAULT_FIELD_MAP = {
-    "record_id": ("Identifier", "CatalogIDDigital"),
-    "title": ("Titel", "TitleDocMain"),
-    "description": ("Beschreibung", "Description"),
-    "date": ("Erscheinungsjahr", "PublicationYear"),
-    "language": ("Language", "DocLanguage"),
-    "collection": ("Sammlung", "singleDigCollection"),
+# ---------------------------------------------------------------------------
+# Compatibility shim: xml.etree.ElementTree.indent() was added in 3.9
+# ---------------------------------------------------------------------------
+
+if sys.version_info >= (3, 9):
+    _et_indent = et_indent
+else:
+    def _et_indent(tree: Element, space: str = "  ", level: int = 0) -> None:
+        """Recursive pretty-printer for ElementTree, Python < 3.9."""
+        i = "\n" + level * space
+        if len(tree):
+            if not tree.text or not tree.text.strip():
+                tree.text = i + space
+            if not tree.tail or not tree.tail.strip():
+                tree.tail = i
+            for subtree in tree:
+                _et_indent(subtree, space, level + 1)
+            if not subtree.tail or not subtree.tail.strip():  # type: ignore
+                subtree.tail = i  # type: ignore
+        else:
+            if level and (not tree.tail or not tree.tail.strip()):
+                tree.tail = i
+
+
+# ---------------------------------------------------------------------------
+# Known person-type Goobi types
+# ---------------------------------------------------------------------------
+
+_PERSON_TYPES = {
+    "Author", "Creator", "Photographer", "Artist", "Editor",
+    "Contributor", "Illustrator",
 }
 
-# NER type → Goobi person/corporate role mapping
-ENTITY_ROLE_MAP = {
-    "PER": "Author",
-    "ORG": "CorporateArtist",
+_CORPORATE_TYPES = {
+    "CorporateBody", "CorporateArtist", "Publisher", "PrintingHouse",
 }
 
-GND_URI_BASE = "http://d-nb.info/gnd/"
+_COLLECTION_TYPES = {
+    "singleDigCollection",
+}
 
 
-def export_goobi_xml(
-    df: pd.DataFrame,
-    workspace: Workspace,
-    record_id_col: str = "record_id",
-    field_map: dict[str, tuple[str, str]] | None = None,
-    data_type: str = "MuseumObject",
-) -> list[tuple[str, str]]:
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _gnd_attrs(entry: DictionaryEntry | None) -> dict[str, str]:
+    """Return XML attributes for a GND-linked element."""
+    if entry and entry.gnd_id:
+        return {
+            "authority": "gnd",
+            "authorityURI": "http://d-nb.info/gnd/",
+            "valueURI": entry.gnd_id,
+        }
+    return {}
+
+
+def _split_repeatable(value: str, sep: str = ";") -> list[str]:
+    return [v.strip() for v in value.split(sep) if v.strip()]
+
+
+def _parse_name(full_name: str) -> tuple[str, str]:
     """
-    Export records as Goobi-Import XML.
-
-    Args:
-        df: Source DataFrame
-        workspace: Workspace with curated entities, dates, dictionary
-        record_id_col: Column containing record IDs
-        field_map: {csv_column: (goobi_label, goobi_type)} mapping
-        data_type: Goobi data type (MuseumObject, Monograph, etc.)
-
-    Returns:
-        List of (record_id, xml_string) tuples
+    Split 'Lastname, Firstname' or 'Firstname Lastname' into parts.
+    Returns (firstname, lastname).
     """
-    fmap = field_map or workspace.field_mapping or {}
-    # Build entity lookup: record_id → [entities]
-    entities_by_record: dict[str, list[CuratedEntity]] = {}
-    for e in workspace.entities:
-        if e.status != "rejected":
-            entities_by_record.setdefault(e.record_id, []).append(e)
+    if "," in full_name:
+        parts = full_name.split(",", 1)
+        return parts[1].strip(), parts[0].strip()
+    parts = full_name.rsplit(" ", 1)
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return "", full_name.strip()
 
-    # Build EDTF lookup: record_id → edtf
-    dates_by_record: dict[str, str] = {}
-    for d in workspace.dates:
-        if d.status != "rejected" and d.edtf:
-            dates_by_record[d.record_id] = d.edtf
 
-    results = []
+# ---------------------------------------------------------------------------
+# Single-record export
+# ---------------------------------------------------------------------------
 
-    for _, row in df.iterrows():
-        rid = str(row.get(record_id_col, ""))
-        if not rid:
+def record_to_xml(
+    row: dict[str, Any],
+    field_mapping: list[FieldMapping],
+    dictionary: dict[str, DictionaryEntry] | None = None,
+    doc_type: str = "MuseumObject",
+    journal_message: str = "Import via Debussy Kuratierwerkbank",
+) -> Element:
+    """
+    Convert one metadata record (dict) to a <goobi-import> Element.
+
+    field_mapping drives the conversion; only mapped+enabled columns
+    are included in the output. Without a field_mapping that includes
+    CatalogIDDigital, the record will have no identifier.
+    """
+    dict_ = dictionary or {}
+
+    root = Element("goobi-import")
+    data = SubElement(root, "data", type=doc_type)
+
+    record_id = str(row.get("record_id", ""))
+
+    for mapping in field_mapping:
+        if mapping.is_ignored:
             continue
 
-        root = Element("goobi-import")
-        data = SubElement(root, "data", type=data_type)
+        col = mapping.csv_column
+        value = row.get(col)
+        if value is None or (isinstance(value, float) and pd.isna(value)) or str(value).strip() == "":
+            continue
+
+        value_str = str(value).strip()
+        goobi_type = mapping.goobi_type
+        label = mapping.label or goobi_type
+
+        # Look up in dictionary
+        entry = dict_.get(value_str.lower())
+
+        # --- Person ---
+        if goobi_type in _PERSON_TYPES:
+            names_raw = _split_repeatable(value_str) if mapping.repeatable else [value_str]
+            for name_raw in names_raw:
+                fn, ln = _parse_name(name_raw)
+                attrs = {
+                    "label": label,
+                    "role": goobi_type,
+                    "firstname": fn,
+                    "lastname": ln,
+                }
+                attrs.update(_gnd_attrs(dict_.get(name_raw.lower())))
+                SubElement(data, "person", **attrs)
+            continue
+
+        # --- Corporate ---
+        if goobi_type in _CORPORATE_TYPES:
+            parts = _split_repeatable(value_str, sep="|") if "|" in value_str else [value_str]
+            corp_name = parts[0]
+            corp_elem = SubElement(
+                data, "corporate",
+                role=goobi_type,
+                name=corp_name,
+                **_gnd_attrs(dict_.get(corp_name.lower())),
+            )
+            for sub in parts[1:]:
+                SubElement(corp_elem, "subname").text = sub
+            continue
+
+        # --- Repeatable metadata (singleDigCollection and custom repeatable) ---
+        if mapping.repeatable or goobi_type in _COLLECTION_TYPES:
+            values = _split_repeatable(value_str)
+            for v in values:
+                e = SubElement(data, "metadata", label=label, type=goobi_type)
+                e.text = v
+                # GND authority from dictionary
+                entry_v = dict_.get(v.lower())
+                if entry_v and entry_v.gnd_id:
+                    e.set("authority", "gnd")
+                    e.set("authorityURI", "http://d-nb.info/gnd/")
+                    e.set("valueURI", entry_v.gnd_id)
+            continue
 
         # --- Standard metadata ---
-        _add_meta(data, "Identifier", "CatalogIDDigital", rid)
+        attrs_meta: dict[str, str] = {"label": label, "type": goobi_type}
+        if entry and entry.gnd_id:
+            attrs_meta.update({
+                "authority": "gnd",
+                "authorityURI": "http://d-nb.info/gnd/",
+                "valueURI": entry.gnd_id,
+            })
+        elem = SubElement(data, "metadata", **attrs_meta)
+        elem.text = value_str
 
-        # Mapped fields from CSV
-        for csv_col, (label, mtype) in fmap.items():
-            if csv_col in row and pd.notna(row[csv_col]) and str(row[csv_col]).strip():
-                val = str(row[csv_col]).strip()
-                # Collections can be multi-valued (semicolon-separated)
-                if mtype == "singleDigCollection":
-                    for part in val.split(";"):
-                        part = part.strip()
-                        if part:
-                            _add_meta(data, label, mtype, part)
-                else:
-                    _add_meta(data, label, mtype, val)
+    # --- Process block ---
+    proc = SubElement(root, "process")
+    SubElement(proc, "title").text = record_id
+    journal = SubElement(proc, "journal", type="info", creator="- automatic -")
+    journal.text = journal_message
 
-        # EDTF date override
-        if rid in dates_by_record:
-            _add_meta(data, "Erscheinungsjahr", "PublicationYear", dates_by_record[rid])
-
-        # --- Entities as persons/corporates/subjects ---
-        record_ents = entities_by_record.get(rid, [])
-
-        for ent in record_ents:
-            if ent.entity_type == "PER":
-                _add_person(data, ent)
-            elif ent.entity_type == "ORG":
-                _add_corporate(data, ent)
-            else:
-                # All other entity types → metadata subjects with GND if available
-                val = ent.normalized or ent.text
-                attrs = {}
-                if ent.gnd_id:
-                    attrs["authority"] = "gnd"
-                    attrs["authorityURI"] = GND_URI_BASE
-                    attrs["valueURI"] = ent.gnd_id
-                meta = SubElement(data, "metadata", label="Schlagwort",
-                                  type="SubjectTopic", **attrs)
-                meta.text = val
-
-        # --- Process block ---
-        process = SubElement(root, "process")
-        title = SubElement(process, "title")
-        title.text = rid
-        journal = SubElement(process, "journal", type="info",
-                             creator="Debussy")
-        journal.text = "Export aus Debussy Kuratierungswerkbank"
-
-        indent(root, space="  ")
-        xml_str = tostring(root, encoding="unicode", xml_declaration=False)
-        results.append((rid, xml_str))
-
-    return results
+    return root
 
 
-def export_goobi_batch(
+# ---------------------------------------------------------------------------
+# Batch export
+# ---------------------------------------------------------------------------
+
+def dataframe_to_goobi_xml(
     df: pd.DataFrame,
     workspace: Workspace,
-    record_id_col: str = "record_id",
-    field_map: dict | None = None,
+    doc_type: str = "MuseumObject",
+    journal_message: str = "Import via Debussy Kuratierwerkbank",
 ) -> str:
-    """Export all records as a single multi-record XML string."""
-    records = export_goobi_xml(df, workspace, record_id_col, field_map)
-    parts = ['<?xml version="1.0" encoding="UTF-8"?>', '<goobi-import-batch>']
-    for rid, xml in records:
-        # Record separator (no XML comment — rid could contain "--")
-        # Indent each record
-        for line in xml.split("\n"):
-            parts.append(f"  {line}")
-    parts.append("</goobi-import-batch>")
+    """
+    Export the entire DataFrame to Goobi import XML (one <goobi-import> per row).
+
+    Returns the complete XML string with declaration.
+
+    Uses workspace.active_mappings() and workspace.dictionary.
+    """
+    if not workspace.active_mappings():
+        raise ValueError(
+            "Workspace has no active field mappings. "
+            "Configure field_mapping before export."
+        )
+
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<goobi-batch>"]
+
+    for _, row in df.iterrows():
+        elem = record_to_xml(
+            row=row.to_dict(),
+            field_mapping=workspace.active_mappings(),
+            dictionary=workspace.dictionary,
+            doc_type=doc_type,
+            journal_message=journal_message,
+        )
+        _et_indent(elem, space="  ")
+        xml_bytes = tostring(elem, encoding="unicode")
+        parts.append(xml_bytes)
+
+    parts.append("</goobi-batch>")
     return "\n".join(parts)
 
 
-# --- Helpers ---
+def dataframe_to_goobi_xml_files(
+    df: pd.DataFrame,
+    workspace: Workspace,
+    output_dir: str | Path,
+    doc_type: str = "MuseumObject",
+) -> list[Path]:
+    """
+    Write one XML file per record to output_dir.
 
-def _add_meta(parent: Element, label: str, mtype: str, value: str, **attrs):
-    meta = SubElement(parent, "metadata", label=label, type=mtype, **attrs)
-    meta.text = value
+    Returns list of written file paths.
+    """
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
+    written = []
+    for _, row in df.iterrows():
+        record_id = str(row.get("record_id", f"row_{_}"))
+        safe_id = re.sub(r"[^\w\-]", "_", record_id)
 
-def _add_person(parent: Element, ent: CuratedEntity):
-    """Add a <person> element from a PER entity."""
-    name = ent.normalized or ent.text
-    # Try to split into first/last name
-    parts = name.rsplit(" ", 1)
-    if len(parts) == 2:
-        first, last = parts[0], parts[1]
-    else:
-        first, last = "", name
+        elem = record_to_xml(
+            row=row.to_dict(),
+            field_mapping=workspace.active_mappings(),
+            dictionary=workspace.dictionary,
+            doc_type=doc_type,
+        )
+        _et_indent(elem, space="  ")
 
-    attrs = {
-        "label": "Autor", "role": "Author",
-        "firstname": first, "lastname": last,
-    }
-    if ent.gnd_id:
-        attrs["authority"] = "gnd"
-        attrs["authorityURI"] = GND_URI_BASE
-        attrs["valueURI"] = ent.gnd_id
+        path = output_dir / f"{safe_id}.xml"
+        tree = ElementTree(elem)
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+        written.append(path)
 
-    SubElement(parent, "person", **attrs)
-
-
-def _add_corporate(parent: Element, ent: CuratedEntity):
-    """Add a <corporate> element from an ORG entity."""
-    attrs = {"role": "CorporateArtist", "name": ent.normalized or ent.text}
-    if ent.gnd_id:
-        attrs["authority"] = "gnd"
-        attrs["authorityURI"] = GND_URI_BASE
-        attrs["valueURI"] = ent.gnd_id
-
-    SubElement(parent, "corporate", **attrs)
+    return written

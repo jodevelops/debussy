@@ -1,6 +1,6 @@
 [project]
 name = "debussy"
-version = "0.5.1"
+version = "0.5.2"
 description = "AI-assisted curation workbench for GLAM collection data"
 readme = "README.md"
 license = {text = "MIT"}
@@ -26,7 +26,8 @@ dependencies = [
 api = ["fastapi>=0.100", "uvicorn[standard]>=0.20", "python-multipart>=0.0.6"]
 ai = ["httpx>=0.24"]
 dev = ["pytest>=7.0", "pytest-cov>=4.0", "ruff>=0.1"]
-all = ["kuratierwerkbank[api,ai,dev]"]
+# FIX: was "kuratierwerkbank[api,ai,dev]" (wrong package name)
+all = ["debussy[api,ai,dev]"]
 
 [project.scripts]
 kwb = "kwb.cli:main"
