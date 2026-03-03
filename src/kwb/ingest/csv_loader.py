@@ -25,6 +25,8 @@ from typing import Any
 
 import pandas as pd
 
+from kwb.core.models import ColumnProfile, DatasetProfile
+
 logger = logging.getLogger(__name__)
 
 MAX_ROWS = 50_000
@@ -34,6 +36,94 @@ SUPPORTED_EXTENSIONS = {".csv", ".tsv", ".txt"}
 class CSVLoadError(Exception):
     """Raised when a CSV cannot be loaded for a known reason."""
 
+
+def detect_id_column(df: pd.DataFrame) -> str | None:
+    """
+    Detect the ID column (primary key) in a DataFrame.
+    
+    Heuristics:
+    1. Column named exactly "record_id" → return it
+    2. Column named exactly "code" and all values unique → return it
+    3. No other heuristics (return None if ambiguous)
+    """
+    # Try exact matches first
+    if "record_id" in df.columns:
+        return "record_id"
+    
+    if "code" in df.columns and df["code"].nunique() == len(df):
+        return "code"
+    
+    return None
+
+
+def profile_column(series: pd.Series) -> ColumnProfile:
+    """
+    Analyze a DataFrame column and return a ColumnProfile.
+    
+    Counts:
+    - total_count: length of series (including NA)
+    - non_null_count: count of non-NA values
+    - unique_count: number of unique non-null values
+    - fill_rate: non_null_count / total_count
+    """
+    total = len(series)
+    non_null = series.notna().sum()
+    unique = series.nunique()  # nunique excludes NaN/None
+    fill = non_null / total if total > 0 else 0.0
+    
+    # Infer dtype
+    if series.dtype == "object":
+        dtype = "string"
+    else:
+        dtype = str(series.dtype)
+    
+    # Sample values (first 3 non-null unique values for display)
+    sample = series.dropna().unique()[:3].tolist()
+    
+    return ColumnProfile(
+        name=series.name,
+        dtype=dtype,
+        total_count=int(total),
+        non_null_count=int(non_null),
+        unique_count=int(unique),
+        fill_rate=float(fill),
+        sample_values=sample,
+    )
+
+
+def ingest_csv(path) -> tuple[pd.DataFrame, DatasetProfile]:
+    """Load CSV and return (DataFrame, DatasetProfile)."""
+    path = Path(path)
+    
+    # Load the raw DataFrame
+    df = load_csv(path)
+    
+    # Build profile
+    df_analysis = df.replace("", pd.NA)
+    columns = [profile_column(df_analysis[col]) for col in df.columns]
+    id_column = detect_id_column(df)
+    
+    # Detect encoding and line ending
+    enc, has_bom = detect_encoding(path)
+    
+    # Detect line ending from raw file
+    raw = path.read_bytes()
+    has_crlf = b"\r\n" in raw
+    line_ending = "CRLF" if has_crlf else "LF"
+    
+    profile = DatasetProfile(
+        source_path=str(path),
+        source_name=path.name,
+        row_count=len(df),
+        column_count=len(df.columns),
+        columns=columns,
+        id_column=id_column,
+        encoding_detected=enc,
+        has_bom=has_bom,
+        line_ending=line_ending,
+    )
+    
+    return df, profile
 
 def detect_encoding(path: str | Path) -> tuple[str, bool]:
     """
