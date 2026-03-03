@@ -89,8 +89,7 @@ def profile_column(series: pd.Series) -> ColumnProfile:
         fill_rate=float(fill),
         sample_values=sample,
     )
-
-
+  
 def ingest_csv(path) -> tuple[pd.DataFrame, DatasetProfile]:
     """Load CSV and return (DataFrame, DatasetProfile)."""
     path = Path(path)
