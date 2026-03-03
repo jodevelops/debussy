@@ -33,7 +33,9 @@ SUPPORTED_EXTENSIONS = {".csv", ".tsv", ".txt"}
 
 class CSVLoadError(Exception):
     """Raised when a CSV cannot be loaded for a known reason."""
-
+  
+def ingest_csv(path):
+    return load_csv(path)
 
 def detect_encoding(path: str | Path) -> tuple[str, bool]:
     """
@@ -202,3 +204,4 @@ def profile_csv(df: pd.DataFrame) -> list[dict[str, Any]]:
             "sample": non_null.head(3).tolist(),
         })
     return result
+
