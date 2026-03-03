@@ -435,16 +435,16 @@ async def workspace_entities():
         for i,e in enumerate(ws.entities)
     ],"status_counts":ws.entities_by_status()}
 
-@app.post("/api/workspace/entity/{idx}")
-async def workspace_entity_update(idx: int, updates: dict):
-    if _ws().update_entity(idx, updates): return {"ok":True}
-    return JSONResponse({"error":"Index ungültig"},400)
-
 @app.post("/api/workspace/entity/batch")
 async def workspace_entity_batch(request: dict):
     indices = request.get("indices",[]); updates = request.get("updates",{})
     count = sum(1 for i in indices if _ws().update_entity(i, updates))
     return {"updated":count}
+
+@app.post("/api/workspace/entity/{idx}")
+async def workspace_entity_update(idx: int, updates: dict):
+    if _ws().update_entity(idx, updates): return {"ok":True}
+    return JSONResponse({"error":"Index ungültig"},400)
 
 @app.get("/api/workspace/dictionary")
 async def workspace_dictionary():
