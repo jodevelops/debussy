@@ -225,8 +225,12 @@ async def analyze(files: list[UploadFile] = File(...)):
         except Exception as e:
             return JSONResponse({"error": f"{u.filename}: {e}"}, 400)
         finally: tp.unlink(missing_ok=True)
-    report = analyze_datasets(datasets); _state["report"] = report
-    return _report_json(report, render_report(report))
+    try:
+        report = analyze_datasets(datasets)
+        _state["report"] = report
+        return _report_json(report, render_report(report))
+    except Exception as e:
+        return JSONResponse({"error": f"Analyse fehlgeschlagen: {e}"}, 500)
 
 @app.get("/api/dataset/{name}/columns")
 async def dataset_columns(name: str):

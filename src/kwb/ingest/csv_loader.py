@@ -17,11 +17,16 @@ from kwb.core.models import ColumnProfile, DatasetProfile
 
 
 def detect_encoding(path: Path) -> tuple[str, bool]:
-    """Detect file encoding and BOM presence."""
+    """Detect file encoding and BOM presence. Falls back to latin-1 for non-UTF-8 files."""
     raw = path.read_bytes()[:4096]
     has_bom = raw[:3] == b"\xef\xbb\xbf"
-    encoding = "utf-8-sig" if has_bom else "utf-8"
-    return encoding, has_bom
+    if has_bom:
+        return "utf-8-sig", True
+    try:
+        raw.decode("utf-8")
+        return "utf-8", False
+    except UnicodeDecodeError:
+        return "latin-1", False
 
 
 def detect_line_ending(path: Path) -> str:
@@ -71,7 +76,7 @@ def profile_column(series: pd.Series) -> ColumnProfile:
         dtype=str(series.dtype),
         total_count=len(series),
         non_null_count=len(non_null),
-        unique_count=series.nunique(),
+        unique_count=int(series.nunique()),
         fill_rate=round(len(non_null) / len(series), 4) if len(series) > 0 else 0.0,
         sample_values=sample,
         value_lengths={
