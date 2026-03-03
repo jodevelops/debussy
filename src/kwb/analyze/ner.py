@@ -18,7 +18,6 @@ Entity types follow standard ontologies (not geography-specific):
 """
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from enum import Enum
@@ -27,23 +26,24 @@ from typing import Any
 import pandas as pd
 
 from kwb.ai.provider import AIMessage, AIProvider
-from kwb.ai.batch import process_batch, BatchReport, _try_parse_json
+from kwb.ai.batch import process_batch, BatchReport
+from kwb.core.utils import try_parse_json as _try_parse_json
 
 logger = logging.getLogger(__name__)
 
 
 class EntityType(str, Enum):
     """Standard NER entity types, GLAM-extended."""
-    PER = "PER"   # Person
-    ORG = "ORG"   # Organization
-    LOC = "LOC"   # Location (geographic features)
-    GPE = "GPE"   # Geo-political entity (city, country)
-    FAC = "FAC"   # Facility / named building
-    EVT = "EVT"   # Event
-    WRK = "WRK"   # Work / publication
-    DAT = "DAT"   # Date / time expression
-    ETH = "ETH"   # Ethnic / cultural group
-    CON = "CON"   # Concept / subject
+    PER = "PER"
+    ORG = "ORG"
+    LOC = "LOC"
+    GPE = "GPE"
+    FAC = "FAC"
+    EVT = "EVT"
+    WRK = "WRK"
+    DAT = "DAT"
+    ETH = "ETH"
+    CON = "CON"
 
     @property
     def label_de(self) -> str:
@@ -63,14 +63,19 @@ class Entity:
     entity_type: EntityType
     confidence: float = 0.0
     reasoning: str = ""
-    source: str = ""         # "spacy", "llm", "manual"
+    source: str = ""         # "spacy", "llm", "hybrid", "manual"
     record_id: str = ""
     column: str = ""
     gnd_id: str | None = None
     gnd_preferred: str | None = None
     wikidata_id: str | None = None
     normalized: str | None = None
-    reviewed: bool = False   # Manual review flag
+    reviewed: bool = False
+
+    @property
+    def dedup_key(self) -> str:
+        """Case-insensitive deduplication key: (text.lower().strip(), entity_type)."""
+        return f"{self.text.strip().lower()}||{self.entity_type.value}"
 
 
 @dataclass
@@ -87,17 +92,23 @@ class NERResult:
         return result
 
     @property
-    def unique_entities(self) -> dict[str, Entity]:
-        """Deduplicated by (text, type), keeping highest confidence."""
-        best: dict[str, Entity] = {}
+    def unique_entities(self) -> dict[str, "Entity"]:
+        """Deduplicated by dedup_key (case-insensitive text + type), keeping highest confidence."""
+        best: dict[str, "Entity"] = {}
         for e in self.entities:
-            key = f"{e.text}||{e.entity_type.value}"
+            key = e.dedup_key
             if key not in best or e.confidence > best[key].confidence:
                 best[key] = e
         return best
 
-    def to_dict_list(self) -> list[dict]:
-        """Serialize for JSON/API."""
+    def to_dict_list(self, deduplicated: bool = True) -> list[dict]:
+        """Serialize for JSON/API.
+
+        Args:
+            deduplicated: If True (default), returns only unique entities per dedup_key.
+                          If False, returns all entities including duplicates.
+        """
+        source = list(self.unique_entities.values()) if deduplicated else self.entities
         return [
             {
                 "text": e.text, "type": e.entity_type.value,
@@ -109,7 +120,7 @@ class NERResult:
                 "wikidata_id": e.wikidata_id,
                 "normalized": e.normalized, "reviewed": e.reviewed,
             }
-            for e in self.entities
+            for e in source
         ]
 
 
@@ -120,7 +131,6 @@ class NERResult:
 _spacy_nlp = None
 
 def _get_spacy(model: str = "de_core_news_lg"):
-    """Load SpaCy model lazily. Falls back to smaller models."""
     global _spacy_nlp
     if _spacy_nlp is not None:
         return _spacy_nlp
@@ -133,14 +143,13 @@ def _get_spacy(model: str = "de_core_news_lg"):
                 return _spacy_nlp
             except OSError:
                 continue
-        logger.warning("No SpaCy German model found. Install with: python -m spacy download de_core_news_lg")
+        logger.warning("No SpaCy German model found.")
         return None
     except ImportError:
-        logger.info("SpaCy not installed. Using LLM-only NER.")
+        logger.info("SpaCy not installed.")
         return None
 
 
-# SpaCy to our type mapping
 _SPACY_TYPE_MAP = {
     "PER": EntityType.PER, "PERSON": EntityType.PER,
     "ORG": EntityType.ORG,
@@ -150,7 +159,7 @@ _SPACY_TYPE_MAP = {
     "EVENT": EntityType.EVT,
     "WORK_OF_ART": EntityType.WRK,
     "DATE": EntityType.DAT,
-    "NORP": EntityType.ETH,  # nationalities, religious/political groups
+    "NORP": EntityType.ETH,
     "MISC": EntityType.CON,
 }
 
@@ -159,25 +168,16 @@ def ner_spacy(
     texts: list[dict[str, str]],
     model: str = "de_core_news_lg",
 ) -> list[Entity]:
-    """
-    Run SpaCy NER on a list of text items.
-
-    Args:
-        texts: list of {"record_id": "...", "text": "...", "column": "..."}
-    """
     nlp = _get_spacy(model)
     if nlp is None:
         return []
-
     entities = []
     for item in texts:
         doc = nlp(item["text"])
         for ent in doc.ents:
             etype = _SPACY_TYPE_MAP.get(ent.label_, EntityType.CON)
             entities.append(Entity(
-                text=ent.text,
-                entity_type=etype,
-                confidence=0.6,  # SpaCy doesn't provide per-entity confidence
+                text=ent.text, entity_type=etype, confidence=0.6,
                 source="spacy",
                 record_id=item.get("record_id", ""),
                 column=item.get("column", ""),
@@ -214,12 +214,6 @@ def ner_llm(
     model: str | None = None,
     system_prompt: str = "",
 ) -> tuple[list[Entity], BatchReport]:
-    """
-    Run LLM-based NER on a list of text items.
-
-    Returns:
-        (entities, batch_report)
-    """
     def _make_prompt(item: dict[str, Any]) -> list[AIMessage]:
         return [
             AIMessage.system(system_prompt or SYSTEM_NER),
@@ -235,11 +229,8 @@ def ner_llm(
         ]
 
     batch = process_batch(
-        provider=provider,
-        items=texts,
-        prompt_fn=_make_prompt,
-        id_field="record_id",
-        model=model,
+        provider=provider, items=texts,
+        prompt_fn=_make_prompt, id_field="record_id", model=model,
     )
 
     entities = []
@@ -258,13 +249,61 @@ def ner_llm(
                     source="llm",
                     record_id=result.record_id,
                 ))
-
     return entities, batch
 
 
 # ---------------------------------------------------------------------------
-# Hybrid NER (SpaCy + LLM merge)
+# Hybrid NER (SpaCy + LLM merge) — FIXED deduplication
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Hybrid NER (SpaCy + LLM merge) — FIXED deduplication
+# ---------------------------------------------------------------------------
+
+
+def _merge_entity_lists(
+    spacy_entities: list["Entity"],
+    llm_entities: list["Entity"],
+) -> list["Entity"]:
+    """
+    Merge two entity lists (SpaCy + LLM), deduplicating by dedup_key.
+
+    Rules:
+    - Entities unique to one source keep their original source tag.
+    - Entities found by both sources get source="hybrid".
+    - On confidence ties, LLM wins.
+    - Higher confidence always wins regardless of source.
+
+    Returns a flat list (order: spacy-only, then hybrid/llm-only items).
+    """
+    spacy_map: dict[str, "Entity"] = {}
+    for e in spacy_entities:
+        k = e.dedup_key
+        if k not in spacy_map or e.confidence > spacy_map[k].confidence:
+            spacy_map[k] = e
+
+    llm_map: dict[str, "Entity"] = {}
+    for e in llm_entities:
+        k = e.dedup_key
+        if k not in llm_map or e.confidence > llm_map[k].confidence:
+            llm_map[k] = e
+
+    merged: dict[str, "Entity"] = dict(spacy_map)
+    for k, llm_ent in llm_map.items():
+        if k in merged:
+            spacy_ent = merged[k]
+            # LLM wins on tie or higher confidence
+            if llm_ent.confidence >= spacy_ent.confidence:
+                winner = llm_ent
+            else:
+                winner = spacy_ent
+            winner.source = "hybrid"
+            merged[k] = winner
+        else:
+            merged[k] = llm_ent
+
+    return list(merged.values())
+
 
 def ner_hybrid(
     df: pd.DataFrame,
@@ -281,9 +320,9 @@ def ner_hybrid(
     Run hybrid NER on selected columns of a DataFrame.
 
     Combines SpaCy (fast, baseline) with LLM (accurate, slow).
-    Returns deduplicated, confidence-ranked entities.
+    Deduplicates: entities found by both get source='hybrid'.
+    LLM result wins on confidence ties.
     """
-    # Build text items from selected columns
     working = df.copy()
     if sample_size and sample_size < len(working):
         working = working.sample(n=sample_size, random_state=42)
@@ -302,22 +341,41 @@ def ner_hybrid(
     result = NERResult()
     batch = None
 
-    # Phase 1: SpaCy
-    if use_spacy:
-        spacy_ents = ner_spacy(texts)
-        result.entities.extend(spacy_ents)
+    # Collect per-source, keyed by (record_id, column, text, type)
+    spacy_map: dict[str, Entity] = {}
+    llm_map: dict[str, Entity] = {}
 
-    # Phase 2: LLM
+    if use_spacy:
+        for e in ner_spacy(texts):
+            k = f"{e.record_id}||{e.column}||{e.text}||{e.entity_type.value}"
+            if k not in spacy_map or e.confidence > spacy_map[k].confidence:
+                spacy_map[k] = e
+
     if use_llm and provider:
         llm_ents, batch = ner_llm(texts, provider, model=model, system_prompt=system_prompt)
-        result.entities.extend(llm_ents)
+        for e in llm_ents:
+            k = f"{e.record_id}||{e.column}||{e.text}||{e.entity_type.value}"
+            if k not in llm_map or e.confidence > llm_map[k].confidence:
+                llm_map[k] = e
         result.batch_report = batch
 
+    # Merge: start with SpaCy, upgrade overlaps to hybrid/llm
+    merged: dict[str, Entity] = dict(spacy_map)
+    for k, llm_ent in llm_map.items():
+        if k in merged:
+            # Both found — use LLM result, mark as hybrid
+            winner = llm_ent if llm_ent.confidence >= merged[k].confidence else merged[k]
+            winner.source = "hybrid"
+            merged[k] = winner
+        else:
+            merged[k] = llm_ent
+
+    result.entities = list(merged.values())
     return result
 
 
 # ---------------------------------------------------------------------------
-# Full-dataset scan (search for problematic terms across all columns)
+# Full-dataset scan (problematic terms)
 # ---------------------------------------------------------------------------
 
 def scan_problematic_terms(
@@ -328,10 +386,6 @@ def scan_problematic_terms(
     model: str | None = None,
     system_prompt: str = "",
 ) -> tuple[list[dict], BatchReport]:
-    """
-    Scan entire dataset for potentially problematic terms.
-    (Outdated terminology, offensive language, colonial terminology, etc.)
-    """
     SYSTEM_SCAN = system_prompt or """Du bist ein Experte fuer Metadatenqualitaet in GLAM-Institutionen.
 Analysiere diese Metadaten-Werte und identifiziere potentiell problematische Begriffe:
 - Veraltete oder koloniale Terminologie
@@ -341,11 +395,10 @@ Analysiere diese Metadaten-Werte und identifiziere potentiell problematische Beg
 
 Antworte IMMER als valides JSON."""
 
-    # Collect all non-empty values from all string columns
-    items = []
     str_cols = [c for c in df.columns if df[c].dtype.kind in ('O', 'U') or str(df[c].dtype) == "string"]
     working = df.sample(n=min(sample_size, len(df)), random_state=42) if sample_size < len(df) else df
 
+    items = []
     for _, row in working.iterrows():
         rid = str(row.get(id_column, "")) if id_column else ""
         all_vals = "; ".join(
@@ -354,7 +407,7 @@ Antworte IMMER als valides JSON."""
             if pd.notna(row[c]) and str(row[c]).strip()
         )
         if all_vals:
-            items.append({"record_id": rid, "text": all_vals[:500]})  # truncate
+            items.append({"record_id": rid, "text": all_vals[:500]})
 
     def _make_prompt(item: dict) -> list[AIMessage]:
         return [
@@ -371,12 +424,10 @@ Antworte IMMER als valides JSON."""
         ]
 
     batch = process_batch(provider, items, _make_prompt, model=model)
-
     issues = []
     for r in batch.results:
         if r.parsed and r.parsed.get("problematic_terms"):
             for t in r.parsed["problematic_terms"]:
                 t["record_id"] = r.record_id
                 issues.append(t)
-
     return issues, batch

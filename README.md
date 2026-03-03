@@ -1,6 +1,6 @@
 # Debussy — KI-gestützte Kuratierungswerkbank
 
-Datenqualitäts-Analyse und -Anreicherung für GLAM-Daten. KI-gestützt.
+Datenqualitäts-Analyse und -Anreicherung für GLAM-Institutionen.
 
 ## Quickstart
 

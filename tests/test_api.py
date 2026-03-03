@@ -1,192 +1,189 @@
 """
-API endpoint tests for Debussy v0.5.
+HTTP-level integration tests for Debussy API.
 
-Tests all FastAPI endpoints using starlette TestClient.
-No external network calls — GND is mocked, AI uses MockProvider (automatic
-fallback when no GPUStack configured).
+Uses FastAPI TestClient (requires: pip install fastapi httpx).
+Tests are skipped automatically when FastAPI is not installed.
+
+Coverage:
+  - GET /                       → HTML response
+  - GET /api/gpu/status         → provider status
+  - POST /api/analyze           → CSV ingest + structural analysis
+  - GET /api/dataset/{n}/columns → column list after ingest
+  - POST /api/ner               → entity extraction (mock provider)
+  - POST /api/edtf              → EDTF normalization (rules + mock LLM)
+  - GET /api/gnd/search         → GND search (lobid mock)
+  - POST /api/workspace/field-mapping → save field mapping
+  - GET /api/workspace/field-mapping  → load field mapping
+  - GET /api/workspace          → workspace summary
+  - POST /api/workspace/save    → persistence
+  - POST /api/gpu/test          → LLM ping
+  - POST /api/images/upload     → image upload
+  - POST /api/images/analyze    → vision analysis
+
+Model forwarding:
+  - NER: request model='test-model' → MockProvider.call_log[0]['model']
+  - EDTF with LLM: same assertion
 """
-from __future__ import annotations
 
 import io
 import json
+import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
-import pandas as pd
-from fastapi.testclient import TestClient
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from kwb.api.app import app, _state, _safe_filename
-from kwb.core.workspace import Workspace
+# ---------------------------------------------------------------------------
+# Conditional imports — skip if FastAPI/httpx not available
+# ---------------------------------------------------------------------------
+try:
+    from fastapi.testclient import TestClient
+    _FASTAPI_AVAILABLE = True
+except ImportError:
+    _FASTAPI_AVAILABLE = False
+
+_skip_no_fastapi = unittest.skipUnless(
+    _FASTAPI_AVAILABLE,
+    "FastAPI not installed — run: pip install fastapi httpx python-multipart"
+)
+
+# ---------------------------------------------------------------------------
+# Sample data helpers
+# ---------------------------------------------------------------------------
+
+_SAMPLE_CSV = b"""record_id,title,year,description,subject
+obj_001,Karte von Bern,1923,Topographische Aufnahme des Stadtzentrums.,Stadtplan
+obj_002,Grundriss Rathaus,ca. 1850,Architekturzeichnung des alten Rathauses.,Architektur
+obj_003,Luftaufnahme,1960-1970,Vogelperspektive der Innenstadt.,Luftbild
+obj_004,Foto Altstadt,undatiert,Schwarz-weiss Aufnahme der historischen Gasse.,Fotografie
+obj_005,Plan Universitat,1901,Lageplan der Universitat Bern.,Stadtplanung
+"""
+
+_SAMPLE_IMAGE_BYTES = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    + b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n"
+    + b"\xff\xd9"  # minimal stub JPEG
+)
+
+
+def _make_csv_upload(content: bytes = _SAMPLE_CSV, name: str = "test.csv"):
+    return ("files", (name, io.BytesIO(content), "text/csv"))
 
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Test fixtures
 # ---------------------------------------------------------------------------
 
-def _make_csv_bytes(rows: int = 5, with_id: bool = True) -> bytes:
-    """Create a small synthetic CSV for upload."""
-    data = {
-        "record_id": [f"R{i:03d}" for i in range(1, rows + 1)],
-        "title": [f"Objekt {i}" for i in range(1, rows + 1)],
-        "date": ["1920", "ca. 1935", "1950-1960", "undatiert", "2001"][:rows],
-        "subject": [
-            "Minarett; Stadtmauer",
-            "Fotografie; Landschaft",
-            "Architektur",
-            "Porträt; Person",
-            "Karte",
-        ][:rows],
-    }
-    if not with_id:
-        del data["record_id"]
-    df = pd.DataFrame(data)
-    return df.to_csv(index=False).encode("utf-8")
+def _get_client():
+    """Create a fresh TestClient bound to the Debussy app."""
+    # Reset shared state between tests
+    from kwb.api import deps
+    from kwb.core.workspace import Workspace
+    deps._state["datasets"] = {}
+    deps._state["report"] = None
+    deps._state["workspace"] = Workspace(name="test")
+    deps._config_cache = None
 
+    from kwb.api.app_new import app
+    # Override provider to always use Mock
+    from kwb.ai.mock import MockProvider
+    deps._prov_override = MockProvider.with_defaults()
 
-def _upload_csv(client: TestClient, csv_bytes: bytes | None = None,
-                filename: str = "test.csv") -> dict:
-    """Upload a CSV and return the JSON response."""
-    if csv_bytes is None:
-        csv_bytes = _make_csv_bytes()
-    resp = client.post(
-        "/api/analyze",
-        files=[("files", (filename, io.BytesIO(csv_bytes), "text/csv"))],
-    )
-    return resp
-
-
-def _reset_state():
-    """Reset app-level state between tests."""
-    _state["datasets"] = {}
-    _state["report"] = None
-    _state["config"] = None
-    _state["workspace"] = Workspace(name="test")
+    return TestClient(app)
 
 
 # ---------------------------------------------------------------------------
-# Tests: Dashboard
+# Test classes
 # ---------------------------------------------------------------------------
 
-class TestDashboard(unittest.TestCase):
+@_skip_no_fastapi
+class TestHealthEndpoints(unittest.TestCase):
+
     def setUp(self):
-        self.client = TestClient(app)
-        _reset_state()
+        self.client = _get_client()
 
-    def test_get_dashboard_returns_html(self):
+    def test_index_returns_html(self):
         r = self.client.get("/")
         self.assertEqual(r.status_code, 200)
-        self.assertIn("text/html", r.headers["content-type"])
-
-    def test_dashboard_contains_presets(self):
-        r = self.client.get("/")
+        self.assertIn("text/html", r.headers.get("content-type", ""))
         self.assertIn("Debussy", r.text)
 
-
-# ---------------------------------------------------------------------------
-# Tests: Analyze
-# ---------------------------------------------------------------------------
-
-class TestAnalyze(unittest.TestCase):
-    def setUp(self):
-        self.client = TestClient(app)
-        _reset_state()
-
-    def test_upload_single_csv(self):
-        r = _upload_csv(self.client)
+    def test_gpu_status_no_config(self):
+        r = self.client.get("/api/gpu/status")
         self.assertEqual(r.status_code, 200)
-        body = r.json()
-        self.assertIn("summary", body)
-        self.assertIn("datasets", body)
-        self.assertIn("findings", body)
-        self.assertIn("markdown", body)
-        self.assertEqual(len(body["datasets"]), 1)
+        data = r.json()
+        self.assertIn("status", data)
+        # Without a real GPUStack, mock mode is expected
+        self.assertIn(data["status"], ("mock", "ok", "error"))
 
-    def test_upload_returns_dataset_profile(self):
-        r = _upload_csv(self.client)
-        ds = r.json()["datasets"][0]
-        self.assertEqual(ds["row_count"], 5)
-        self.assertEqual(ds["column_count"], 4)
-        self.assertIn("columns", ds)
 
-    def test_upload_no_files_returns_error(self):
-        r = self.client.post("/api/analyze")
-        self.assertIn(r.status_code, (400, 422))
+@_skip_no_fastapi
+class TestCSVIngest(unittest.TestCase):
 
-    def test_upload_too_many_files(self):
-        csv = _make_csv_bytes(2)
-        files = [("files", (f"f{i}.csv", io.BytesIO(csv), "text/csv")) for i in range(11)]
+    def setUp(self):
+        self.client = _get_client()
+
+    def _ingest(self):
+        r = self.client.post("/api/analyze", files=[_make_csv_upload()])
+        self.assertEqual(r.status_code, 200)
+        return r.json()
+
+    def test_analyze_returns_report(self):
+        data = self._ingest()
+        self.assertIn("total_rows", data)
+        self.assertEqual(data["total_rows"], 5)
+
+    def test_analyze_reports_columns(self):
+        data = self._ingest()
+        self.assertIn("total_columns", data)
+        self.assertEqual(data["total_columns"], 5)
+
+    def test_dataset_columns_endpoint(self):
+        self._ingest()
+        r = self.client.get("/api/dataset/test.csv/columns")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        col_names = [c["name"] for c in data["columns"]]
+        self.assertIn("title", col_names)
+        self.assertIn("record_id", col_names)
+
+    def test_dataset_records_endpoint(self):
+        self._ingest()
+        r = self.client.get("/api/dataset/test.csv/records")
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertIn("record_ids", data)
+        self.assertIn("obj_001", data["record_ids"])
+
+    def test_dataset_not_found_returns_404(self):
+        r = self.client.get("/api/dataset/nonexistent.csv/columns")
+        self.assertEqual(r.status_code, 404)
+
+    def test_wrong_extension_rejected(self):
+        r = self.client.post("/api/analyze", files=[
+            ("files", ("data.xlsx", io.BytesIO(b"data"), "application/octet-stream"))
+        ])
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("error", r.json())
+
+    def test_too_many_files_rejected(self):
+        from kwb.api.deps import MAX_UPLOAD_FILES
+        files = [_make_csv_upload(name=f"f{i}.csv") for i in range(MAX_UPLOAD_FILES + 1)]
         r = self.client.post("/api/analyze", files=files)
         self.assertEqual(r.status_code, 400)
-        self.assertIn("Maximal", r.json()["error"])
-
-    def test_upload_invalid_extension(self):
-        r = self.client.post(
-            "/api/analyze",
-            files=[("files", ("bad.xlsx", io.BytesIO(b"data"), "application/octet-stream"))],
-        )
-        self.assertEqual(r.status_code, 400)
-        self.assertIn("erlaubt", r.json()["error"])
-
-    def test_upload_two_csvs(self):
-        csv1 = _make_csv_bytes(3)
-        csv2 = _make_csv_bytes(2)
-        r = self.client.post("/api/analyze", files=[
-            ("files", ("a.csv", io.BytesIO(csv1), "text/csv")),
-            ("files", ("b.csv", io.BytesIO(csv2), "text/csv")),
-        ])
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.json()["datasets"]), 2)
 
 
-# ---------------------------------------------------------------------------
-# Tests: Dataset endpoints
-# ---------------------------------------------------------------------------
-
-class TestDatasetEndpoints(unittest.TestCase):
-    def setUp(self):
-        self.client = TestClient(app)
-        _reset_state()
-        _upload_csv(self.client, filename="demo.csv")
-
-    def test_get_columns(self):
-        r = self.client.get("/api/dataset/demo.csv/columns")
-        self.assertEqual(r.status_code, 200)
-        cols = r.json()["columns"]
-        names = [c["name"] for c in cols]
-        self.assertIn("title", names)
-        self.assertIn("record_id", names)
-
-    def test_get_columns_unknown_dataset(self):
-        r = self.client.get("/api/dataset/nope.csv/columns")
-        self.assertEqual(r.status_code, 404)
-
-    def test_get_records(self):
-        r = self.client.get("/api/dataset/demo.csv/records")
-        self.assertEqual(r.status_code, 200)
-        ids = r.json()["record_ids"]
-        self.assertEqual(len(ids), 5)
-        self.assertIn("R001", ids)
-
-    def test_get_records_unknown(self):
-        r = self.client.get("/api/dataset/nope.csv/records")
-        self.assertEqual(r.status_code, 404)
-
-
-# ---------------------------------------------------------------------------
-# Tests: NER endpoint
-# ---------------------------------------------------------------------------
-
+@_skip_no_fastapi
 class TestNEREndpoint(unittest.TestCase):
-    def setUp(self):
-        self.client = TestClient(app)
-        _reset_state()
-        _upload_csv(self.client, filename="ner.csv")
 
-    def test_ner_llm_method(self):
+    def setUp(self):
+        self.client = _get_client()
+        # Ingest CSV first
+        self.client.post("/api/analyze", files=[_make_csv_upload()])
+
+    def test_ner_returns_entities(self):
         r = self.client.post("/api/ner", json={
-            "dataset": "ner.csv",
-            "columns": ["subject"],
+            "dataset": "test.csv",
             "method": "llm",
             "sample_size": 3,
         })

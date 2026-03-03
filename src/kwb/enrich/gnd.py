@@ -1,197 +1,307 @@
 """
-GND lookup via lobid.org/gnd API.
+GND (Gemeinsame Normdatei) Enrichment.
 
-Free, no API key needed. Returns real GND records with IDs, preferred names,
-types, and alternative names.
+Integrates authority data from the GND (Deutsche Nationalbibliothek)
+into metadata records.
 
-Usage:
-    results = gnd_search("Bern")
-    # [{"gnd_id": "4005762-8", "preferred": "Bern", "type": "PlaceOrGeographicName", ...}]
+Two data paths:
+1. Pre-enriched CSV (GIUBMaster_locations_gnd_merged.csv style):
+   parse_gnd_columns() extracts GND IDs from the flattened wide format.
+
+2. Live API (LobidAPI): LobidGNDClient makes HTTP calls to lobid.org.
+   This path requires network access and is skipped in offline mode.
+
+CONFIDENCE PARSING:
+The real CSV stores confidence as "70%", "85%", etc. — this module
+normalises those to 0.0–1.0 floats throughout.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-import time
-import urllib.request
-import urllib.parse
-from dataclasses import dataclass
-from typing import Any
+import re
+from dataclasses import dataclass, field
+from urllib.request import Request, urlopen
+from urllib.error import URLError, HTTPError
+from urllib.parse import quote
+
+import pandas as pd
+
+from kwb.core.workspace import DictionaryEntry
 
 logger = logging.getLogger(__name__)
 
 LOBID_BASE = "https://lobid.org/gnd/search"
-LOBID_ENTITY = "https://lobid.org/gnd"
 
+
+# ---------------------------------------------------------------------------
+# Confidence normalisation
+# ---------------------------------------------------------------------------
+
+def parse_confidence(value: str | float | None) -> float:
+    """
+    Convert confidence to float in [0.0, 1.0].
+
+    Handles:
+    - "85%" → 0.85
+    - "0.85" → 0.85
+    - 0.85 → 0.85
+    - None / "" → 0.0
+    """
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        v = float(value)
+        return v / 100.0 if v > 1.0 else v
+    s = str(value).strip()
+    if not s:
+        return 0.0
+    if s.endswith("%"):
+        try:
+            return float(s[:-1]) / 100.0
+        except ValueError:
+            return 0.0
+    try:
+        return float(s)
+    except ValueError:
+        return 0.0
+
+
+# ---------------------------------------------------------------------------
+# GND match dataclass
+# ---------------------------------------------------------------------------
 
 @dataclass
-class GNDResult:
+class GNDMatch:
+    """One resolved GND authority match."""
+    term: str
     gnd_id: str
     preferred_name: str
     gnd_type: str = ""
-    alternative_names: list[str] = None
-    description: str = ""
-    uri: str = ""
-    score: float = 0.0
+    alternatives: list[str] = field(default_factory=list)
+    confidence: float = 1.0
+    source: str = "csv"      # "csv" | "lobid" | "llm"
+    reasoning: str = ""
+    record_id: str = ""
 
-    def __post_init__(self):
-        if self.alternative_names is None:
-            self.alternative_names = []
-        if not self.uri and self.gnd_id:
-            self.uri = f"https://d-nb.info/gnd/{self.gnd_id}"
+    @property
+    def uri(self) -> str:
+        return f"http://d-nb.info/gnd/{self.gnd_id}" if self.gnd_id else ""
 
-    def to_dict(self) -> dict:
-        return {
-            "gnd_id": self.gnd_id, "preferred_name": self.preferred_name,
-            "type": self.gnd_type, "alternative_names": self.alternative_names,
-            "description": self.description, "uri": self.uri, "score": self.score,
-        }
-
-
-# GND type mapping for filtering
-GND_TYPE_FILTER = {
-    "PER": "Person",
-    "ORG": "CorporateBody",
-    "LOC": "PlaceOrGeographicName",
-    "GPE": "PlaceOrGeographicName",
-    "FAC": "PlaceOrGeographicName",
-    "WRK": "Work",
-    "EVT": "SubjectHeading",
-    "CON": "SubjectHeading",
-}
+    def to_dictionary_entry(self) -> DictionaryEntry:
+        return DictionaryEntry(
+            term=self.preferred_name or self.term,
+            gnd_id=self.gnd_id,
+            gnd_preferred=self.preferred_name,
+            gnd_type=self.gnd_type,
+            gnd_uri=self.uri,
+            alternatives=self.alternatives,
+            confidence=self.confidence,
+            source=self.source,
+        )
 
 
-def gnd_search(
-    query: str,
-    entity_type: str = "",
-    size: int = 5,
-    timeout: float = 5.0,
-) -> list[GNDResult]:
+# ---------------------------------------------------------------------------
+# Parse pre-enriched CSV (wide format: named_entity_N_gnd_* columns)
+# ---------------------------------------------------------------------------
+
+def parse_gnd_columns(df: pd.DataFrame, max_entities: int = 11) -> list[GNDMatch]:
     """
-    Search GND via lobid.org API.
+    Extract GND matches from the wide-format GND-merged CSV.
 
-    Args:
-        query: Search term
-        entity_type: NER type (PER, ORG, LOC...) for type filtering
-        size: Max results
-        timeout: HTTP timeout in seconds
+    Expects columns named:
+        named_entity_N, named_entity_N_gnd_id,
+        named_entity_N_gnd_preferredName, named_entity_N_gnd_konfidenz,
+        named_entity_N_gnd_type, named_entity_N_gnd_alternativen
+
+    for N in 1..max_entities.
+
+    Returns list of GNDMatch for all entities that have a GND ID.
     """
-    if not query or not query.strip():
-        return []
+    matches: list[GNDMatch] = []
 
-    params = {"q": query.strip(), "size": str(size), "format": "json"}
+    for _, row in df.iterrows():
+        record_id = str(row.get("record_id", ""))
 
-    # Add type filter if we know the entity type
-    gnd_type = GND_TYPE_FILTER.get(entity_type, "")
-    if gnd_type:
-        params["filter"] = f"type:{gnd_type}"
+        for n in range(1, max_entities + 1):
+            prefix = f"named_entity_{n}"
+            term_col = prefix
+            id_col = f"{prefix}_gnd_id"
 
-    url = f"{LOBID_BASE}?{urllib.parse.urlencode(params)}"
+            if id_col not in df.columns:
+                break  # no more entity columns
 
-    try:
-        req = urllib.request.Request(url, headers={
-            "Accept": "application/json",
-            "User-Agent": "Debussy/0.4 (GLAM curation workbench)",
-        })
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        logger.warning(f"GND search failed for '{query}': {e}")
-        return []
+            gnd_id = row.get(id_col)
+            if pd.isna(gnd_id) or not str(gnd_id).strip():
+                continue
 
-    results = []
-    for item in data.get("member", []):
-        gnd_id = item.get("gndIdentifier", "")
-        if not gnd_id:
-            continue
+            term = str(row.get(term_col, "")).strip() if not pd.isna(row.get(term_col, "")) else ""
+            preferred = str(row.get(f"{prefix}_gnd_preferredName", "") or "").strip()
+            gnd_type = str(row.get(f"{prefix}_gnd_type", "") or "").strip()
+            conf_raw = row.get(f"{prefix}_gnd_konfidenz")
+            confidence = parse_confidence(conf_raw)
 
-        # Extract type
-        types = item.get("type", [])
-        gnd_type_str = ""
-        for t in types:
-            if t not in ("AuthorityResource",):
-                gnd_type_str = t
-                break
+            alts_raw = row.get(f"{prefix}_gnd_alternativen")
+            alternatives: list[str] = []
+            if pd.notna(alts_raw) and str(alts_raw).strip():
+                alternatives = [a.strip() for a in str(alts_raw).split(";") if a.strip()]
 
-        # Extract preferred name
-        preferred = item.get("preferredName", "")
+            matches.append(GNDMatch(
+                term=term,
+                gnd_id=str(gnd_id).strip(),
+                preferred_name=preferred or term,
+                gnd_type=gnd_type,
+                alternatives=alternatives,
+                confidence=confidence,
+                source="csv",
+                record_id=record_id,
+            ))
 
-        # Alternative names
-        alt_names = []
-        for v in item.get("variantName", []):
-            if isinstance(v, str):
-                alt_names.append(v)
-
-        # Description from various fields
-        desc_parts = []
-        for field in ("biographicalOrHistoricalInformation", "definition"):
-            vals = item.get(field, [])
-            if isinstance(vals, list):
-                desc_parts.extend(str(v) for v in vals)
-            elif isinstance(vals, str):
-                desc_parts.append(vals)
-
-        results.append(GNDResult(
-            gnd_id=gnd_id, preferred_name=preferred,
-            gnd_type=gnd_type_str, alternative_names=alt_names[:5],
-            description="; ".join(desc_parts)[:200],
-        ))
-
-    return results
+    return matches
 
 
-def gnd_lookup(gnd_id: str, timeout: float = 5.0) -> GNDResult | None:
-    """Fetch a single GND record by ID."""
-    url = f"{LOBID_ENTITY}/{gnd_id}.json"
-    try:
-        req = urllib.request.Request(url, headers={
-            "Accept": "application/json",
-            "User-Agent": "Debussy/0.4",
-        })
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            item = json.loads(resp.read().decode("utf-8"))
-    except Exception as e:
-        logger.warning(f"GND lookup failed for '{gnd_id}': {e}")
-        return None
+def build_dictionary_from_gnd_csv(df: pd.DataFrame) -> dict[str, DictionaryEntry]:
+    """
+    Build a Normdaten-Wörterbuch from a GND-merged CSV.
 
-    types = item.get("type", [])
-    gnd_type_str = next((t for t in types if t != "AuthorityResource"), "")
+    Merges duplicate terms by keeping the highest-confidence match.
+    Returns {term.lower(): DictionaryEntry}.
+    """
+    matches = parse_gnd_columns(df)
+    best: dict[str, GNDMatch] = {}
 
-    return GNDResult(
-        gnd_id=item.get("gndIdentifier", gnd_id),
-        preferred_name=item.get("preferredName", ""),
-        gnd_type=gnd_type_str,
-        alternative_names=[v for v in item.get("variantName", []) if isinstance(v, str)][:5],
-        description="; ".join(str(v) for v in item.get("biographicalOrHistoricalInformation", []))[:200],
-    )
+    for m in matches:
+        key = m.preferred_name.lower() or m.term.lower()
+        if key not in best or m.confidence > best[key].confidence:
+            best[key] = m
+
+    return {k: v.to_dictionary_entry() for k, v in best.items()}
 
 
-def gnd_batch_search(
-    terms: list[dict[str, str]],
-    delay: float = 0.2,
+# ---------------------------------------------------------------------------
+# Low-confidence flagging
+# ---------------------------------------------------------------------------
+
+def flag_low_confidence(
+    df: pd.DataFrame,
+    threshold: float = 0.75,
+    max_entities: int = 11,
 ) -> list[dict]:
     """
-    Batch GND search for multiple terms.
+    Return records/entities where GND confidence is below threshold.
 
-    Args:
-        terms: [{"text": "Bern", "type": "GPE", "record_id": "r1"}, ...]
-        delay: Delay between requests (be polite to lobid.org)
-
-    Returns:
-        [{"text": "...", "record_id": "...", "results": [GNDResult.to_dict(), ...]}]
+    Useful for the GUI's review queue: "here are 30% of matches that need
+    human verification".
     """
-    all_results = []
-    for i, item in enumerate(terms):
-        text = item.get("text", "")
-        etype = item.get("type", "")
-        results = gnd_search(text, entity_type=etype, size=3)
-        all_results.append({
-            "text": text,
-            "type": etype,
-            "record_id": item.get("record_id", ""),
-            "results": [r.to_dict() for r in results],
-            "top_match": results[0].to_dict() if results else None,
-        })
-        if delay > 0 and i < len(terms) - 1:
-            time.sleep(delay)
-    return all_results
+    flags = []
+    for _, row in df.iterrows():
+        record_id = str(row.get("record_id", ""))
+        for n in range(1, max_entities + 1):
+            id_col = f"named_entity_{n}_gnd_id"
+            if id_col not in df.columns:
+                break
+            gnd_id = row.get(id_col)
+            if pd.isna(gnd_id) or not str(gnd_id).strip():
+                continue
+            conf = parse_confidence(row.get(f"named_entity_{n}_gnd_konfidenz"))
+            if conf < threshold:
+                flags.append({
+                    "record_id": record_id,
+                    "term": str(row.get(f"named_entity_{n}", "")),
+                    "gnd_id": str(gnd_id),
+                    "confidence": conf,
+                    "slot": n,
+                })
+    return flags
+
+
+# ---------------------------------------------------------------------------
+# Live Lobid API client (requires network)
+# ---------------------------------------------------------------------------
+
+class LobidGNDClient:
+    """
+    Thin client for https://lobid.org/gnd API.
+
+    Usage:
+        client = LobidGNDClient()
+        if client.is_available():
+            matches = client.search("Berlin", type="PlaceOrGeographicName")
+    """
+
+    def __init__(self, timeout: int = 10):
+        self.timeout = timeout
+
+    def is_available(self) -> bool:
+        try:
+            req = Request(f"{LOBID_BASE}?q=test&size=1&format=json")
+            with urlopen(req, timeout=self.timeout) as resp:
+                return resp.status == 200
+        except Exception:
+            return False
+
+    def search(
+        self,
+        term: str,
+        entity_type: str = "",
+        size: int = 5,
+    ) -> list[GNDMatch]:
+        """
+        Search GND for a term.
+
+        Returns up to `size` matches, sorted by lobid score.
+        Returns [] on any network error (offline-safe).
+        """
+        params = f"q={quote(term)}&size={size}&format=json"
+        if entity_type:
+            params += f"&filter=type:{quote(entity_type)}"
+
+        url = f"{LOBID_BASE}?{params}"
+        try:
+            req = Request(url, headers={"Accept": "application/json"})
+            with urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except (HTTPError, URLError, TimeoutError) as e:
+            logger.warning(f"Lobid API unavailable for '{term}': {e}")
+            return []
+
+        results = []
+        for item in data.get("member", []):
+            gnd_id = item.get("gndIdentifier", "")
+            preferred = item.get("preferredName", "")
+            types = item.get("type", [])
+            alts = item.get("variantName", [])
+
+            results.append(GNDMatch(
+                term=term,
+                gnd_id=gnd_id,
+                preferred_name=preferred,
+                gnd_type=types[0] if types else "",
+                alternatives=alts[:5],
+                confidence=0.8,  # lobid doesn't expose a confidence score
+                source="lobid",
+            ))
+
+        return results
+
+    def lookup_id(self, gnd_id: str) -> GNDMatch | None:
+        """Fetch a single GND entity by ID."""
+        url = f"https://lobid.org/gnd/{quote(gnd_id)}.json"
+        try:
+            req = Request(url, headers={"Accept": "application/json"})
+            with urlopen(req, timeout=self.timeout) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except Exception as e:
+            logger.warning(f"Lobid lookup for ID {gnd_id!r} failed: {e}")
+            return None
+
+        return GNDMatch(
+            term=data.get("preferredName", ""),
+            gnd_id=gnd_id,
+            preferred_name=data.get("preferredName", ""),
+            gnd_type=(data.get("type") or [""])[0],
+            alternatives=data.get("variantName", [])[:5],
+            confidence=1.0,
+            source="lobid",
+        )

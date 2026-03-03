@@ -28,7 +28,8 @@ from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
 from kwb.ai.provider import AIMessage
 from kwb.ai.gpustack import GPUStackProvider
 from kwb.ai.mock import MockProvider
-from kwb.ai.batch import process_batch, _try_parse_json, BatchReport
+from kwb.ai.batch import process_batch, BatchReport
+from kwb.core.utils import try_parse_json as _try_parse_json
 from kwb.ai.prompts import (
     SYSTEM_METADATA_EXPERT_DE, SYSTEM_METADATA_EXPERT_EN,
     SYSTEM_VISION_EXPERT_DE, NER_CATEGORIES,
@@ -37,30 +38,31 @@ from kwb.report.markdown import render_report
 
 app = FastAPI(title="Debussy", version="0.5.1")
 
-# --- Security limits (P0-4) ---
+# --- Security limits ---
 MAX_UPLOAD_FILES = 10
-MAX_FILE_BYTES = 50 * 1024 * 1024       # 50 MB per file
-MAX_WORKSPACE_BYTES = 20 * 1024 * 1024   # 20 MB workspace JSON
+MAX_FILE_BYTES = 50 * 1024 * 1024
+MAX_WORKSPACE_BYTES = 20 * 1024 * 1024
 MAX_CSV_ROWS = 500_000
 MAX_CSV_COLS = 200
 ALLOWED_EXTENSIONS = {".csv", ".tsv"}
 ALLOWED_WS_EXT = {".json"}
 
-# --- Workspace storage (P0-3) ---
+# --- Workspace storage ---
 _WORKSPACE_DIR = Path(os.environ.get(
     "KWB_WORKSPACE_DIR",
     str(Path(tempfile.gettempdir()) / "debussy_workspaces")
 ))
 _WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
 
+
 def _safe_filename(name: str, ext: str = ".debussy.json") -> str:
-    """Sanitize user-provided name into safe filename."""
     safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())[:80]
-    safe = re.sub(r"\.{2,}", ".", safe)   # collapse .. → .
-    safe = safe.strip("._- ")             # no leading/trailing dots
+    safe = re.sub(r"\.{2,}", ".", safe)
+    safe = safe.strip("._- ")
     if not safe:
         safe = "project"
     return safe + ext
+
 
 _state: dict[str, Any] = {
     "datasets": {},
@@ -70,19 +72,30 @@ _state: dict[str, Any] = {
 }
 _HTML_DIR = Path(__file__).parent
 
+# Cache config (not re-loaded per request)
+_config_cache = None
+
 def _cfg():
-    if _state["config"] is None: _state["config"] = load_config()
-    return _state["config"]
+    global _config_cache
+    if _config_cache is None:
+        _config_cache = load_config()
+    return _config_cache
+
 
 def _prov(model: str = ""):
+    """Build AI provider. Uses GPUStack if configured, else Mock."""
     c = _cfg()
     if c.is_gpustack_configured:
         pc = c.to_provider_config()
-        if model: pc.default_model = model
+        if model:
+            pc.default_model = model
         return GPUStackProvider(pc)
     return MockProvider.with_defaults()
 
-def _ws() -> Workspace: return _state["workspace"]
+
+def _ws() -> Workspace:
+    return _state["workspace"]
+
 
 # ---------------------------------------------------------------------------
 # JSON injected into HTML
@@ -127,10 +140,10 @@ CATALOG = [
     {"id":"A-07","name":"GND-Abdeckung","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
     {"id":"N-01","name":"NER (LLM)","module":"NER","status":"done","status_label":"Aktiv","tests":"TestNERWithMock","note":"10 Entity-Typen"},
     {"id":"N-02","name":"NER (SpaCy)","module":"NER","status":"done","status_label":"Aktiv","tests":"Import-Test","note":"Optional"},
-    {"id":"N-03","name":"NER Hybrid","module":"NER","status":"done","status_label":"Aktiv","tests":"test_hybrid","note":"SpaCy+LLM"},
+    {"id":"N-03","name":"NER Hybrid","module":"NER","status":"done","status_label":"Aktiv","tests":"test_hybrid","note":"SpaCy+LLM, dedupliziert"},
     {"id":"N-04","name":"Problematische Begriffe","module":"NER","status":"done","status_label":"Aktiv","tests":"test_scan","note":"Fullscan"},
-    {"id":"N-05","name":"Entity-Editor","module":"NER","status":"partial","status_label":"Teilweise","tests":"GUI","note":"Accept/Reject in Workspace"},
-    {"id":"E-01","name":"EDTF Regeln","module":"EDTF","status":"done","status_label":"Aktiv","tests":"TestEDTFRules (17)","note":""},
+    {"id":"N-05","name":"Entity-Editor","module":"NER","status":"done","status_label":"Aktiv","tests":"GUI","note":"Accept/Reject/Filter"},
+    {"id":"E-01","name":"EDTF Regeln","module":"EDTF","status":"done","status_label":"Aktiv","tests":"TestEDTFRules (24)","note":"normalize/edtf.py"},
     {"id":"E-02","name":"EDTF LLM-Fallback","module":"EDTF","status":"done","status_label":"Aktiv","tests":"TestEDTFHybrid","note":""},
     {"id":"E-03","name":"EDTF in GUI","module":"EDTF","status":"done","status_label":"Aktiv","tests":"GUI","note":""},
     {"id":"G-01","name":"GND-Lookup (live)","module":"Enrich","status":"done","status_label":"Aktiv","tests":"TestGNDModule","note":"lobid.org API"},
@@ -140,24 +153,16 @@ CATALOG = [
     {"id":"W-03","name":"Dictionary","module":"Workspace","status":"done","status_label":"Aktiv","tests":"TestWorkspaceBasic","note":""},
     {"id":"X-01","name":"Goobi-XML-Export","module":"Export","status":"done","status_label":"Aktiv","tests":"TestGoobiExport (6)","note":"goobi-import Format"},
     {"id":"X-02","name":"Goobi Batch-Export","module":"Export","status":"done","status_label":"Aktiv","tests":"TestGoobiExport","note":""},
-    {"id":"K-01","name":"Provider-Abstraktion","module":"KI","status":"done","status_label":"Aktiv","tests":"TestMockProvider","note":"GPUStack/Ollama/Mock"},
+    {"id":"X-03","name":"Field-Mapping GUI","module":"Export","status":"done","status_label":"Aktiv","tests":"GUI","note":"CSV-Spalten → Goobi-Typ"},
+    {"id":"K-01","name":"Provider-Abstraktion","module":"KI","status":"done","status_label":"Aktiv","tests":"TestMockProvider","note":"GPUStack/Mock"},
     {"id":"K-02","name":"System-Prompts","module":"KI","status":"done","status_label":"Aktiv","tests":"GUI","note":"6 Presets"},
-    {"id":"K-03","name":"Modell-Auswahl","module":"KI","status":"done","status_label":"Aktiv","tests":"GUI","note":""},
+    {"id":"K-03","name":"Modell-Auswahl","module":"KI","status":"done","status_label":"Aktiv","tests":"GUI","note":"Alle Endpoints"},
     {"id":"P-01","name":"Markdown-Report","module":"Report","status":"done","status_label":"Aktiv","tests":"TestReport","note":""},
     {"id":"R-01","name":"Wikidata","module":"Enrich","status":"no","status_label":"Geplant","tests":"—","note":"SPARQL"},
     {"id":"R-02","name":"OCR/HTR","module":"Analyse","status":"no","status_label":"Geplant","tests":"—","note":""},
     {"id":"R-03","name":"Goobi Viewer API","module":"Export","status":"no","status_label":"Geplant","tests":"—","note":"REST"},
 ]
 
-FEATURES = [
-    {"name":"CSV-Import","s":"done"},{"name":"Strukturelle Analyse (7 Checks)","s":"done"},
-    {"name":"NER Hybrid (SpaCy+LLM)","s":"done"},{"name":"EDTF-Normalisierung","s":"done"},
-    {"name":"Problematische Begriffe","s":"done"},{"name":"GND-Lookup (live)","s":"done"},
-    {"name":"Workspace-Persistenz","s":"done"},{"name":"Goobi-XML-Export","s":"done"},
-    {"name":"Subject-Dictionary","s":"done"},{"name":"Entity-Editor","s":"done"},
-    {"name":"Bild-Analyse","s":"beta"},{"name":"OCR/HTR","s":"planned"},
-    {"name":"Wikidata","s":"planned"},{"name":"Goobi Viewer API","s":"planned"},
-]
 
 # ---------------------------------------------------------------------------
 # HTML
@@ -174,7 +179,9 @@ def _build_html():
 # Core routes
 # ---------------------------------------------------------------------------
 @app.get("/", response_class=HTMLResponse)
-async def dashboard(): return _build_html()
+async def dashboard():
+    return _build_html()
+
 
 @app.get("/api/gpu/status")
 async def gpu_status():
@@ -184,9 +191,12 @@ async def gpu_status():
         try:
             p = GPUStackProvider(c.to_provider_config())
             r["available"] = p.is_available()
-            if r["available"]: r["models"] = p.list_models()
-        except Exception as e: r["error"] = str(e)
+            if r["available"]:
+                r["models"] = p.list_models()
+        except Exception as e:
+            r["error"] = str(e)
     return r
+
 
 @app.post("/api/gpu/test")
 async def gpu_test():
@@ -197,13 +207,15 @@ async def gpu_test():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+
 @app.post("/api/analyze")
 async def analyze(files: list[UploadFile] = File(...)):
     if len(files) > MAX_UPLOAD_FILES:
         return JSONResponse({"error": f"Maximal {MAX_UPLOAD_FILES} Dateien erlaubt"}, 400)
     _state["datasets"] = {}
     datasets = []
-    ws = _ws(); ws.source_files = []
+    ws = _ws()
+    ws.source_files = []
     for u in files:
         suffix = Path(u.filename or "").suffix.lower()
         if suffix not in ALLOWED_EXTENSIONS:
@@ -212,15 +224,18 @@ async def analyze(files: list[UploadFile] = File(...)):
         if len(content) > MAX_FILE_BYTES:
             return JSONResponse({"error": f"'{u.filename}': Max {MAX_FILE_BYTES // (1024*1024)} MB"}, 400)
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content); tp = Path(tmp.name)
+            tmp.write(content)
+            tp = Path(tmp.name)
         try:
             df, pr = ingest_csv(tp)
             if len(df) > MAX_CSV_ROWS:
-                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_ROWS:,} Zeilen (hat {len(df):,})"}, 400)
+                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_ROWS:,} Zeilen"}, 400)
             if len(df.columns) > MAX_CSV_COLS:
                 return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_COLS} Spalten"}, 400)
-            pr.source_name = Path(u.filename).stem; pr.source_path = u.filename
-            datasets.append((df, pr)); _state["datasets"][u.filename] = (df, pr)
+            pr.source_name = Path(u.filename).stem
+            pr.source_path = u.filename
+            datasets.append((df, pr))
+            _state["datasets"][u.filename] = (df, pr)
             ws.source_files.append(u.filename)
         except Exception as e:
             return JSONResponse({"error": f"{u.filename}: {e}"}, 400)
@@ -232,45 +247,58 @@ async def analyze(files: list[UploadFile] = File(...)):
     except Exception as e:
         return JSONResponse({"error": f"Analyse fehlgeschlagen: {e}"}, 500)
 
+
 @app.get("/api/dataset/{name}/columns")
 async def dataset_columns(name: str):
     ds = _state["datasets"].get(name)
-    if not ds: return JSONResponse({"error": f"'{name}' nicht geladen"}, 404)
+    if not ds:
+        return JSONResponse({"error": f"'{name}' nicht geladen"}, 404)
     _, pr = ds
-    return {"columns": [{"name":c.name,"fill_rate":c.fill_rate,"unique_count":c.unique_count,
-                         "sample_values":c.sample_values[:3]} for c in pr.columns]}
+    return {"columns": [
+        {"name": c.name, "fill_rate": c.fill_rate,
+         "unique_count": c.unique_count, "sample_values": c.sample_values[:3]}
+        for c in pr.columns
+    ]}
+
 
 @app.get("/api/dataset/{name}/records")
 async def dataset_records(name: str):
     ds = _state["datasets"].get(name)
-    if not ds: return JSONResponse({"error": "Nicht geladen"}, 404)
+    if not ds:
+        return JSONResponse({"error": "Nicht geladen"}, 404)
     df, pr = ds
     id_col = pr.id_column or df.columns[0]
     ids = df[id_col].dropna().astype(str).unique().tolist()
     return {"record_ids": ids[:200]}
+
 
 # ---------------------------------------------------------------------------
 # NER
 # ---------------------------------------------------------------------------
 @app.post("/api/ner")
 async def api_ner(request: dict):
-    dsn = request.get("dataset","")
+    dsn = request.get("dataset", "")
     ds = _state["datasets"].get(dsn)
-    if not ds: return JSONResponse({"error":"Datensatz nicht geladen"},400)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     cols = request.get("columns", [])
-    if not cols: cols = [c for c in df.columns if df[c].dtype == object]
+    if not cols:
+        cols = [c for c in df.columns if df[c].dtype == object]
     method = request.get("method", "llm")
     ss = min(request.get("sample_size", 10), 500)
     syp = request.get("system_prompt", "")
-    mod = request.get("model", "")
+    mod = request.get("model", "")   # ← model wired
     prov = _prov(mod)
     ws = _ws()
 
     result = ner_hybrid(
-        df, cols, provider=prov if method != "spacy" else None,
-        id_column=profile.id_column, sample_size=ss,
-        model=mod or None, system_prompt=syp,
+        df, cols,
+        provider=prov if method != "spacy" else None,
+        id_column=profile.id_column,
+        sample_size=ss,
+        model=mod or None,
+        system_prompt=syp,
         use_spacy=(method in ("spacy", "hybrid")),
         use_llm=(method in ("llm", "hybrid")),
     )
@@ -288,39 +316,54 @@ async def api_ner(request: dict):
         "workspace": ws.to_summary(),
     }
 
+
 # ---------------------------------------------------------------------------
 # Scan (problematic terms)
 # ---------------------------------------------------------------------------
 @app.post("/api/scan")
 async def api_scan(request: dict):
-    dsn = request.get("dataset","")
+    dsn = request.get("dataset", "")
     ds = _state["datasets"].get(dsn)
-    if not ds: return JSONResponse({"error":"Datensatz nicht geladen"},400)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ss = min(request.get("sample_size", 20), 500)
     syp = request.get("system_prompt", "")
-    prov = _prov()
+    mod = request.get("model", "")   # ← model wired
+    prov = _prov(mod)
     issues, batch = scan_problematic_terms(
-        df, prov, id_column=profile.id_column,
-        sample_size=ss, system_prompt=syp)
-    return {"task_name":"Scan","total":batch.total,"succeeded":batch.succeeded,
-            "issues":issues[:200]}
+        df, prov,
+        id_column=profile.id_column,
+        sample_size=ss,
+        model=mod or None,
+        system_prompt=syp,
+    )
+    return {
+        "task_name": "Scan", "total": batch.total,
+        "succeeded": batch.succeeded, "model": mod or "default",
+        "issues": issues[:200],
+    }
+
 
 # ---------------------------------------------------------------------------
 # EDTF
 # ---------------------------------------------------------------------------
 @app.post("/api/edtf")
 async def api_edtf(request: dict):
-    dsn = request.get("dataset","")
+    dsn = request.get("dataset", "")
     ds = _state["datasets"].get(dsn)
-    if not ds: return JSONResponse({"error":"Datensatz nicht geladen"},400)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
-    col = request.get("column","")
-    if not col: return JSONResponse({"error":"Spalte wählen"},400)
-    if col not in df.columns: return JSONResponse({"error":f"Spalte '{col}' nicht vorhanden"},400)
+    col = request.get("column", "")
+    if not col:
+        return JSONResponse({"error": "Spalte wählen"}, 400)
+    if col not in df.columns:
+        return JSONResponse({"error": f"Spalte '{col}' nicht vorhanden"}, 400)
     ss = request.get("sample_size", 0)
     use_llm = request.get("use_llm", False)
     syp = request.get("system_prompt", "")
+    mod = request.get("model", "")   # ← model wired
     ws = _ws()
 
     mask = df[col].replace("", pd.NA).notna()
@@ -328,48 +371,65 @@ async def api_edtf(request: dict):
     if ss and ss > 0 and ss < len(working):
         working = working.sample(n=ss, random_state=42)
 
-    items = [{"record_id": str(row.get(profile.id_column, "")) if profile.id_column else "",
-              "text": str(row[col]).strip()}
-             for _, row in working.iterrows() if str(row[col]).strip()]
+    items = [
+        {
+            "record_id": str(row.get(profile.id_column, "")) if profile.id_column else "",
+            "text": str(row[col]).strip(),
+        }
+        for _, row in working.iterrows()
+        if str(row[col]).strip()
+    ]
 
-    prov = _prov() if use_llm else None
-    results, batch = normalize_dates(items, provider=prov, system_prompt=syp)
+    prov = _prov(mod) if use_llm else None
+    results, batch = normalize_dates(
+        items, provider=prov,
+        model=mod or None, system_prompt=syp,
+    )
 
-    # Save to workspace
-    ws.add_dates([{"original":r.original,"edtf":r.edtf,"confidence":r.confidence,
-                   "method":r.method,"record_id":r.record_id,"column":col}
-                  for r in results], replace=True)
+    ws.add_dates([
+        {"original": r.original, "edtf": r.edtf, "confidence": r.confidence,
+         "method": r.method, "record_id": r.record_id, "column": col}
+        for r in results
+    ], replace=True)
 
     converted = len([r for r in results if r.edtf])
-    undated = len([r for r in results if not r.edtf and r.note == "undatiert"])
+    undated = len([r for r in results if not r.edtf and "undatiert" in r.note])
     failed = len(results) - converted - undated
 
     return {
         "task_name": "EDTF", "total": len(results),
         "converted": converted, "failed": failed, "undated": undated,
-        "results": [{"record_id":r.record_id,"original":r.original,"edtf":r.edtf,
-                     "confidence":round(r.confidence,3),"method":r.method,"note":r.note}
-                    for r in results],
+        "model": mod or "rule",
+        "results": [
+            {"record_id": r.record_id, "original": r.original, "edtf": r.edtf,
+             "confidence": round(r.confidence, 3), "method": r.method, "note": r.note}
+            for r in results
+        ],
     }
+
 
 # ---------------------------------------------------------------------------
 # GND search
 # ---------------------------------------------------------------------------
 @app.get("/api/gnd/search")
 async def gnd_search_api(q: str = "", type: str = "", size: int = 5):
-    if not q: return {"results": []}
+    if not q:
+        return {"results": []}
     results = gnd_search(q, entity_type=type, size=size)
     return {"results": [r.to_dict() for r in results]}
 
+
 @app.post("/api/gnd/batch")
 async def gnd_batch_api(request: dict):
-    """Run GND lookup for workspace entities."""
     ws = _ws()
     unique = ws.unique_entities()
-    if not unique: return JSONResponse({"error":"Erst NER ausführen"},400)
+    if not unique:
+        return JSONResponse({"error": "Erst NER ausführen"}, 400)
     limit = min(request.get("limit", 50), 200)
-    terms = [{"text":e.text, "type":e.entity_type, "record_id":e.record_id}
-             for e in unique[:limit]]
+    terms = [
+        {"text": e.text, "type": e.entity_type, "record_id": e.record_id}
+        for e in unique[:limit]
+    ]
     results = gnd_batch_search(terms, delay=0.15)
     matched = 0
     for gr in results:
@@ -377,69 +437,122 @@ async def gnd_batch_api(request: dict):
             tm = gr["top_match"]
             for i, e in enumerate(ws.entities):
                 if e.text == gr["text"] and e.entity_type == gr["type"]:
-                    ws.update_entity(i, {"gnd_id":tm["gnd_id"],"gnd_preferred":tm["preferred_name"]})
+                    ws.update_entity(i, {
+                        "gnd_id": tm["gnd_id"],
+                        "gnd_preferred": tm["preferred_name"],
+                    })
             ws.add_to_dictionary([{
-                "term":gr["text"],"gnd_id":tm["gnd_id"],"gnd_preferred":tm["preferred_name"],
-                "category":gr["type"],"source":"gnd-api"}])
+                "term": gr["text"], "gnd_id": tm["gnd_id"],
+                "gnd_preferred": tm["preferred_name"],
+                "category": gr["type"], "source": "gnd-api",
+            }])
             matched += 1
-    return {"total":len(terms),"matched":matched,"results":results,
-            "dictionary_size":len(ws.dictionary)}
+    return {
+        "total": len(terms), "matched": matched,
+        "results": results,
+        "dictionary_size": len(ws.dictionary),
+    }
+
 
 # ---------------------------------------------------------------------------
 # Export
 # ---------------------------------------------------------------------------
 @app.post("/api/export/goobi-preview")
 async def export_goobi_preview(request: dict):
-    dsn = request.get("dataset","")
+    dsn = request.get("dataset", "")
     ds = _state["datasets"].get(dsn)
-    if not ds: return JSONResponse({"error":"Datensatz nicht geladen"},400)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = _ws()
-    rid = request.get("record_id","")
+    rid = request.get("record_id", "")
     if rid:
         df_filtered = df[df[profile.id_column or df.columns[0]].astype(str) == rid]
-        if df_filtered.empty: return JSONResponse({"error":f"Record '{rid}' nicht gefunden"},400)
+        if df_filtered.empty:
+            return JSONResponse({"error": f"Record '{rid}' nicht gefunden"}, 400)
     else:
         df_filtered = df.head(1)
     fmap = ws.field_mapping or {}
-    results = export_goobi_xml(df_filtered, ws,
-                               record_id_col=profile.id_column or "record_id",
-                               field_map={k:tuple(v) if isinstance(v,(list,tuple)) else v for k,v in fmap.items()})
+    results = export_goobi_xml(
+        df_filtered, ws,
+        record_id_col=profile.id_column or "record_id",
+        field_map={k: tuple(v) if isinstance(v, (list, tuple)) else v for k, v in fmap.items()},
+    )
     if results:
         return {"xml": results[0][1], "record_id": results[0][0]}
     return {"xml": "<!-- Kein Record -->", "record_id": ""}
 
+
 @app.post("/api/export/goobi-batch")
 async def export_goobi_batch_api(request: dict):
-    dsn = request.get("dataset","")
+    dsn = request.get("dataset", "")
     ds = _state["datasets"].get(dsn)
-    if not ds: return JSONResponse({"error":"Datensatz nicht geladen"},400)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = _ws()
     xml = export_goobi_batch(df, ws, record_id_col=profile.id_column or "record_id")
     return {"xml": xml, "record_count": len(df)}
 
+
+# ---------------------------------------------------------------------------
+# Field mapping (new endpoint)
+# ---------------------------------------------------------------------------
+@app.post("/api/workspace/field-mapping")
+async def set_field_mapping(request: dict):
+    """Save field mapping. request: {mapping: {csv_col: {label, type}}}"""
+    mapping = request.get("mapping", {})
+    ws = _ws()
+    ws.field_mapping = mapping
+    return {"ok": True, "mapping_size": len(mapping)}
+
+
+@app.get("/api/workspace/field-mapping")
+async def get_field_mapping():
+    return {"mapping": _ws().field_mapping or {}}
+
+
 # ---------------------------------------------------------------------------
 # Workspace
 # ---------------------------------------------------------------------------
 @app.get("/api/workspace")
-async def workspace_get(): return _ws().to_summary()
+async def workspace_get():
+    return _ws().to_summary()
+
 
 @app.get("/api/workspace/entities")
-async def workspace_entities():
+async def workspace_entities(status: str = ""):
+    """Return entities, optionally filtered by status."""
     ws = _ws()
-    return {"entities":[
-        {"idx":i,"text":e.text,"type":e.entity_type,"confidence":e.confidence,
-         "source":e.source,"record_id":e.record_id,"gnd_id":e.gnd_id,
-         "gnd_preferred":e.gnd_preferred,"status":e.status,"editor_note":e.editor_note}
-        for i,e in enumerate(ws.entities)
-    ],"status_counts":ws.entities_by_status()}
+    ents = ws.entities
+    if status:
+        ents = [e for e in ents if e.status == status]
+    return {
+        "entities": [
+            {"idx": i, "text": e.text, "type": e.entity_type, "confidence": e.confidence,
+             "source": e.source, "record_id": e.record_id, "gnd_id": e.gnd_id,
+             "gnd_preferred": e.gnd_preferred, "status": e.status, "editor_note": e.editor_note}
+            for i, e in enumerate(ws.entities)
+            if not status or e.status == status
+        ],
+        "status_counts": ws.entities_by_status(),
+    }
+
+
+@app.post("/api/workspace/entity/{idx}")
+async def workspace_entity_update(idx: int, updates: dict):
+    if _ws().update_entity(idx, updates):
+        return {"ok": True}
+    return JSONResponse({"error": "Index ungültig"}, 400)
+
 
 @app.post("/api/workspace/entity/batch")
 async def workspace_entity_batch(request: dict):
-    indices = request.get("indices",[]); updates = request.get("updates",{})
+    indices = request.get("indices", [])
+    updates = request.get("updates", {})
     count = sum(1 for i in indices if _ws().update_entity(i, updates))
-    return {"updated":count}
+    return {"updated": count}
+
 
 @app.post("/api/workspace/entity/{idx}")
 async def workspace_entity_update(idx: int, updates: dict):
@@ -449,23 +562,24 @@ async def workspace_entity_update(idx: int, updates: dict):
 @app.get("/api/workspace/dictionary")
 async def workspace_dictionary():
     ws = _ws()
-    return {"entries":[
-        {"idx":i,"term":e.term,"normalized":e.normalized,"gnd_id":e.gnd_id,
-         "gnd_preferred":e.gnd_preferred,"category":e.category,"status":e.status}
-        for i,e in enumerate(ws.dictionary)
+    return {"entries": [
+        {"idx": i, "term": e.term, "normalized": e.normalized, "gnd_id": e.gnd_id,
+         "gnd_preferred": e.gnd_preferred, "category": e.category, "status": e.status}
+        for i, e in enumerate(ws.dictionary)
     ]}
+
 
 @app.post("/api/workspace/save")
 async def workspace_save(request: dict):
     name = request.get("name", "project")
     filename = _safe_filename(name)
     path = (_WORKSPACE_DIR / filename).resolve()
-    # Path boundary check
     if not str(path).startswith(str(_WORKSPACE_DIR.resolve())):
         return JSONResponse({"error": "Ungültiger Projektname"}, 400)
     _ws().name = name
     _ws().save(path)
     return {"path": str(path), "summary": _ws().to_summary()}
+
 
 @app.post("/api/workspace/load")
 async def workspace_load(file: UploadFile = File(...)):
@@ -474,56 +588,83 @@ async def workspace_load(file: UploadFile = File(...)):
         return JSONResponse({"error": "Nur .json Dateien erlaubt"}, 400)
     content = await file.read()
     if len(content) > MAX_WORKSPACE_BYTES:
-        return JSONResponse({"error": f"Workspace-Datei zu gross (max {MAX_WORKSPACE_BYTES // (1024*1024)} MB)"}, 400)
+        return JSONResponse({"error": f"Workspace-Datei zu gross"}, 400)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-        tmp.write(content); tp = Path(tmp.name)
+        tmp.write(content)
+        tp = Path(tmp.name)
     try:
         _state["workspace"] = Workspace.load(tp)
         return _ws().to_summary()
-    finally: tp.unlink(missing_ok=True)
+    finally:
+        tp.unlink(missing_ok=True)
+
 
 # ---------------------------------------------------------------------------
 # KI-Beschreibungen
 # ---------------------------------------------------------------------------
 @app.post("/api/ai/describe-columns")
-async def ai_describe_columns():
-    if not _state["datasets"]: return JSONResponse({"error":"Keine Daten"},400)
-    prov = _prov()
+async def ai_describe_columns(request: dict = None):
+    if request is None:
+        request = {}
+    if not _state["datasets"]:
+        return JSONResponse({"error": "Keine Daten"}, 400)
+    mod = request.get("model", "")   # ← model wired
+    prov = _prov(mod)
     all_ds = []
     for name, (df, profile) in _state["datasets"].items():
         cols = []
         for cp in profile.columns:
-            vals = df[cp.name].replace("",pd.NA).dropna().astype(str).unique()[:5].tolist()
+            vals = df[cp.name].replace("", pd.NA).dropna().astype(str).unique()[:5].tolist()
             ctx = f"Spalte '{cp.name}', {cp.fill_rate:.0%} gefüllt, {cp.unique_count} unique. Beispiele: {', '.join(vals)}"
             try:
-                r = prov.complete([AIMessage.system(SYSTEM_METADATA_EXPERT_DE),
-                    AIMessage.user(f"Beschreibe kurz:\n{ctx}\nJSON: {{\"description\":\"...\"}}")],
-                    max_tokens=200)
+                r = prov.complete(
+                    [AIMessage.system(SYSTEM_METADATA_EXPERT_DE),
+                     AIMessage.user(f"Beschreibe kurz:\n{ctx}\nJSON: {{\"description\":\"...\"}}")],
+                    max_tokens=200, model=mod or None,
+                )
                 p = _try_parse_json(r.content)
-                desc = p.get("description",r.content) if p else r.content
-            except Exception as e: desc = f"(Fehler: {e})"
-            cols.append({"name":cp.name,"fill_rate":cp.fill_rate,"unique_count":cp.unique_count,
-                        "description":f"{cp.fill_rate:.0%}, {cp.unique_count} Werte","ai_description":desc})
-        all_ds.append({"name":profile.source_name,"columns":cols})
-    return {"datasets":all_ds}
+                desc = p.get("description", r.content) if p else r.content
+            except Exception as e:
+                desc = f"(Fehler: {e})"
+            cols.append({
+                "name": cp.name, "fill_rate": cp.fill_rate,
+                "unique_count": cp.unique_count,
+                "description": f"{cp.fill_rate:.0%}, {cp.unique_count} Werte",
+                "ai_description": desc,
+            })
+        all_ds.append({"name": profile.source_name, "columns": cols})
+    return {"datasets": all_ds}
+
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 def _report_json(report, md):
     return {
-        "summary":report.summary,
-        "datasets":[{"source_name":p.source_name,"source_path":p.source_path,"row_count":p.row_count,
-            "column_count":p.column_count,"id_column":p.id_column,"encoding_detected":p.encoding_detected,
-            "has_bom":p.has_bom,"line_ending":p.line_ending,
-            "columns":[{"name":c.name,"fill_rate":c.fill_rate,"unique_count":c.unique_count,
-                "sample_values":c.sample_values} for c in p.columns]} for p in report.datasets],
-        "findings":[{"category":f.category.value,"severity":f.severity.value,"message":f.message,
-            "column":f.column,"record_ids":f.record_ids[:10],"suggestion":f.suggestion} for f in report.findings],
-        "markdown":md}
+        "summary": report.summary,
+        "datasets": [
+            {"source_name": p.source_name, "source_path": p.source_path,
+             "row_count": p.row_count, "column_count": p.column_count,
+             "id_column": p.id_column, "encoding_detected": p.encoding_detected,
+             "has_bom": p.has_bom, "line_ending": p.line_ending,
+             "columns": [
+                 {"name": c.name, "fill_rate": c.fill_rate,
+                  "unique_count": c.unique_count, "sample_values": c.sample_values}
+                 for c in p.columns
+             ]}
+            for p in report.datasets
+        ],
+        "findings": [
+            {"category": f.category.value, "severity": f.severity.value,
+             "message": f.message, "column": f.column,
+             "record_ids": f.record_ids[:10], "suggestion": f.suggestion}
+            for f in report.findings
+        ],
+        "markdown": md,
+    }
+
 
 if __name__ == "__main__":
-    import os
     host = os.environ.get("KWB_HOST", "127.0.0.1")
     port = int(os.environ.get("KWB_PORT", "8765"))
     if host != "127.0.0.1":

@@ -13,40 +13,30 @@ from typing import Any
 
 
 class Severity(str, Enum):
-    """How urgent is a finding?"""
-    CRITICAL = "critical"   # Blocks downstream use (e.g., missing record_id)
-    WARNING = "warning"     # Degrades quality (e.g., inconsistent encoding)
-    INFO = "info"           # Opportunity for improvement (e.g., enrichment candidate)
+    CRITICAL = "critical"
+    WARNING = "warning"
+    INFO = "info"
 
 
 class FindingCategory(str, Enum):
-    """What kind of problem or opportunity was found?"""
-    # Structural
     MISSING_VALUES = "missing_values"
     DUPLICATE_RECORDS = "duplicate_records"
     ENCODING_ISSUES = "encoding_issues"
     FORMAT_INCONSISTENCY = "format_inconsistency"
     SCHEMA_MISMATCH = "schema_mismatch"
-
-    # Semantic
     CLASSIFICATION_INCONSISTENCY = "classification_inconsistency"
     LANGUAGE_MIXING = "language_mixing"
     TERM_VARIANTS = "term_variants"
     FIELD_MISUSE = "field_misuse"
-
-    # Enrichment opportunities
     NORM_DATA_CANDIDATE = "norm_data_candidate"
     GND_MATCH_MISSING = "gnd_match_missing"
     GEO_ENRICHMENT_CANDIDATE = "geo_enrichment_candidate"
-
-    # Data linkage
     CROSS_FILE_MISMATCH = "cross_file_mismatch"
     ORPHAN_RECORDS = "orphan_records"
 
 
 @dataclass
 class Finding:
-    """A single observation about the data — the atomic unit of analysis."""
     category: FindingCategory
     severity: Severity
     message: str
@@ -57,32 +47,28 @@ class Finding:
 
     @property
     def scope(self) -> str:
-        """How many records are affected?"""
         n = len(self.record_ids)
         if n == 0:
             return "dataset-level"
         elif n == 1:
             return "single-record"
-        else:
-            return f"{n} records"
+        return f"{n} records"
 
 
 @dataclass
 class ColumnProfile:
-    """Statistical profile of a single column."""
     name: str
     dtype: str
     total_count: int
     non_null_count: int
     unique_count: int
-    fill_rate: float  # 0.0 to 1.0
+    fill_rate: float
     sample_values: list[str] = field(default_factory=list)
-    value_lengths: dict[str, int] = field(default_factory=dict)  # min, max, mean
+    value_lengths: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass
 class DatasetProfile:
-    """Overview of a single ingested dataset (one CSV file)."""
     source_path: str
     source_name: str
     row_count: int
@@ -96,7 +82,6 @@ class DatasetProfile:
 
 @dataclass
 class AnalysisReport:
-    """The complete output of an analysis run across one or more datasets."""
     datasets: list[DatasetProfile] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     summary: dict[str, Any] = field(default_factory=dict)
