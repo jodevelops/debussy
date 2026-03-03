@@ -305,3 +305,77 @@ class LobidGNDClient:
             confidence=1.0,
             source="lobid",
         )
+# --- Compatibility wrappers expected by kwb.api.app ---
+
+import json
+import urllib.parse
+import urllib.request
+from dataclasses import dataclass
+
+LOBID_BASE = "https://lobid.org/gnd/search"
+
+@dataclass
+class GNDResult:
+    gnd_id: str
+    preferred_name: str
+    gnd_type: str = ""
+    alternative_names: list[str] = None
+    description: str = ""
+    uri: str = ""
+    score: float = 0.0
+
+    def __post_init__(self):
+        if self.alternative_names is None:
+            self.alternative_names = []
+        if not self.uri and self.gnd_id:
+            self.uri = f"https://d-nb.info/gnd/{self.gnd_id}"
+
+    def to_dict(self) -> dict:
+        return {
+            "gnd_id": self.gnd_id,
+            "preferred_name": self.preferred_name,
+            "type": self.gnd_type,
+            "alternative_names": self.alternative_names,
+            "description": self.description,
+            "uri": self.uri,
+            "score": self.score,
+        }
+
+def gnd_search(query: str, entity_type: str = "", size: int = 5, timeout: float = 5.0) -> list[GNDResult]:
+    if not query or not str(query).strip():
+        return []
+    params = {"q": str(query).strip(), "size": str(size), "format": "json"}
+    url = f"{LOBID_BASE}?{urllib.parse.urlencode(params)}"
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "Debussy/compat"})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+    except Exception:
+        return []
+
+    out: list[GNDResult] = []
+    for item in data.get("member", []):
+        gid = item.get("gndIdentifier", "")
+        if not gid:
+            continue
+        preferred = item.get("preferredName", "")
+        types = item.get("type", [])
+        gtype = next((t for t in types if t != "AuthorityResource"), "")
+        alts = [v for v in item.get("variantName", []) if isinstance(v, str)][:5]
+        out.append(GNDResult(gnd_id=gid, preferred_name=preferred, gnd_type=gtype, alternative_names=alts))
+    return out
+
+def gnd_batch_search(terms: list[dict[str, str]], delay: float = 0.0) -> list[dict]:
+    results = []
+    for item in terms:
+        text = item.get("text", "")
+        etype = item.get("type", "")
+        hits = gnd_search(text, entity_type=etype, size=3)
+        results.append({
+            "text": text,
+            "type": etype,
+            "record_id": item.get("record_id", ""),
+            "results": [h.to_dict() for h in hits],
+            "top_match": hits[0].to_dict() if hits else None,
+        })
+    return results
