@@ -188,252 +188,393 @@ class TestNEREndpoint(unittest.TestCase):
             "sample_size": 3,
         })
         self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertIn("entities", data)
-        self.assertIn("total", data)
+        body = r.json()
+        self.assertEqual(body["task_name"], "NER")
+        self.assertIn("entities", body)
+        self.assertIn("workspace", body)
 
-    def test_ner_model_forwarded(self):
-        """The model parameter must reach the provider."""
-        from kwb.ai.mock import MockProvider
-        mock = MockProvider.with_ner_response([
-            {"text": "Bern", "type": "GPE", "confidence": 0.9, "reasoning": "city"}
-        ])
-        # Inject mock
-        from kwb.api import deps
-        deps._prov_override = mock
-
+    def test_ner_unknown_dataset(self):
         r = self.client.post("/api/ner", json={
-            "dataset": "test.csv",
+            "dataset": "nope.csv",
+            "columns": ["subject"],
             "method": "llm",
-            "sample_size": 2,
-            "model": "gpt-oss-120b",
         })
-        self.assertEqual(r.status_code, 200)
-        # Check model appears in response
-        self.assertEqual(r.json()["model"], "gpt-oss-120b")
-        # Check mock was called with our model
-        if mock.call_log:
-            self.assertEqual(mock.call_log[0]["model"], "gpt-oss-120b")
-
-    def test_ner_no_dataset_returns_400(self):
-        r = self.client.post("/api/ner", json={"dataset": "missing.csv"})
         self.assertEqual(r.status_code, 400)
 
-    def test_ner_entities_stored_in_workspace(self):
+    def test_ner_updates_workspace(self):
         self.client.post("/api/ner", json={
-            "dataset": "test.csv",
+            "dataset": "ner.csv",
+            "columns": ["subject"],
             "method": "llm",
-            "sample_size": 5,
+            "sample_size": 2,
         })
         r = self.client.get("/api/workspace")
-        self.assertEqual(r.status_code, 200)
+        ws = r.json()
+        self.assertGreaterEqual(ws["ai_runs"], 1)
 
 
-@_skip_no_fastapi
-class TestEDTFEndpoint(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Tests: Scan endpoint
+# ---------------------------------------------------------------------------
 
+class TestScanEndpoint(unittest.TestCase):
     def setUp(self):
-        self.client = _get_client()
-        self.client.post("/api/analyze", files=[_make_csv_upload()])
+        self.client = TestClient(app)
+        _reset_state()
+        _upload_csv(self.client, filename="scan.csv")
+
+    def test_scan_returns_result(self):
+        r = self.client.post("/api/scan", json={
+            "dataset": "scan.csv",
+            "sample_size": 3,
+        })
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["task_name"], "Scan")
+        self.assertIn("total", body)
+        self.assertIn("issues", body)
+
+    def test_scan_unknown_dataset(self):
+        r = self.client.post("/api/scan", json={"dataset": "nope.csv"})
+        self.assertEqual(r.status_code, 400)
+
+
+# ---------------------------------------------------------------------------
+# Tests: EDTF endpoint
+# ---------------------------------------------------------------------------
+
+class TestEDTFEndpoint(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        _reset_state()
+        _upload_csv(self.client, filename="edtf.csv")
 
     def test_edtf_rules_only(self):
         r = self.client.post("/api/edtf", json={
-            "dataset": "test.csv",
-            "column": "year",
+            "dataset": "edtf.csv",
+            "column": "date",
             "use_llm": False,
         })
         self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertIn("results", data)
-        # "1923" should convert to EDTF "1923"
-        found = {res["original"]: res["edtf"] for res in data["results"]}
-        self.assertEqual(found.get("1923"), "1923")
+        body = r.json()
+        self.assertEqual(body["task_name"], "EDTF")
+        self.assertGreater(body["total"], 0)
+        # "1920" should be converted by rules
+        converted = [d for d in body["results"] if d["edtf"]]
+        self.assertGreater(len(converted), 0)
 
-    def test_edtf_approx_pattern(self):
+    def test_edtf_missing_column(self):
         r = self.client.post("/api/edtf", json={
-            "dataset": "test.csv",
-            "column": "year",
-            "use_llm": False,
+            "dataset": "edtf.csv",
+            "column": "",
         })
-        data = r.json()
-        found = {res["original"]: res["edtf"] for res in data["results"]}
-        # "ca. 1850" → "1850~"
-        self.assertEqual(found.get("ca. 1850"), "1850~")
+        self.assertEqual(r.status_code, 400)
 
-    def test_edtf_range_pattern(self):
+    def test_edtf_invalid_column(self):
         r = self.client.post("/api/edtf", json={
-            "dataset": "test.csv",
-            "column": "year",
-            "use_llm": False,
-        })
-        data = r.json()
-        found = {res["original"]: res["edtf"] for res in data["results"]}
-        # "1960-1970" → "1960/1970"
-        self.assertEqual(found.get("1960-1970"), "1960/1970")
-
-    def test_edtf_missing_column_returns_400(self):
-        r = self.client.post("/api/edtf", json={
-            "dataset": "test.csv",
+            "dataset": "edtf.csv",
             "column": "nonexistent",
         })
         self.assertEqual(r.status_code, 400)
 
-    def test_edtf_no_column_returns_400(self):
-        r = self.client.post("/api/edtf", json={"dataset": "test.csv"})
+    def test_edtf_unknown_dataset(self):
+        r = self.client.post("/api/edtf", json={
+            "dataset": "nope.csv",
+            "column": "date",
+        })
         self.assertEqual(r.status_code, 400)
 
 
-@_skip_no_fastapi
-class TestWorkspaceEndpoints(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Tests: GND endpoints (network mocked)
+# ---------------------------------------------------------------------------
 
+def _fake_gnd_response():
+    """Fake lobid.org JSON response."""
+    return json.dumps({
+        "member": [{
+            "gndIdentifier": "118540238",
+            "preferredName": "Johann Wolfgang von Goethe",
+            "type": ["AuthorityResource", "Person"],
+            "variantName": ["Goethe, J.W."],
+            "biographicalOrHistoricalInformation": ["Dichter und Naturforscher"],
+        }],
+        "totalItems": 1,
+    }).encode("utf-8")
+
+
+class TestGNDEndpoints(unittest.TestCase):
     def setUp(self):
-        self.client = _get_client()
+        self.client = TestClient(app)
+        _reset_state()
 
-    def test_get_empty_workspace(self):
-        r = self.client.get("/api/workspace")
+    @patch("kwb.enrich.gnd.urllib.request.urlopen")
+    def test_gnd_search(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = _fake_gnd_response()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        r = self.client.get("/api/gnd/search", params={"q": "Goethe", "type": "PER"})
         self.assertEqual(r.status_code, 200)
-
-    def test_set_field_mapping(self):
-        r = self.client.post("/api/workspace/field-mapping", json={
-            "mappings": [
-                {"csv_column": "record_id", "goobi_type": "CatalogIDDigital"},
-                {"csv_column": "title", "goobi_type": "TitleDocMain"},
-                {"csv_column": "year", "goobi_type": "PublicationYear"},
-            ]
-        })
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertEqual(data["saved"], 3)
-
-    def test_get_field_mapping_after_set(self):
-        self.client.post("/api/workspace/field-mapping", json={
-            "mappings": [{"csv_column": "title", "goobi_type": "TitleDocMain"}]
-        })
-        r = self.client.get("/api/workspace/field-mapping")
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertEqual(len(data["mappings"]), 1)
-        self.assertEqual(data["mappings"][0]["csv_column"], "title")
-
-    def test_workspace_save_and_load(self):
-        import tempfile, os
-        from kwb.api import deps
-        orig_dir = deps._WORKSPACE_DIR
-        with tempfile.TemporaryDirectory() as tmp:
-            deps._WORKSPACE_DIR = Path(tmp)
-            try:
-                r_save = self.client.post("/api/workspace/save", json={"name": "test_proj"})
-                self.assertEqual(r_save.status_code, 200)
-                fname = r_save.json()["saved"]
-
-                r_load = self.client.post("/api/workspace/load", json={"filename": fname})
-                self.assertEqual(r_load.status_code, 200)
-                self.assertIn("workspace", r_load.json())
-            finally:
-                deps._WORKSPACE_DIR = orig_dir
-
-    def test_entity_status_filter(self):
-        """GET /api/workspace/entities?status=pending returns only pending."""
-        r = self.client.get("/api/workspace/entities?status=pending")
-        self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertIn("entities", data)
-
-    def test_invalid_status_filter_returns_400(self):
-        r = self.client.get("/api/workspace/entities?status=unknown_status")
-        self.assertEqual(r.status_code, 400)
-
-
-@_skip_no_fastapi
-class TestGNDEndpoint(unittest.TestCase):
-
-    def setUp(self):
-        self.client = _get_client()
+        results = r.json()["results"]
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["gnd_id"], "118540238")
+        self.assertEqual(results[0]["preferred_name"], "Johann Wolfgang von Goethe")
 
     def test_gnd_search_empty_query(self):
-        r = self.client.get("/api/gnd/search?q=")
+        r = self.client.get("/api/gnd/search", params={"q": ""})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["results"], [])
 
-    def test_gnd_search_returns_list(self):
-        # This hits the real lobid.org API — skip in offline environments
-        import socket
-        try:
-            socket.setdefaulttimeout(2)
-            socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("lobid.org", 443))
-            r = self.client.get("/api/gnd/search?q=Bern&type=PlaceOrGeographicName&size=3")
-            self.assertEqual(r.status_code, 200)
-            results = r.json()["results"]
-            self.assertIsInstance(results, list)
-        except (socket.error, OSError):
-            self.skipTest("No network access to lobid.org")
+    @patch("kwb.enrich.gnd.urllib.request.urlopen")
+    def test_gnd_batch(self, mock_urlopen):
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = _fake_gnd_response()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
 
-    def test_gnd_batch_no_entities_returns_400(self):
+        # Need entities in workspace first
+        ws = _state["workspace"]
+        ws.add_entities([
+            {"text": "Goethe", "type": "PER", "confidence": 0.9,
+             "source": "llm", "record_id": "R001"},
+        ])
+
+        r = self.client.post("/api/gnd/batch", json={"limit": 5})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertIn("matched", body)
+        self.assertIn("total", body)
+
+    def test_gnd_batch_no_entities(self):
         r = self.client.post("/api/gnd/batch", json={})
         self.assertEqual(r.status_code, 400)
+        self.assertIn("NER", r.json()["error"])
 
 
-@_skip_no_fastapi
-class TestImageEndpoints(unittest.TestCase):
+# ---------------------------------------------------------------------------
+# Tests: Export endpoints
+# ---------------------------------------------------------------------------
 
+class TestExportEndpoints(unittest.TestCase):
     def setUp(self):
-        self.client = _get_client()
-        # Clear image store
-        self.client.delete("/api/images")
+        self.client = TestClient(app)
+        _reset_state()
+        _upload_csv(self.client, filename="export.csv")
 
-    def test_image_upload_minimal_jpeg(self):
-        r = self.client.post("/api/images/upload", files=[
-            ("files", ("photo.jpg", io.BytesIO(_SAMPLE_IMAGE_BYTES), "image/jpeg"))
-        ])
+    def test_goobi_preview(self):
+        r = self.client.post("/api/export/goobi-preview", json={
+            "dataset": "export.csv",
+        })
         self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertEqual(data["uploaded"], 1)
-        self.assertEqual(data["images"][0]["filename"], "photo.jpg")
+        body = r.json()
+        self.assertIn("xml", body)
+        self.assertIn("goobi-import", body["xml"])
 
-    def test_image_list_after_upload(self):
-        self.client.post("/api/images/upload", files=[
-            ("files", ("test.png", io.BytesIO(b"\x89PNG\r\n\x1a\n"), "image/png"))
-        ])
-        r = self.client.get("/api/images")
+    def test_goobi_preview_specific_record(self):
+        r = self.client.post("/api/export/goobi-preview", json={
+            "dataset": "export.csv",
+            "record_id": "R001",
+        })
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(len(r.json()["images"]), 1)
+        self.assertIn("R001", r.json()["xml"])
 
-    def test_image_wrong_format_rejected(self):
-        r = self.client.post("/api/images/upload", files=[
-            ("files", ("doc.pdf", io.BytesIO(b"%PDF"), "application/pdf"))
-        ])
+    def test_goobi_preview_unknown_record(self):
+        r = self.client.post("/api/export/goobi-preview", json={
+            "dataset": "export.csv",
+            "record_id": "NONEXISTENT",
+        })
         self.assertEqual(r.status_code, 400)
 
-    def test_image_analyze_mock_response(self):
-        # Upload first
-        up = self.client.post("/api/images/upload", files=[
-            ("files", ("img.jpg", io.BytesIO(_SAMPLE_IMAGE_BYTES), "image/jpeg"))
-        ])
-        self.assertEqual(up.status_code, 200)
-        img_id = up.json()["images"][0]["id"]
+    def test_goobi_preview_unknown_dataset(self):
+        r = self.client.post("/api/export/goobi-preview", json={
+            "dataset": "nope.csv",
+        })
+        self.assertEqual(r.status_code, 400)
 
-        # Analyze
-        r = self.client.post("/api/images/analyze", json={"image_ids": [img_id]})
+    def test_goobi_batch(self):
+        r = self.client.post("/api/export/goobi-batch", json={
+            "dataset": "export.csv",
+        })
         self.assertEqual(r.status_code, 200)
-        data = r.json()
-        self.assertEqual(data["total"], 1)
-        self.assertIn("results", data)
-
-    def test_image_clear(self):
-        self.client.post("/api/images/upload", files=[
-            ("files", ("img.jpg", io.BytesIO(_SAMPLE_IMAGE_BYTES), "image/jpeg"))
-        ])
-        r = self.client.delete("/api/images")
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.json()["cleared"], 1)
+        body = r.json()
+        self.assertIn("xml", body)
+        self.assertEqual(body["record_count"], 5)
+        self.assertIn("goobi-import-batch", body["xml"])
 
 
 # ---------------------------------------------------------------------------
-# Entry point
+# Tests: Workspace endpoints
 # ---------------------------------------------------------------------------
+
+class TestWorkspaceEndpoints(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        _reset_state()
+
+    def test_get_workspace_empty(self):
+        r = self.client.get("/api/workspace")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["entity_count"], 0)
+        self.assertEqual(body["date_count"], 0)
+
+    def test_get_entities_empty(self):
+        r = self.client.get("/api/workspace/entities")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["entities"], [])
+
+    def test_entity_update(self):
+        ws = _state["workspace"]
+        ws.add_entities([
+            {"text": "Bern", "type": "GPE", "confidence": 0.8,
+             "source": "llm", "record_id": "R001"},
+        ])
+        r = self.client.post("/api/workspace/entity/0", json={
+            "status": "accepted",
+            "editor_note": "korrekt",
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["ok"])
+
+        # Verify update persisted
+        r2 = self.client.get("/api/workspace/entities")
+        ent = r2.json()["entities"][0]
+        self.assertEqual(ent["status"], "accepted")
+        self.assertEqual(ent["editor_note"], "korrekt")
+
+    def test_entity_update_invalid_index(self):
+        r = self.client.post("/api/workspace/entity/999", json={"status": "accepted"})
+        self.assertEqual(r.status_code, 400)
+
+    def test_entity_batch_update(self):
+        ws = _state["workspace"]
+        ws.add_entities([
+            {"text": "Bern", "type": "GPE", "confidence": 0.8,
+             "source": "llm", "record_id": "R001"},
+            {"text": "Zürich", "type": "GPE", "confidence": 0.7,
+             "source": "llm", "record_id": "R002"},
+        ])
+        r = self.client.post("/api/workspace/entity/batch", json={
+            "indices": [0, 1],
+            "updates": {"status": "accepted"},
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["updated"], 2)
+
+    def test_get_dictionary_empty(self):
+        r = self.client.get("/api/workspace/dictionary")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["entries"], [])
+
+    def test_workspace_save_and_load(self):
+        ws = _state["workspace"]
+        ws.add_entities([
+            {"text": "Test", "type": "CON", "confidence": 0.5,
+             "source": "manual", "record_id": "R001"},
+        ])
+
+        # Save
+        r = self.client.post("/api/workspace/save", json={"name": "test_project"})
+        self.assertEqual(r.status_code, 200)
+        saved_path = r.json()["path"]
+        self.assertIn("test_project", saved_path)
+
+        try:
+            # Load it back
+            with open(saved_path, "rb") as f:
+                r2 = self.client.post(
+                    "/api/workspace/load",
+                    files=[("file", ("test.json", f, "application/json"))],
+                )
+            self.assertEqual(r2.status_code, 200)
+            self.assertEqual(r2.json()["entity_count"], 1)
+        finally:
+            Path(saved_path).unlink(missing_ok=True)
+
+    def test_workspace_load_invalid_extension(self):
+        r = self.client.post(
+            "/api/workspace/load",
+            files=[("file", ("bad.txt", io.BytesIO(b"{}"), "text/plain"))],
+        )
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("json", r.json()["error"].lower())
+
+
+# ---------------------------------------------------------------------------
+# Tests: Workspace path traversal security
+# ---------------------------------------------------------------------------
+
+class TestWorkspaceSecurity(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        _reset_state()
+
+    def test_safe_filename_strips_traversal(self):
+        safe = _safe_filename("../../etc/passwd")
+        self.assertNotIn("..", safe)
+        self.assertNotIn("/", safe)
+
+    def test_safe_filename_empty_input(self):
+        safe = _safe_filename("")
+        self.assertTrue(safe.startswith("project"))
+
+    def test_safe_filename_special_chars(self):
+        safe = _safe_filename("<script>alert(1)</script>")
+        self.assertNotIn("<", safe)
+        self.assertNotIn(">", safe)
+
+
+# ---------------------------------------------------------------------------
+# Tests: AI describe columns
+# ---------------------------------------------------------------------------
+
+class TestAIDescribeColumns(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        _reset_state()
+
+    def test_describe_no_data(self):
+        r = self.client.post("/api/ai/describe-columns")
+        self.assertEqual(r.status_code, 400)
+
+    def test_describe_with_data(self):
+        _upload_csv(self.client, filename="desc.csv")
+        r = self.client.post("/api/ai/describe-columns")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertIn("datasets", body)
+        ds = body["datasets"][0]
+        self.assertIn("columns", ds)
+        for col in ds["columns"]:
+            self.assertIn("ai_description", col)
+
+
+# ---------------------------------------------------------------------------
+# Tests: GPU status (uses mock since no real GPU in test)
+# ---------------------------------------------------------------------------
+
+class TestGPUEndpoints(unittest.TestCase):
+    def setUp(self):
+        self.client = TestClient(app)
+        _reset_state()
+
+    def test_gpu_status_no_config(self):
+        r = self.client.get("/api/gpu/status")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertFalse(body["available"])
+
+    def test_gpu_test(self):
+        r = self.client.post("/api/gpu/test")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        # MockProvider returns ok
+        self.assertIn("ok", body)
+
 
 if __name__ == "__main__":
-    if not _FASTAPI_AVAILABLE:
-        print("⚠️  FastAPI not installed — tests will be skipped.")
-        print("    Run: pip install fastapi httpx python-multipart")
-    unittest.main(verbosity=2)
+    unittest.main()

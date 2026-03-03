@@ -239,11 +239,13 @@ async def analyze(files: list[UploadFile] = File(...)):
             ws.source_files.append(u.filename)
         except Exception as e:
             return JSONResponse({"error": f"{u.filename}: {e}"}, 400)
-        finally:
-            tp.unlink(missing_ok=True)
-    report = analyze_datasets(datasets)
-    _state["report"] = report
-    return _report_json(report, render_report(report))
+        finally: tp.unlink(missing_ok=True)
+    try:
+        report = analyze_datasets(datasets)
+        _state["report"] = report
+        return _report_json(report, render_report(report))
+    except Exception as e:
+        return JSONResponse({"error": f"Analyse fehlgeschlagen: {e}"}, 500)
 
 
 @app.get("/api/dataset/{name}/columns")
@@ -551,6 +553,11 @@ async def workspace_entity_batch(request: dict):
     count = sum(1 for i in indices if _ws().update_entity(i, updates))
     return {"updated": count}
 
+
+@app.post("/api/workspace/entity/{idx}")
+async def workspace_entity_update(idx: int, updates: dict):
+    if _ws().update_entity(idx, updates): return {"ok":True}
+    return JSONResponse({"error":"Index ungültig"},400)
 
 @app.get("/api/workspace/dictionary")
 async def workspace_dictionary():

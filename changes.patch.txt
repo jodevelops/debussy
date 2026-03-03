@@ -1,0 +1,384 @@
+diff --git a/README.md b/README.md
+index 23716c61c02b3955e364248284fdf7f9c10aca4c..c1a64c2ab5e91f16386257ac0d4ba576296bf0ba 100644
+--- a/README.md
++++ b/README.md
+@@ -1,26 +1,35 @@
+ # Debussy — KI-gestützte Kuratierungswerkbank
+ 
+ Datenqualitäts-Analyse und -Anreicherung für GLAM-Daten. KI-gestützt.
+ 
+ ## Quickstart
+ 
+ ```bash
+ pip install fastapi uvicorn python-multipart
+ cd debussy && $env:PYTHONPATH = "src" && python -m kwb.api.app
+ # → http://localhost:8765
+ ```
+ 
++## Entwicklungsplanung (neu)
++
++```bash
++PYTHONPATH=src python -m kwb.cli plan --top 8
++```
++
++Erzeugt priorisierte, konkrete Entwicklungsvorschläge direkt aus `docs/FUNKTIONSKATALOG.md`
++inkl. Begründung, nächsten Schritten und Akzeptanzkriterien.
++
+ ## Tests
+ 
+ ```bash
+ PYTHONPATH=src python -m unittest discover tests
+ ```
+ 
+ ## Dashboard-Tabs
+ 
+ | Tab | Funktion |
+ |-----|----------|
+ | Analyse | CSV laden, strukturelle Checks, Profile |
+ | KI-Werkzeuge | NER, Klassifikation, EDTF, Scans |
+ | KI-Konfiguration | Modelle, System-Prompts, Kategorien |
+ | Funktionen | Feature-Katalog mit Status |
+diff --git a/src/kwb/cli.py b/src/kwb/cli.py
+index f7e9115d4832713949960327b99b038c841b201a..0e66b2d5dd946b7d3ac627000cf43119856e97a8 100644
+--- a/src/kwb/cli.py
++++ b/src/kwb/cli.py
+@@ -1,77 +1,102 @@
+ """
+ CLI entry point for the Kuratierwerkbank.
+ 
+ Usage:
+     python -m kwb.cli analyze data/file1.csv data/file2.csv --output report.md
+     kwb analyze data/file1.csv data/file2.csv --output report.md
+ """
+ 
+ from __future__ import annotations
+ 
+ import argparse
+ import sys
+ from pathlib import Path
+ 
+ from kwb.ingest.csv_loader import ingest_csv
+ from kwb.analyze.structural import analyze_datasets
+ from kwb.report.markdown import render_report
++from kwb.core.roadmap import (
++    build_improvement_proposals,
++    parse_function_catalog,
++    render_proposals_markdown,
++)
+ 
+ 
+ def cmd_analyze(args: argparse.Namespace) -> int:
+     """Run structural analysis on one or more CSV files."""
+     datasets = []
+ 
+     for csv_path in args.files:
+         path = Path(csv_path)
+         if not path.exists():
+             print(f"ERROR: File not found: {path}", file=sys.stderr)
+             return 1
+ 
+         print(f"📂 Ingesting: {path.name} …")
+         df, profile = ingest_csv(path)
+         print(f"   → {profile.row_count:,} rows, {profile.column_count} columns, ID: {profile.id_column}")
+         datasets.append((df, profile))
+ 
+     print(f"\n🔍 Running {len(datasets)} dataset(s) through structural analysis …")
+     report = analyze_datasets(datasets)
+ 
+     s = report.summary
+     print(f"\n📊 Results: {s['critical']} critical, {s['warnings']} warnings, {s['info']} info")
+ 
+     # Generate report
+     md = render_report(report)
+ 
+     if args.output:
+         out_path = Path(args.output)
+         out_path.write_text(md, encoding="utf-8")
+         print(f"\n✅ Report written to: {out_path}")
+     else:
+         print("\n" + "=" * 60)
+         print(md)
+ 
+     return 0
+ 
+ 
+ def main(argv: list[str] | None = None) -> int:
+     parser = argparse.ArgumentParser(
+         prog="kwb",
+         description="Kuratierwerkbank — AI-assisted curation workbench for GLAM data",
+     )
+     subparsers = parser.add_subparsers(dest="command")
+ 
+     # analyze subcommand
+     p_analyze = subparsers.add_parser("analyze", help="Run structural quality analysis")
+     p_analyze.add_argument("files", nargs="+", help="CSV files to analyze")
+     p_analyze.add_argument("-o", "--output", help="Output path for Markdown report")
+     p_analyze.set_defaults(func=cmd_analyze)
+ 
++    p_plan = subparsers.add_parser(
++        "plan",
++        help="Generate prioritized development proposals from FUNKTIONSKATALOG",
++    )
++    p_plan.add_argument(
++        "--catalog",
++        default="docs/FUNKTIONSKATALOG.md",
++        help="Path to FUNKTIONSKATALOG markdown file",
++    )
++    p_plan.add_argument("--top", type=int, default=6, help="Number of proposals")
++
++    def _cmd_plan(args: argparse.Namespace) -> int:
++        entries = parse_function_catalog(args.catalog)
++        proposals = build_improvement_proposals(entries, top_n=args.top)
++        output = render_proposals_markdown(proposals)
++        print(output)
++        return 0
++
++    p_plan.set_defaults(func=_cmd_plan)
++
+     args = parser.parse_args(argv)
+     if not args.command:
+         parser.print_help()
+         return 0
+ 
+     return args.func(args)
+ 
+ 
+ if __name__ == "__main__":
+     sys.exit(main())
+diff --git a/src/kwb/core/roadmap.py b/src/kwb/core/roadmap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..93113bf3b843b97872f323e7358dc1902e15cf86
+--- /dev/null
++++ b/src/kwb/core/roadmap.py
+@@ -0,0 +1,158 @@
++"""Roadmap parsing and proposal generation based on the development catalog."""
++from __future__ import annotations
++
++from dataclasses import dataclass
++from pathlib import Path
++
++
++@dataclass(frozen=True)
++class FeatureEntry:
++    category: str
++    feature_id: str
++    title: str
++    status: str
++    tests_done: int
++    tests_total: int
++    module: str
++    note: str
++
++
++@dataclass(frozen=True)
++class ImprovementProposal:
++    feature_id: str
++    title: str
++    priority: int
++    rationale: str
++    actions: list[str]
++    acceptance_criteria: list[str]
++
++
++def _parse_tests(cell: str) -> tuple[int, int]:
++    text = cell.strip()
++    if not text or text == "—":
++        return 0, 0
++    if "/" not in text:
++        return 0, 0
++    done, total = text.split("/", 1)
++    return int(done.strip()), int(total.strip())
++
++
++def _clean_status(status_cell: str) -> str:
++    return status_cell.replace("✅", "").replace("🟡", "").replace("🔴", "").strip()
++
++
++def parse_function_catalog(path: str | Path) -> list[FeatureEntry]:
++    """Parse docs/FUNKTIONSKATALOG.md feature tables into FeatureEntry objects."""
++    catalog_path = Path(path)
++    lines = catalog_path.read_text(encoding="utf-8").splitlines()
++
++    current_category = ""
++    entries: list[FeatureEntry] = []
++
++    for line in lines:
++        if line.startswith("## "):
++            heading = line.lstrip("# ").strip()
++            if "—" in heading:
++                current_category = heading.split("—", 1)[1].strip()
++            else:
++                current_category = heading.split(".", 1)[-1].strip()
++            continue
++
++        if not line.startswith("|"):
++            continue
++
++        cells = [c.strip() for c in line.strip().split("|")[1:-1]]
++        if len(cells) < 6:
++            continue
++        if cells[0] == "ID" or cells[0].startswith("----"):
++            continue
++
++        tests_done, tests_total = _parse_tests(cells[3])
++        note = cells[6] if len(cells) > 6 else ""
++
++        entries.append(
++            FeatureEntry(
++                category=current_category,
++                feature_id=cells[0],
++                title=cells[1],
++                status=_clean_status(cells[2]),
++                tests_done=tests_done,
++                tests_total=tests_total,
++                module=cells[4],
++                note=note,
++            )
++        )
++
++    return entries
++
++
++def _priority(entry: FeatureEntry) -> int:
++    score = 0
++    if entry.status.lower().startswith("geplant"):
++        score += 100
++    elif entry.status.lower().startswith("teilweise"):
++        score += 60
++
++    if entry.tests_total == 0:
++        score += 30
++    elif entry.tests_done < entry.tests_total:
++        score += 15
++
++    critical_domains = ("ingest", "export", "enrichment", "infrastruktur")
++    if any(d in entry.category.lower() for d in critical_domains):
++        score += 10
++
++    return score
++
++
++def build_improvement_proposals(entries: list[FeatureEntry], top_n: int = 6) -> list[ImprovementProposal]:
++    """Build prioritized, concrete improvement proposals from catalog entries."""
++    candidates = [e for e in entries if e.status != "Umgesetzt"]
++    ranked = sorted(candidates, key=lambda e: (_priority(e), e.feature_id), reverse=True)
++
++    proposals: list[ImprovementProposal] = []
++    for entry in ranked[:top_n]:
++        actions = [
++            f"Implementiere Kernfunktion für {entry.title} im Modul {entry.module}.",
++            "Ergänze API/CLI-Zugriff mit klaren Parametern und validierten Fehlerfällen.",
++            "Dokumentiere Datenflüsse, Limits und Beispiel-Workflows im Funktionskatalog.",
++        ]
++        acceptance = [
++            "Mindestens ein End-to-End-Test deckt den Standardpfad ab.",
++            "Fehlerfälle (leere Inputs, Zeitüberschreitung, fehlerhafte Datensätze) sind getestet.",
++            "Feature ist im Dashboard oder in der CLI ausführbar und dokumentiert.",
++        ]
++        rationale = (
++            f"Status '{entry.status}' bei {entry.tests_done}/{entry.tests_total} Tests. "
++            f"Diese Lücke blockiert Reifegrad und produktiven Einsatz in '{entry.category}'."
++        )
++        proposals.append(
++            ImprovementProposal(
++                feature_id=entry.feature_id,
++                title=entry.title,
++                priority=_priority(entry),
++                rationale=rationale,
++                actions=actions,
++                acceptance_criteria=acceptance,
++            )
++        )
++
++    return proposals
++
++
++def render_proposals_markdown(proposals: list[ImprovementProposal]) -> str:
++    """Render proposals in concise markdown for reporting/CLI output."""
++    lines = ["# Konkrete Entwicklungsvorschläge", ""]
++    for idx, proposal in enumerate(proposals, start=1):
++        lines.append(f"## {idx}. {proposal.feature_id} — {proposal.title} (Priorität {proposal.priority})")
++        lines.append(f"**Begründung:** {proposal.rationale}")
++        lines.append("")
++        lines.append("**Nächste Schritte:**")
++        for action in proposal.actions:
++            lines.append(f"- {action}")
++        lines.append("")
++        lines.append("**Akzeptanzkriterien:**")
++        for criterion in proposal.acceptance_criteria:
++            lines.append(f"- {criterion}")
++        lines.append("")
++    return "\n".join(lines).strip() + "\n"
+diff --git a/tests/test_roadmap.py b/tests/test_roadmap.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..071620ae963ad176e5efbfbd54c492faca707a83
+--- /dev/null
++++ b/tests/test_roadmap.py
+@@ -0,0 +1,67 @@
++from pathlib import Path
++
++from kwb.core.roadmap import (
++    build_improvement_proposals,
++    parse_function_catalog,
++    render_proposals_markdown,
++)
++from kwb.cli import main
++
++
++def test_parse_function_catalog_reads_known_feature():
++    entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
++    feature_ids = {entry.feature_id for entry in entries}
++    assert "F31" in feature_ids
++    f31 = next(e for e in entries if e.feature_id == "F31")
++    assert f31.status == "Geplant"
++    assert f31.tests_done == 0
++    assert f31.tests_total == 0
++
++
++def test_proposals_prioritize_unimplemented_features():
++    entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
++    proposals = build_improvement_proposals(entries, top_n=5)
++
++    assert len(proposals) == 5
++    assert all(p.priority >= 100 for p in proposals)
++    assert all("Status" in p.rationale for p in proposals)
++
++
++def test_render_proposals_markdown_contains_sections():
++    entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
++    proposals = build_improvement_proposals(entries, top_n=2)
++    md = render_proposals_markdown(proposals)
++
++    assert md.startswith("# Konkrete Entwicklungsvorschläge")
++    assert "**Nächste Schritte:**" in md
++    assert "**Akzeptanzkriterien:**" in md
++
++
++def test_cli_plan_command_outputs_recommendations(capsys):
++    rc = main(["plan", "--catalog", "docs/FUNKTIONSKATALOG.md", "--top", "3"])
++    captured = capsys.readouterr()
++
++    assert rc == 0
++    assert "Konkrete Entwicklungsvorschläge" in captured.out
++    assert "Priorität" in captured.out
++
++
++def test_parse_function_catalog_on_custom_file(tmp_path: Path):
++    file = tmp_path / "catalog.md"
++    file.write_text(
++        "\n".join(
++            [
++                "## 1. Demo",
++                "| ID | Funktion | Status | Tests | Modul | Hinweis |",
++                "|----|----------|--------|-------|-------|---------|",
++                "| F99 | Beispiel | 🟡 Teilweise | 1/2 | `demo.py` | Noch offen |",
++            ]
++        ),
++        encoding="utf-8",
++    )
++
++    entries = parse_function_catalog(file)
++    assert len(entries) == 1
++    assert entries[0].feature_id == "F99"
++    assert entries[0].tests_done == 1
++    assert entries[0].tests_total == 2
