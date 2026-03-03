@@ -15,6 +15,11 @@ from pathlib import Path
 from kwb.ingest.csv_loader import ingest_csv
 from kwb.analyze.structural import analyze_datasets
 from kwb.report.markdown import render_report
+from kwb.core.roadmap import (
+    build_improvement_proposals,
+    parse_function_catalog,
+    render_proposals_markdown,
+)
 
 
 def cmd_analyze(args: argparse.Namespace) -> int:
@@ -64,6 +69,26 @@ def main(argv: list[str] | None = None) -> int:
     p_analyze.add_argument("files", nargs="+", help="CSV files to analyze")
     p_analyze.add_argument("-o", "--output", help="Output path for Markdown report")
     p_analyze.set_defaults(func=cmd_analyze)
+
+    p_plan = subparsers.add_parser(
+        "plan",
+        help="Generate prioritized development proposals from FUNKTIONSKATALOG",
+    )
+    p_plan.add_argument(
+        "--catalog",
+        default="docs/FUNKTIONSKATALOG.md",
+        help="Path to FUNKTIONSKATALOG markdown file",
+    )
+    p_plan.add_argument("--top", type=int, default=6, help="Number of proposals")
+
+    def _cmd_plan(args: argparse.Namespace) -> int:
+        entries = parse_function_catalog(args.catalog)
+        proposals = build_improvement_proposals(entries, top_n=args.top)
+        output = render_proposals_markdown(proposals)
+        print(output)
+        return 0
+
+    p_plan.set_defaults(func=_cmd_plan)
 
     args = parser.parse_args(argv)
     if not args.command:
