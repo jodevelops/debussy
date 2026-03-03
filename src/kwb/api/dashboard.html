@@ -275,7 +275,9 @@ async function runStruct(){
   if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
   const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
-  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();
+  try{
+    const resp=await fetch('/api/analyze',{method:'POST',body:fd});
+    let r;try{r=await resp.json()}catch{throw new Error('Server-Fehler ('+resp.status+')')}
     if(r.error)throw Error(r.error);curRep=r;analysed=true;rrep(r);populateDS();updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
