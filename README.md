@@ -10,6 +10,15 @@ cd debussy && $env:PYTHONPATH = "src" && python -m kwb.api.app
 # → http://localhost:8765
 ```
 
+## Entwicklungsplanung (neu)
+
+```bash
+PYTHONPATH=src python -m kwb.cli plan --top 8
+```
+
+Erzeugt priorisierte, konkrete Entwicklungsvorschläge direkt aus `docs/FUNKTIONSKATALOG.md`
+inkl. Begründung, nächsten Schritten und Akzeptanzkriterien.
+
 ## Tests
 
 ```bash
