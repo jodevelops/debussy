@@ -16,7 +16,7 @@ from pathlib import Path
 
 try:
     from fastapi import APIRouter, File, UploadFile
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, Response
 except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
