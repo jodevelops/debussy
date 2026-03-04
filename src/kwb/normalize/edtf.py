@@ -95,6 +95,7 @@ def normalize_edtf(date_str: str) -> EDTFResult:
         approx = True; text = text[m.end():].strip()
 
     q = "~" if approx else ""
+    approx_note = "approximate" if approx else ""
 
     if m := _UNCERTAIN_BRACKET.match(text):
         return EDTFResult(original=original, edtf=f"{m[1]}?", confidence=0.95, note="unsicher (Klammern)")
@@ -120,11 +121,11 @@ def normalize_edtf(date_str: str) -> EDTFResult:
     if m := _ISO_DAY_SLASH.match(text):
         return EDTFResult(original=original, edtf=f"{m[1]}-{m[2]}-{m[3]}{q}", confidence=1.0)
     if m := _ISO_DAY.match(text):
-        return EDTFResult(original=original, edtf=f"{text}{q}", confidence=1.0)
+        return EDTFResult(original=original, edtf=f"{text}{q}", confidence=1.0, note=approx_note)
     if m := _ISO_MONTH.match(text):
-        return EDTFResult(original=original, edtf=f"{text}{q}", confidence=1.0)
+        return EDTFResult(original=original, edtf=f"{text}{q}", confidence=1.0, note=approx_note)
     if m := _ISO_YEAR.match(text):
-        return EDTFResult(original=original, edtf=f"{text}{q}", confidence=1.0)
+        return EDTFResult(original=original, edtf=f"{text}{q}", confidence=1.0, note=approx_note)
 
     # Month name + year
     for mn, num in _MONTHS_DE.items():

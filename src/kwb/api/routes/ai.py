@@ -52,7 +52,8 @@ async def gpu_status():
 
 
 @router.post("/api/gpu/test")
-async def gpu_test(request: dict):
+async def gpu_test(request: dict | None = None):
+    request = request or {}
     mod = request.get("model", "")
     syp = request.get("system_prompt", "Antworte in einem Satz.")
     prov = get_provider(mod)
@@ -71,9 +72,16 @@ async def gpu_test(request: dict):
 # ---------------------------------------------------------------------------
 
 @router.post("/api/ai/describe-columns")
-async def ai_describe_columns(request: dict):
+async def ai_describe_columns(request: dict | None = None):
+    request = request or {}
     dsn = request.get("dataset", "")
-    ds = get_datasets().get(dsn)
+    datasets = get_datasets()
+    if dsn:
+        ds = datasets.get(dsn)
+    elif datasets:
+        dsn, ds = next(iter(datasets.items()))
+    else:
+        ds = None
     if not ds:
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
@@ -102,7 +110,23 @@ async def ai_describe_columns(request: dict):
         else:
             descriptions[col] = {"column": col, "description": br.raw or "", "data_type": "unbekannt"}
 
-    return {"descriptions": descriptions, "model": mod or "default"}
+    col_list = []
+    for c in profile.columns:
+        desc = descriptions.get(c.name, {})
+        col_list.append({
+            "name": c.name,
+            "ai_description": desc.get("description", ""),
+            "data_type": desc.get("data_type", ""),
+        })
+
+    return {
+        "datasets": [{
+            "name": dsn,
+            "columns": col_list,
+        }],
+        "descriptions": descriptions,
+        "model": mod or "default",
+    }
 
 
 # ---------------------------------------------------------------------------
