@@ -703,16 +703,16 @@ function renderImgGrid(){
   const empty = $('img-list-empty');
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
   empty.style.display='none';
-  grid.innerHTML = uploadedImages.map(img => `
-    <div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">
-      <img src="/api/images/${esc(img.id)}" alt="${esc(img.filename)}"
-           style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"
-           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-      <div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>
-      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(img.filename)}">${esc(img.filename)}</div>
-      <div style="color:#888;font-size:.65rem">${(img.size_bytes/1024).toFixed(1)} KB · ${esc(img.media_type||'')}</div>
-      <div><span class="bg ${img.analyzed?'ac':'no'}">${img.analyzed?'analysiert':'ausstehend'}</span></div>
-    </div>`).join('');
+  grid.innerHTML = uploadedImages.map(function(img){
+    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
+      +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
+      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'
+      +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>'
+      +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
+      +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
+      +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
+      +'</div>'}).join('');
 }
 
 async function analyzeImages(){

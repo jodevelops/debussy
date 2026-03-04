@@ -11,7 +11,7 @@ Router prefix: /api
 from __future__ import annotations
 
 import base64
-import tempfile
+import tempfile as _tempfile
 from pathlib import Path
 
 try:
@@ -21,8 +21,8 @@ except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
 from kwb.api.deps import (
-    ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES, MAX_UPLOAD_FILES,
-    get_config, get_datasets, get_provider, get_state, get_workspace,
+    ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES,
+    get_config, get_datasets, get_provider, get_workspace,
 )
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
@@ -135,8 +135,6 @@ async def ai_describe_columns(request: dict | None = None):
 # Image store — metadata in-memory, raw bytes on disk so they survive reloads
 # ---------------------------------------------------------------------------
 
-import tempfile as _tempfile
-
 # Use a fixed sub-directory of the system temp dir so images survive
 # server restarts / hot-reloads.  Created once per process lifetime.
 _IMAGE_DIR = Path(_tempfile.gettempdir()) / "debussy_uploads"
@@ -225,8 +223,6 @@ async def images_upload(files: list[UploadFile] = File(...)):
 @router.get("/api/images/{img_id}/data")
 async def image_data(img_id: str):
     """Serve raw image bytes so the browser can display thumbnails."""
-    import base64
-    from fastapi.responses import Response
     img = _uploaded_images.get(img_id)
     if not img:
         return JSONResponse({"error": "Nicht gefunden"}, 404)
@@ -317,7 +313,11 @@ async def images_analyze(request: dict):
 
 @router.delete("/api/images")
 async def images_clear():
-    """Clear all uploaded images from memory."""
+    """Clear all uploaded images from memory and disk."""
     count = len(_uploaded_images)
+    for img in _uploaded_images.values():
+        p = Path(img["path"])
+        if p.exists():
+            p.unlink(missing_ok=True)
     _uploaded_images.clear()
     return {"cleared": count}

@@ -76,7 +76,7 @@ def _get_client():
     # Reset the module-level image store between tests
     ai_routes._uploaded_images.clear()
 
-    from kwb.api.app_new import app
+    from kwb.api.app import app
     return TestClient(app)
 
 

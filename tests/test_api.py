@@ -72,7 +72,7 @@ def _make_csv_upload(content: bytes = _SAMPLE_CSV, name: str = "test.csv"):
 
 
 # ---------------------------------------------------------------------------
-# Test fixtures (new-style — using app_new + deps)
+# Test fixtures (using app + deps)
 # ---------------------------------------------------------------------------
 
 def _get_client():
@@ -84,7 +84,7 @@ def _get_client():
     deps._state["workspace"] = Workspace(name="test")
     deps._config_cache = None
 
-    from kwb.api.app_new import app
+    from kwb.api.app import app
     from kwb.ai.mock import MockProvider
     deps._prov_override = MockProvider.with_defaults()
 
@@ -377,6 +377,13 @@ class TestExportEndpoints(unittest.TestCase):
     def setUp(self):
         self.client = _get_client()
         _upload_csv(self.client, filename="export.csv")
+        # Export requires field mapping to be configured
+        self.client.post("/api/workspace/field-mapping", json={
+            "mappings": [
+                {"csv_column": "title", "label": "Titel", "goobi_type": "TitleDocMain"},
+                {"csv_column": "year", "label": "Jahr", "goobi_type": "PublicationYear"},
+            ]
+        })
 
     def test_goobi_preview(self):
         r = self.client.post("/api/export/goobi-preview", json={
