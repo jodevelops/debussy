@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from kwb.core.roadmap import (
+    FeatureEntry,
     build_improvement_proposals,
     parse_function_catalog,
     render_proposals_markdown,
@@ -65,3 +66,40 @@ def test_parse_function_catalog_on_custom_file(tmp_path: Path):
     assert entries[0].feature_id == "F99"
     assert entries[0].tests_done == 1
     assert entries[0].tests_total == 2
+
+
+def test_proposals_include_implemented_features_with_test_gaps():
+    entries = [
+        FeatureEntry(
+            category="Core",
+            feature_id="F01",
+            title="Geplantes Feature",
+            status="Geplant",
+            tests_done=0,
+            tests_total=0,
+            module="core.py",
+            note="",
+        ),
+        FeatureEntry(
+            category="Core",
+            feature_id="F02",
+            title="Umgesetztes Feature mit Testlücke",
+            status="Umgesetzt",
+            tests_done=0,
+            tests_total=1,
+            module="core.py",
+            note="",
+        ),
+    ]
+
+    proposals = build_improvement_proposals(entries, top_n=5)
+
+    proposal_ids = [p.feature_id for p in proposals]
+    assert "F02" in proposal_ids
+
+    planned = next(p for p in proposals if p.feature_id == "F01")
+    implemented_gap = next(p for p in proposals if p.feature_id == "F02")
+
+    assert planned.priority > implemented_gap.priority
+    assert "Status 'Umgesetzt'" in implemented_gap.rationale
+    assert "0/1 Tests" in implemented_gap.rationale
