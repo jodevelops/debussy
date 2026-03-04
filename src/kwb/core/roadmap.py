@@ -53,6 +53,7 @@ def _priority(e):
     score = 0
     if e.status.lower().startswith("geplant"): score += 100
     elif e.status.lower().startswith("teilweise"): score += 60
+    elif e.status.lower().startswith("umgesetzt") and e.tests_done < e.tests_total: score += 40
     if e.tests_total == 0: score += 30
     elif e.tests_done < e.tests_total: score += 15
     if any(d in e.category.lower() for d in ("ingest","export","enrichment","infrastruktur")): score += 10
@@ -60,7 +61,11 @@ def _priority(e):
 
 
 def build_improvement_proposals(entries, top_n=6):
-    candidates = [e for e in entries if e.status != "Umgesetzt"]
+    candidates = [
+        e
+        for e in entries
+        if e.status != "Umgesetzt" or (e.status == "Umgesetzt" and e.tests_done < e.tests_total)
+    ]
     ranked = sorted(candidates, key=lambda e: (_priority(e), e.feature_id), reverse=True)
     proposals = []
     for entry in ranked[:top_n]:
