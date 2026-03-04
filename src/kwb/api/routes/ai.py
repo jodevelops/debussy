@@ -16,7 +16,7 @@ from pathlib import Path
 
 try:
     from fastapi import APIRouter, File, UploadFile
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, Response
 except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
@@ -160,6 +160,16 @@ async def images_upload(files: list[UploadFile] = File(...)):
         })
 
     return {"uploaded": len(accepted), "images": accepted}
+
+
+@router.get("/api/images/{img_id}")
+async def images_serve(img_id: str):
+    """Serve a single uploaded image as binary with correct Content-Type."""
+    img = _uploaded_images.get(img_id)
+    if not img:
+        return JSONResponse({"error": "Nicht gefunden"}, 404)
+    raw = base64.b64decode(img["b64"])
+    return Response(content=raw, media_type=img["media_type"])
 
 
 @router.get("/api/images")

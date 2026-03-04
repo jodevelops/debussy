@@ -12,7 +12,7 @@ header{background:var(--ink);color:var(--paper);padding:.7rem 2rem;display:flex;
 header h1{font-size:1.4rem;font-weight:400;letter-spacing:.02em}
 header h1 em{color:var(--al);font-style:italic;font-size:.65em;margin-left:.5rem}
 .sbar{display:flex;gap:1rem;align-items:center;font-size:.75rem}
-.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}.dot.on{background:#4ade80}.dot.off{background:#ef4444}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}.dot.on{background:#4ade80}.dot.off{background:#ef4444}.dot.mock{background:#f59e0b}
 .nav{display:flex;background:var(--ink);padding:0 1rem;gap:0;flex-wrap:wrap}
 .nt{padding:.5rem 1rem;font-size:.75rem;font-weight:600;cursor:pointer;color:#666;border-bottom:2px solid transparent;transition:.15s;white-space:nowrap}
 .nt:hover{color:var(--paper)}.nt.a{color:var(--paper);border-bottom-color:var(--ac)}
@@ -110,7 +110,12 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="c"><h2>NER-Konfiguration</h2>
 <div class="hint" id="ner-hint">Erst im Daten-Tab CSV laden.</div>
 <label>Datensatz</label><select id="ner-ds" onchange="loadCols('ner-ds','ner-cols')"><option value="">— Erst Daten laden —</option></select>
-<label>Spalten</label><div id="ner-cols" class="cl" style="margin-top:.3rem"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
+<label>Spalten</label>
+<div style="display:flex;gap:.3rem;margin-top:.3rem;margin-bottom:.2rem">
+<button class="btn sm" onclick="nerSelectAll(true)">Alle</button>
+<button class="btn sm s" onclick="nerSelectAll(false)">Keine</button>
+</div>
+<div id="ner-cols" class="cl"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
 <label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy+LLM)</option></select>
 <label>Samples</label><input type="number" id="ner-n" value="10" min="1" max="500">
 <button class="btn f" onclick="runNER()">🔍 NER starten</button>
@@ -637,13 +642,25 @@ function rcd(ds){$('cdarea').innerHTML=ds.map(d=>'<h3 style="margin:.5rem 0 .3re
 
 // === GPU ===
 async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json();
-    $('gd').className='dot '+(d.available?'on':'off');$('gl').textContent='GPUStack: '+(d.available?(d.models?.length||0)+' Modelle':'offline');
-    gpuM=d.models||[];const cfg=d.config||{};
-    if(d.available){$('gi').innerHTML='<div style="font-size:.7rem;font-family:monospace">'+gpuM.map(m=>'<div>'+esc(m)+'</div>').join('')+'</div>';
+    if(!d.configured){
+      $('gd').className='dot mock';$('gl').textContent='Mock-Modus aktiv';
+      $('gi').textContent='GPUStack nicht konfiguriert. KWB_GPUSTACK_URL in .env setzen.';
+    }else if(d.available){
+      $('gd').className='dot on';$('gl').textContent='GPUStack: '+(d.models?.length||0)+' Modelle';
+      gpuM=d.models||[];const cfg=d.config||{};
+      $('gi').innerHTML='<div style="font-size:.7rem;font-family:monospace">'+gpuM.map(m=>'<div>'+esc(m)+'</div>').join('')+'</div>';
       for(const sid of['cfg-mt','cfg-mv']){$(sid).innerHTML=gpuM.map(m=>safeOpt(m,m)).join('')}
       $('cfg-models').textContent='Text: '+(cfg.gpustack_model_text||'—')+' / Vision: '+(cfg.gpustack_model_vision||'—')
-    }else{$('gi').textContent='Nicht verbunden. .env prüfen.'}
-  }catch(e){$('gd').className='dot off';$('gl').textContent='Fehler'}}
+    }else{
+      $('gd').className='dot off';$('gl').textContent='GPUStack: nicht erreichbar';
+      $('gi').textContent='Verbindung fehlgeschlagen. URL/Key in .env prüfen. '+(d.message||'');
+    }
+  }catch(e){$('gd').className='dot off';$('gl').textContent='Verbindungsfehler';}}
+
+// === NER helpers ===
+function nerSelectAll(checked){
+  document.querySelectorAll('#ner-cols .ci input[type=checkbox]').forEach(cb=>cb.checked=checked);
+}
 
 // === IMAGES ===
 let uploadedImages = [];
@@ -676,10 +693,14 @@ function renderImgGrid(){
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
   empty.style.display='none';
   grid.innerHTML = uploadedImages.map(img => `
-    <div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa">
-      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="${esc(img.filename)}">${esc(img.filename)}</div>
-      <div style="color:#888;font-size:.65rem">${(img.size_bytes/1024).toFixed(1)} KB</div>
-      <div style="margin-top:.2rem"><span class="bg ${img.analyzed?'ac':'no'}">${img.analyzed?'analysiert':'ausstehend'}</span></div>
+    <div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">
+      <img src="/api/images/${esc(img.id)}" alt="${esc(img.filename)}"
+           style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"
+           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+      <div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>
+      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(img.filename)}">${esc(img.filename)}</div>
+      <div style="color:#888;font-size:.65rem">${(img.size_bytes/1024).toFixed(1)} KB · ${esc(img.media_type||'')}</div>
+      <div><span class="bg ${img.analyzed?'ac':'no'}">${img.analyzed?'analysiert':'ausstehend'}</span></div>
     </div>`).join('');
 }
 
