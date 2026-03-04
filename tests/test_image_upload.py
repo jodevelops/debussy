@@ -281,5 +281,62 @@ class TestImageAnalyze(unittest.TestCase):
         self.assertEqual(r.json()["analyzed"], 1)
 
 
+# ---------------------------------------------------------------------------
+# Image data (thumbnail) endpoint tests
+# ---------------------------------------------------------------------------
+
+@_skip
+class TestImageData(unittest.TestCase):
+    """GET /api/images/{img_id}/data — serve raw image bytes for thumbnail display."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def _upload(self, data: bytes, name: str) -> str:
+        r = self.client.post("/api/images/upload", files=[_img_file(data, name)])
+        self.assertEqual(r.status_code, 200)
+        return r.json()["images"][0]["id"]
+
+    def test_data_jpeg_returns_bytes_and_content_type(self):
+        img_id = self._upload(_JPEG, "foto.jpg")
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["content-type"], "image/jpeg")
+        self.assertEqual(r.content, _JPEG)
+
+    def test_data_png_returns_bytes_and_content_type(self):
+        img_id = self._upload(_PNG, "zeichnung.png")
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["content-type"], "image/png")
+        self.assertEqual(r.content, _PNG)
+
+    def test_data_tiff_returns_bytes_and_content_type(self):
+        img_id = self._upload(_TIFF, "scan.tif")
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("image/tiff", r.headers["content-type"])
+        self.assertEqual(r.content, _TIFF)
+
+    def test_data_webp_returns_bytes_and_content_type(self):
+        img_id = self._upload(_WEBP, "thumb.webp")
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("image/webp", r.headers["content-type"])
+        self.assertEqual(r.content, _WEBP)
+
+    def test_data_unknown_id_returns_404(self):
+        r = self.client.get("/api/images/img_9999_notfound/data")
+        self.assertEqual(r.status_code, 404)
+
+    def test_data_survives_analyze(self):
+        """Image bytes remain accessible after analysis."""
+        img_id = self._upload(_JPEG, "museum.jpg")
+        self.client.post("/api/images/analyze", json={"image_ids": [img_id]})
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content, _JPEG)
+
+
 if __name__ == "__main__":
     unittest.main()
