@@ -186,6 +186,18 @@ async def images_upload(files: list[UploadFile] = File(...)):
     return {"uploaded": len(accepted), "images": accepted}
 
 
+@router.get("/api/images/{img_id}/data")
+async def image_data(img_id: str):
+    """Serve raw image bytes so the browser can display thumbnails."""
+    import base64
+    from fastapi.responses import Response
+    img = _uploaded_images.get(img_id)
+    if not img:
+        return JSONResponse({"error": "Nicht gefunden"}, 404)
+    content = base64.b64decode(img["b64"])
+    return Response(content=content, media_type=img["media_type"])
+
+
 @router.get("/api/images")
 async def images_list():
     """List all uploaded images and their analysis status."""
