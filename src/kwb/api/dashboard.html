@@ -84,6 +84,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="nt" data-p="ner">🔍 NER & Entities</div>
 <div class="nt" data-p="dates">📅 Datierung</div>
 <div class="nt" data-p="images">🖼️ Bild-Analyse</div>
+<div class="nt" data-p="mapping">🗺️ Feld-Mapping</div>
 <div class="nt" data-p="export">📦 Export</div>
 <div class="nt" data-p="config">⚙️ KI-Konfiguration</div>
 <div class="nt" data-p="catalog">📋 Funktionskatalog</div>
@@ -230,11 +231,9 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div></div>
 </div></div>
 
-<!-- ===== EXPORT ===== -->
-<div class="hint" id="exp-hint">Daten laden, optional NER/EDTF ausführen, dann hierher kommen.</div>
-
-<!-- Field Mapping Panel -->
-<div class="c" style="margin-bottom:1rem"><h2>🗺️ Feld-Mapping: CSV → Goobi</h2>
+<!-- ===== FELD-MAPPING ===== -->
+<div class="pg" data-p="mapping"><div style="max-width:1100px">
+<div class="c"><h2>🗺️ Feld-Mapping: CSV → Goobi</h2>
 <p style="font-size:.78rem;color:#666;margin-bottom:.6rem">Ordne CSV-Spalten den Goobi-Metadatenfeldern zu. Nur gemappte Spalten werden exportiert.</p>
 <label>Datensatz für Mapping</label><select id="fm-ds" onchange="loadFMCols()"><option value="">— Erst Daten laden —</option></select>
 <div id="fm-table-wrap" style="margin-top:.6rem;display:none">
@@ -246,6 +245,11 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <span id="fm-saved" style="font-size:.7rem;color:var(--ok);margin-left:.5rem;display:none">✓ Gespeichert</span>
 </div>
 </div>
+</div></div>
+
+<!-- ===== EXPORT ===== -->
+<div class="pg" data-p="export"><div style="max-width:1100px">
+<div class="hint" id="exp-hint">Daten laden, optional NER/EDTF ausführen, dann hierher kommen.</div>
 
 <!-- Goobi Export Panel -->
 <div class="c"><h2>Goobi-Import XML</h2>
