@@ -5,7 +5,7 @@ from kwb.analyze.ner import (
     EntityType, Entity, NERResult, ner_hybrid, ner_llm,
     scan_problematic_terms, SYSTEM_NER, _SPACY_TYPE_MAP,
 )
-from kwb.enrich.edtf import normalize_date_rules, normalize_dates, EDTFResult, SYSTEM_EDTF
+from kwb.enrich.edtf import normalize_date_rules, normalize_dates, SYSTEM_EDTF
 from kwb.ai.mock import MockProvider
 
 
@@ -39,7 +39,7 @@ class TestNERResult(unittest.TestCase):
         ])
         unique = r.unique_entities
         self.assertEqual(len(unique), 2)  # GPE + LOC
-        self.assertAlmostEqual(unique["Bern||GPE"].confidence, 0.95)
+        self.assertAlmostEqual(unique["bern||GPE"].confidence, 0.95)
 
     def test_by_type(self):
         r = NERResult(entities=[
@@ -168,8 +168,8 @@ class TestEDTFHybrid(unittest.TestCase):
 
     def test_with_mock_fallback(self):
         provider = MockProvider(
-            default_response='{"original": "Anfang 19. Jh.", "edtf": "18XX", "confidence": 0.7, "note": "ambiguous"}')
-        vals = [{"record_id": "r1", "text": "1923"}, {"record_id": "r2", "text": "Anfang 19. Jh."}]
+            default_response='{"original": "Wohl aus der Nachkriegszeit", "edtf": "1945/1955", "confidence": 0.7, "note": "ambiguous"}')
+        vals = [{"record_id": "r1", "text": "1923"}, {"record_id": "r2", "text": "Wohl aus der Nachkriegszeit"}]
         results, batch = normalize_dates(vals, provider=provider)
         self.assertEqual(len(results), 2)
         self.assertIsNotNone(batch)

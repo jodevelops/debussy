@@ -18,12 +18,14 @@ FIXES vs original csv_loader.py:
 from __future__ import annotations
 
 import csv
-import io
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pandas as pd
+
+if TYPE_CHECKING:
+    from kwb.core.models import ColumnProfile, DatasetProfile
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +35,94 @@ SUPPORTED_EXTENSIONS = {".csv", ".tsv", ".txt"}
 
 class CSVLoadError(Exception):
     """Raised when a CSV cannot be loaded for a known reason."""
+
+
+def detect_id_column(df: pd.DataFrame) -> str | None:
+    """
+    Detect the ID column (primary key) in a DataFrame.
+    
+    Heuristics:
+    1. Column named exactly "record_id" → return it
+    2. Column named exactly "code" and all values unique → return it
+    3. No other heuristics (return None if ambiguous)
+    """
+    # Try exact matches first
+    if "record_id" in df.columns:
+        return "record_id"
+    
+    if "code" in df.columns and df["code"].nunique() == len(df):
+        return "code"
+    
+    return None
+
+
+def profile_column(series: pd.Series) -> ColumnProfile:
+    """
+    Analyze a DataFrame column and return a ColumnProfile.
+    
+    Counts:
+    - total_count: length of series (including NA)
+    - non_null_count: count of non-NA values
+    - unique_count: number of unique non-null values
+    - fill_rate: non_null_count / total_count
+    """
+    total = len(series)
+    non_null = series.notna().sum()
+    unique = series.nunique()  # nunique excludes NaN/None
+    fill = non_null / total if total > 0 else 0.0
+    
+    # Infer dtype
+    if series.dtype == "object":
+        dtype = "string"
+    else:
+        dtype = str(series.dtype)
+    
+    # Sample values (first 3 non-null unique values for display)
+    sample = series.dropna().unique()[:3].tolist()
+    
+    return ColumnProfile(
+        name=series.name,
+        dtype=dtype,
+        total_count=int(total),
+        non_null_count=int(non_null),
+        unique_count=int(unique),
+        fill_rate=float(fill),
+        sample_values=sample,
+    )
   
-def ingest_csv(path):
-    return load_csv(path)
+def ingest_csv(path) -> tuple[pd.DataFrame, DatasetProfile]:
+    """Load CSV and return (DataFrame, DatasetProfile)."""
+    path = Path(path)
+    
+    # Load the raw DataFrame
+    df = load_csv(path)
+    
+    # Build profile
+    df_analysis = df.replace("", pd.NA)
+    columns = [profile_column(df_analysis[col]) for col in df.columns]
+    id_column = detect_id_column(df)
+    
+    # Detect encoding and line ending
+    enc, has_bom = detect_encoding(path)
+    
+    # Detect line ending from raw file
+    raw = path.read_bytes()
+    has_crlf = b"\r\n" in raw
+    line_ending = "CRLF" if has_crlf else "LF"
+    
+    profile = DatasetProfile(
+        source_path=str(path),
+        source_name=path.name,
+        row_count=len(df),
+        column_count=len(df.columns),
+        columns=columns,
+        id_column=id_column,
+        encoding_detected=enc,
+        has_bom=has_bom,
+        line_ending=line_ending,
+    )
+    
+    return df, profile
 
 def detect_encoding(path: str | Path) -> tuple[str, bool]:
     """
@@ -204,4 +291,104 @@ def profile_csv(df: pd.DataFrame) -> list[dict[str, Any]]:
             "sample": non_null.head(3).tolist(),
         })
     return result
+
+
+# ---------------------------------------------------------------------------
+# Column profiling (returns ColumnProfile model)
+# ---------------------------------------------------------------------------
+
+def profile_column(series: pd.Series) -> "ColumnProfile":
+    """Build a ColumnProfile for a single DataFrame column."""
+    from kwb.core.models import ColumnProfile
+
+    non_null = series.dropna()
+    total = len(series)
+    nn_count = int(non_null.count())
+    unique = int(non_null.nunique()) if nn_count > 0 else 0
+    rate = nn_count / total if total > 0 else 0.0
+
+    lengths: dict[str, int] = {}
+    if nn_count > 0 and series.dtype == object:
+        str_lens = non_null.astype(str).str.len()
+        lengths = {
+            "min": int(str_lens.min()),
+            "max": int(str_lens.max()),
+            "mean": int(str_lens.mean()),
+        }
+
+    return ColumnProfile(
+        name=str(series.name),
+        dtype=str(series.dtype),
+        total_count=total,
+        non_null_count=nn_count,
+        unique_count=unique,
+        fill_rate=round(rate, 4),
+        sample_values=non_null.head(3).tolist(),
+        value_lengths=lengths,
+    )
+
+
+# ---------------------------------------------------------------------------
+# ID column detection
+# ---------------------------------------------------------------------------
+
+_ID_PATTERNS = [
+    "record_id", "id", "identifier", "signatur", "inventarnummer",
+    "inventar_nr", "inv_nr", "object_id", "obj_id", "catalogue_id",
+]
+
+
+def detect_id_column(df: pd.DataFrame) -> str | None:
+    """Heuristic detection of the ID column in a DataFrame.
+
+    Checks column names against known patterns first, then falls back
+    to finding a column where every value is unique.
+    """
+    lower_cols = {c.lower(): c for c in df.columns}
+    for pat in _ID_PATTERNS:
+        if pat in lower_cols:
+            col = lower_cols[pat]
+            if df[col].dropna().is_unique:
+                return col
+
+    # Fallback: first fully-unique column
+    for col in df.columns:
+        non_null = df[col].dropna()
+        if len(non_null) > 0 and non_null.is_unique:
+            return col
+    return None
+
+
+# ---------------------------------------------------------------------------
+# High-level ingest (load + profile)
+# ---------------------------------------------------------------------------
+
+def ingest_csv(
+    path: str | Path,
+    max_rows: int = MAX_ROWS,
+) -> tuple[pd.DataFrame, "DatasetProfile"]:
+    """Load a CSV and return (DataFrame, DatasetProfile).
+
+    Convenience wrapper used by CLI and API.
+    """
+    from kwb.core.models import DatasetProfile
+
+    path = Path(path)
+    enc, has_bom = detect_encoding(path)
+    df = load_csv(path, max_rows=max_rows)
+
+    id_col = detect_id_column(df)
+    columns = [profile_column(df[c]) for c in df.columns]
+
+    profile = DatasetProfile(
+        source_path=str(path),
+        source_name=path.stem,
+        row_count=len(df),
+        column_count=len(df.columns),
+        columns=columns,
+        id_column=id_col,
+        encoding_detected=enc,
+        has_bom=has_bom,
+    )
+    return df, profile
 

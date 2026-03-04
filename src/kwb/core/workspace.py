@@ -149,11 +149,15 @@ class EntityReview:
     """Review decision for one named entity candidate."""
     text: str
     entity_type: str
-    record_id: str
+    record_id: str = ""
     status: ReviewStatus = ReviewStatus.PENDING
+    confidence: float = 0.0
+    source: str = ""
+    column: str = ""
     gnd_id: str = ""
     gnd_preferred: str = ""
     reviewer_note: str = ""
+    editor_note: str = ""
     reviewed_at: str = ""
 
     def accept(self, gnd_id: str = "", gnd_preferred: str = "", note: str = "") -> None:
@@ -178,9 +182,12 @@ class EntityReview:
             "entity_type": self.entity_type,
             "record_id": self.record_id,
             "status": self.status.value,
+            "confidence": self.confidence,
+            "source": self.source,
             "gnd_id": self.gnd_id,
             "gnd_preferred": self.gnd_preferred,
             "reviewer_note": self.reviewer_note,
+            "editor_note": self.editor_note,
             "reviewed_at": self.reviewed_at,
         }
 
@@ -188,22 +195,68 @@ class EntityReview:
     def from_dict(d: dict) -> "EntityReview":
         er = EntityReview(
             text=d["text"],
-            entity_type=d["entity_type"],
+            entity_type=d.get("entity_type", d.get("type", "")),
             record_id=d.get("record_id", ""),
             status=ReviewStatus(d.get("status", "pending")),
+            confidence=float(d.get("confidence", 0)),
+            source=d.get("source", ""),
+            column=d.get("column", ""),
         )
         er.gnd_id = d.get("gnd_id", "")
         er.gnd_preferred = d.get("gnd_preferred", "")
         er.reviewer_note = d.get("reviewer_note", "")
+        er.editor_note = d.get("editor_note", "")
         er.reviewed_at = d.get("reviewed_at", "")
         return er
+
+
+# Alias for backward compatibility
+CuratedEntity = EntityReview
+
+
+# ---------------------------------------------------------------------------
+# CuratedDate — EDTF normalization result
+# ---------------------------------------------------------------------------
+
+@dataclass
+class CuratedDate:
+    """One date normalization result stored in the workspace."""
+    original: str
+    edtf: str = ""
+    confidence: float = 0.0
+    method: str = ""
+    record_id: str = ""
+    column: str = ""
+    note: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "original": self.original,
+            "edtf": self.edtf,
+            "confidence": self.confidence,
+            "method": self.method,
+            "record_id": self.record_id,
+            "column": self.column,
+            "note": self.note,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "CuratedDate":
+        return CuratedDate(
+            original=d.get("original", ""),
+            edtf=d.get("edtf", ""),
+            confidence=float(d.get("confidence", 0)),
+            method=d.get("method", ""),
+            record_id=d.get("record_id", ""),
+            column=d.get("column", ""),
+            note=d.get("note", ""),
+        )
 
 
 # ---------------------------------------------------------------------------
 # Workspace
 # ---------------------------------------------------------------------------
 
-@dataclass
 class Workspace:
     """
     Central state for one curation project.
@@ -214,30 +267,77 @@ class Workspace:
         ws.add_entities(entities)
         json_str = ws.to_json()
     """
-    name: str
-    created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    updated_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    source_file: str = ""
-    id_column: str = "record_id"
 
-    # Field mapping: ordered list
-    field_mapping: list[FieldMapping] = field(default_factory=list)
+    def __init__(
+        self,
+        name: str = "",
+        created_at: str = "",
+        updated_at: str = "",
+        source_file: str = "",
+        id_column: str = "record_id",
+    ):
+        self.name = name
+        self.created_at = created_at or datetime.utcnow().isoformat()
+        self.updated_at = updated_at or datetime.utcnow().isoformat()
+        self.source_file = source_file
+        self.id_column = id_column
 
-    # Normdaten-Wörterbuch: term → entry
-    dictionary: dict[str, DictionaryEntry] = field(default_factory=dict)
+        # Internal storage
+        self._field_mapping: list[FieldMapping] = []
+        self._field_mapping_raw: dict | None = None
+        self._dictionary: list[DictionaryEntry] = []
+        self.entity_reviews: list[EntityReview] = []
+        self.dates: list[CuratedDate] = []
+        self.notes: str = ""
+        self.model_text: str = ""
+        self.model_vision: str = ""
+        self.extras: dict[str, Any] = {}
+        self.source_files: list[str] = []
+        self.ai_runs: list[dict] = []
 
-    # Entity review queue
-    entity_reviews: list[EntityReview] = field(default_factory=list)
+    @property
+    def field_mapping(self):
+        """Return field_mapping. Supports both list[FieldMapping] and dict access."""
+        if self._field_mapping_raw is not None:
+            return self._field_mapping_raw
+        return self._field_mapping
 
-    # Free-form session notes
-    notes: str = ""
+    @field_mapping.setter
+    def field_mapping(self, value):
+        """Accept both list[FieldMapping] and dict[str, tuple] for field_mapping."""
+        if isinstance(value, dict):
+            self._field_mapping_raw = value
+            self._field_mapping = []
+            for col, val in value.items():
+                if isinstance(val, (list, tuple)) and len(val) >= 2:
+                    self._field_mapping.append(FieldMapping(
+                        csv_column=col, label=val[0], goobi_type=val[1],
+                    ))
+                elif isinstance(val, FieldMapping):
+                    self._field_mapping.append(val)
+        elif isinstance(value, list):
+            self._field_mapping_raw = None
+            self._field_mapping = value
+        else:
+            self._field_mapping = value
 
-    # AI model selection (persisted so re-runs are reproducible)
-    model_text: str = ""
-    model_vision: str = ""
+    @property
+    def dictionary(self) -> list[DictionaryEntry]:
+        return self._dictionary
 
-    # Arbitrary extra data (e.g. QA findings)
-    extras: dict[str, Any] = field(default_factory=dict)
+    @dictionary.setter
+    def dictionary(self, value):
+        if isinstance(value, dict):
+            self._dictionary = list(value.values())
+        elif isinstance(value, list):
+            self._dictionary = value
+        else:
+            self._dictionary = value
+
+    @property
+    def entities(self) -> list[EntityReview]:
+        """Alias for entity_reviews."""
+        return self.entity_reviews
 
     @staticmethod
     def create(name: str, source_file: str = "") -> "Workspace":
@@ -252,71 +352,137 @@ class Workspace:
         self._touch()
 
     def get_mapping(self, csv_column: str) -> FieldMapping | None:
-        for m in self.field_mapping:
+        for m in self._field_mapping:
             if m.csv_column == csv_column:
                 return m
         return None
 
     def add_or_update_mapping(self, mapping: FieldMapping) -> None:
-        for i, m in enumerate(self.field_mapping):
+        for i, m in enumerate(self._field_mapping):
             if m.csv_column == mapping.csv_column:
-                self.field_mapping[i] = mapping
+                self._field_mapping[i] = mapping
                 self._touch()
                 return
-        self.field_mapping.append(mapping)
+        self._field_mapping.append(mapping)
         self._touch()
 
     def active_mappings(self) -> list[FieldMapping]:
         """Return only enabled, non-ignored mappings."""
-        return [m for m in self.field_mapping if not m.is_ignored]
+        return [m for m in self._field_mapping if not m.is_ignored]
 
     # ------------------------------------------------------------------
     # Dictionary helpers
     # ------------------------------------------------------------------
 
     def add_entry(self, entry: DictionaryEntry) -> None:
-        self.dictionary[entry.term.lower()] = entry
+        for i, e in enumerate(self._dictionary):
+            if e.term.lower() == entry.term.lower():
+                self._dictionary[i] = entry
+                self._touch()
+                return
+        self._dictionary.append(entry)
         self._touch()
 
+    def add_to_dictionary(self, entries: list[dict]) -> int:
+        """Add dictionary entries from dicts. Skips duplicates by term."""
+        existing = {e.term.lower() for e in self._dictionary}
+        added = 0
+        for d in entries:
+            term = d.get("term", "")
+            if term.lower() not in existing:
+                self._dictionary.append(DictionaryEntry(
+                    term=term,
+                    gnd_id=d.get("gnd_id", ""),
+                    gnd_type=d.get("category", d.get("gnd_type", "")),
+                    source=d.get("source", "manual"),
+                ))
+                existing.add(term.lower())
+                added += 1
+        self._touch()
+        return added
+
     def lookup(self, term: str) -> DictionaryEntry | None:
-        return self.dictionary.get(term.lower())
+        for e in self._dictionary:
+            if e.term.lower() == term.lower():
+                return e
+        return None
 
     def lookup_gnd(self, gnd_id: str) -> DictionaryEntry | None:
-        for e in self.dictionary.values():
+        for e in self._dictionary:
             if e.gnd_id == gnd_id:
                 return e
         return None
 
     # ------------------------------------------------------------------
-    # Entity review helpers
+    # Entity helpers
     # ------------------------------------------------------------------
 
-    def add_entities(self, entities: list[dict]) -> int:
+    def add_entities(self, entities: list[dict], replace: bool = False) -> int:
         """
-        Add entity dicts (from NERResult.to_dict_list()) to the review queue.
+        Add entity dicts to the review queue.
+        Skips exact duplicates (same text+type+record_id), but updates
+        confidence if the new entry has higher confidence.
+        """
+        if replace:
+            self.entity_reviews = []
 
-        Skips exact duplicates (same text+type+record_id).
-        Returns number of newly added reviews.
-        """
-        existing_keys = {
-            (r.text.lower(), r.entity_type, r.record_id)
-            for r in self.entity_reviews
-        }
+        existing: dict[tuple, int] = {}
+        for i, r in enumerate(self.entity_reviews):
+            existing[(r.text.lower(), r.entity_type, r.record_id)] = i
+
         added = 0
         for e in entities:
-            key = (e["text"].lower(), e["type"], e.get("record_id", ""))
-            if key not in existing_keys:
+            etype = e.get("type", e.get("entity_type", ""))
+            key = (e["text"].lower(), etype, e.get("record_id", ""))
+            conf = float(e.get("confidence", 0))
+            if key in existing:
+                idx = existing[key]
+                if conf > self.entity_reviews[idx].confidence:
+                    self.entity_reviews[idx].confidence = conf
+                    self.entity_reviews[idx].source = e.get("source", "")
+            else:
                 self.entity_reviews.append(EntityReview(
                     text=e["text"],
-                    entity_type=e["type"],
+                    entity_type=etype,
                     record_id=e.get("record_id", ""),
+                    confidence=conf,
+                    source=e.get("source", ""),
                     gnd_id=e.get("gnd_id") or "",
                     gnd_preferred=e.get("gnd_preferred") or "",
                 ))
-                existing_keys.add(key)
+                existing[key] = len(self.entity_reviews) - 1
                 added += 1
         self._touch()
         return added
+
+    def update_entity(self, index: int, updates: dict) -> bool:
+        """Update an entity at the given index."""
+        if 0 <= index < len(self.entity_reviews):
+            er = self.entity_reviews[index]
+            for k, v in updates.items():
+                if k == "status":
+                    er.status = ReviewStatus(v) if isinstance(v, str) else v
+                elif hasattr(er, k):
+                    setattr(er, k, v)
+            self._touch()
+            return True
+        return False
+
+    def entities_by_status(self) -> dict[str, int]:
+        """Return count of entities per status."""
+        stats: dict[str, int] = {s.value: 0 for s in ReviewStatus}
+        for r in self.entity_reviews:
+            stats[r.status.value] += 1
+        return stats
+
+    def unique_entities(self) -> list[EntityReview]:
+        """Deduplicated entities, keeping highest confidence."""
+        best: dict[tuple, EntityReview] = {}
+        for e in self.entity_reviews:
+            key = (e.text.lower(), e.entity_type)
+            if key not in best or e.confidence > best[key].confidence:
+                best[key] = e
+        return list(best.values())
 
     def reviews_by_status(self, status: ReviewStatus) -> list[EntityReview]:
         return [r for r in self.entity_reviews if r.status == status]
@@ -329,6 +495,61 @@ class Workspace:
         return stats
 
     # ------------------------------------------------------------------
+    # Date helpers
+    # ------------------------------------------------------------------
+
+    def add_dates(self, dates: list[dict], replace: bool = False) -> int:
+        """Add EDTF date results."""
+        if replace:
+            self.dates = []
+        added = 0
+        for d in dates:
+            self.dates.append(CuratedDate(
+                original=d.get("original", ""),
+                edtf=d.get("edtf", ""),
+                confidence=float(d.get("confidence", 0)),
+                method=d.get("method", ""),
+                record_id=d.get("record_id", ""),
+                column=d.get("column", ""),
+                note=d.get("note", ""),
+            ))
+            added += 1
+        self._touch()
+        return added
+
+    # ------------------------------------------------------------------
+    # AI run logging
+    # ------------------------------------------------------------------
+
+    def log_ai_run(
+        self, task: str, model: str,
+        total: int = 0, succeeded: int = 0, duration: float = 0,
+    ) -> None:
+        self.ai_runs.append({
+            "task": task, "model": model,
+            "total": total, "succeeded": succeeded,
+            "duration": duration,
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+    # ------------------------------------------------------------------
+    # Summary
+    # ------------------------------------------------------------------
+
+    def to_summary(self) -> dict:
+        """Return a summary dict for API responses."""
+        return {
+            "name": self.name,
+            "entity_count": len(self.entity_reviews),
+            "date_count": len(self.dates),
+            "dictionary_count": len(self._dictionary),
+            "mapping_count": len(self._field_mapping),
+            "entity_status": self.entities_by_status(),
+            "ai_runs": len(self.ai_runs),
+            "source_files": self.source_files,
+        }
+
+    # ------------------------------------------------------------------
     # Serialization
     # ------------------------------------------------------------------
 
@@ -336,15 +557,25 @@ class Workspace:
         self.updated_at = datetime.utcnow().isoformat()
 
     def to_dict(self) -> dict:
+        # Serialize field_mapping
+        if self._field_mapping_raw is not None:
+            fm_ser = {k: list(v) if isinstance(v, tuple) else v
+                      for k, v in self._field_mapping_raw.items()}
+        else:
+            fm_ser = [m.to_dict() for m in self._field_mapping]
+
         return {
             "name": self.name,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "source_file": self.source_file,
+            "source_files": self.source_files,
             "id_column": self.id_column,
-            "field_mapping": [m.to_dict() for m in self.field_mapping],
-            "dictionary": {k: v.to_dict() for k, v in self.dictionary.items()},
+            "field_mapping": fm_ser,
+            "dictionary": [e.to_dict() for e in self._dictionary],
             "entity_reviews": [r.to_dict() for r in self.entity_reviews],
+            "dates": [d.to_dict() for d in self.dates],
+            "ai_runs": self.ai_runs,
             "notes": self.notes,
             "model_text": self.model_text,
             "model_vision": self.model_vision,
@@ -357,20 +588,36 @@ class Workspace:
     @staticmethod
     def from_dict(d: dict) -> "Workspace":
         ws = Workspace(
-            name=d["name"],
+            name=d.get("name", ""),
             created_at=d.get("created_at", ""),
             updated_at=d.get("updated_at", ""),
             source_file=d.get("source_file", ""),
             id_column=d.get("id_column", "record_id"),
         )
-        ws.field_mapping = [FieldMapping.from_dict(m) for m in d.get("field_mapping", [])]
-        ws.dictionary = {
-            k: DictionaryEntry.from_dict(v)
-            for k, v in d.get("dictionary", {}).items()
-        }
+        # Field mapping: support both list and dict formats
+        fm = d.get("field_mapping", [])
+        if isinstance(fm, list):
+            ws._field_mapping = [FieldMapping.from_dict(m) for m in fm]
+        elif isinstance(fm, dict):
+            ws.field_mapping = fm
+
+        # Dictionary: support both list and dict formats
+        dict_data = d.get("dictionary", [])
+        if isinstance(dict_data, list):
+            ws._dictionary = [DictionaryEntry.from_dict(e) for e in dict_data]
+        elif isinstance(dict_data, dict):
+            ws._dictionary = [
+                DictionaryEntry.from_dict(v) for v in dict_data.values()
+            ]
+
         ws.entity_reviews = [
             EntityReview.from_dict(r) for r in d.get("entity_reviews", [])
         ]
+        ws.dates = [
+            CuratedDate.from_dict(dt) for dt in d.get("dates", [])
+        ]
+        ws.ai_runs = d.get("ai_runs", [])
+        ws.source_files = d.get("source_files", [])
         ws.notes = d.get("notes", "")
         ws.model_text = d.get("model_text", "")
         ws.model_vision = d.get("model_vision", "")

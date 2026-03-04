@@ -30,15 +30,26 @@ router = APIRouter()
 
 
 def _report_json(report, markdown: str) -> dict:
-    """Serialise a StructuralReport for the API response."""
+    """Serialise an AnalysisReport for the API response."""
     from kwb.core.models import Severity
-    issues = [i for i in report.issues if i.severity in (Severity.ERROR, Severity.WARNING)]
+    findings = [
+        f for f in report.findings
+        if f.severity in (Severity.CRITICAL, Severity.WARNING)
+    ]
+    s = report.summary
     return {
-        "total_rows": report.total_rows,
-        "total_columns": report.total_columns,
-        "fill_rate": round(report.fill_rate, 3),
-        "issues": [{"message": i.message, "severity": i.severity.value,
-                    "column": i.column, "record_id": i.record_id} for i in issues[:200]],
+        "total_rows": s.get("total_records", 0),
+        "total_columns": s.get("total_columns", 0),
+        "total_findings": s.get("total_findings", 0),
+        "findings": [
+            {
+                "message": f.message,
+                "severity": f.severity.value,
+                "column": f.column,
+                "record_ids": f.record_ids[:10],
+            }
+            for f in findings[:200]
+        ],
         "markdown": markdown,
     }
 

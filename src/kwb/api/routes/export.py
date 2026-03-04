@@ -29,13 +29,25 @@ async def export_preview(request: dict):
     df, profile = ds
     ws = get_workspace()
     rid = request.get("record_id", "")
-    if not rid and len(df) > 0:
+
+    if rid:
         id_col = profile.id_column or df.columns[0]
-        rid = str(df.iloc[0][id_col])
-    mapping = {m.csv_column: m.goobi_type for m in ws.active_mappings()}
+        subset = df[df[id_col].astype(str) == rid]
+        if subset.empty:
+            return JSONResponse({"error": f"Record '{rid}' nicht gefunden"}, 400)
+    else:
+        subset = df.head(1)
+        if subset.empty:
+            return JSONResponse({"error": "Keine Daten"}, 400)
+        id_col = profile.id_column or df.columns[0]
+        rid = str(subset.iloc[0][id_col])
+
     try:
-        xml_str = export_goobi_xml(df, profile, rid, mapping=mapping)
-        return {"xml": xml_str, "record_id": rid}
+        results = export_goobi_xml(subset, ws)
+        if results:
+            _, xml_str = results[0]
+            return {"xml": xml_str, "record_id": rid}
+        return JSONResponse({"error": "Export fehlgeschlagen"}, 500)
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
 
@@ -51,14 +63,12 @@ async def export_batch(request: dict):
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = get_workspace()
-    mapping = {m.csv_column: m.goobi_type for m in ws.active_mappings()}
     limit = min(request.get("limit", 500), 5000)
     try:
-        results = export_goobi_batch(df.head(limit), profile, mapping=mapping)
+        xml = export_goobi_batch(df.head(limit), ws)
         return {
-            "total": len(results),
-            "succeeded": len([r for r in results if r.get("xml")]),
-            "records": results[:100],
+            "xml": xml,
+            "record_count": min(len(df), limit),
         }
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
