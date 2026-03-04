@@ -132,9 +132,43 @@ async def ai_describe_columns(request: dict | None = None):
 # ---------------------------------------------------------------------------
 # Image analysis
 # ---------------------------------------------------------------------------
+# Image store — metadata in-memory, raw bytes on disk so they survive reloads
+# ---------------------------------------------------------------------------
 
-# In-process image store (keyed by upload session)
+import tempfile as _tempfile
+
+# Use a fixed sub-directory of the system temp dir so images survive
+# server restarts / hot-reloads.  Created once per process lifetime.
+_IMAGE_DIR = Path(_tempfile.gettempdir()) / "debussy_uploads"
+_IMAGE_DIR.mkdir(exist_ok=True)
+
+# In-memory metadata index (rebuilt from disk on demand, see _sync_index)
 _uploaded_images: dict[str, dict] = {}
+
+
+def _sync_index() -> None:
+    """Re-populate the metadata index from files on disk (called at import time)."""
+    ext_to_mime = {
+        ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+        ".png": "image/png", ".tif": "image/tiff",
+        ".tiff": "image/tiff", ".webp": "image/webp",
+    }
+    for p in sorted(_IMAGE_DIR.iterdir()):
+        if p.is_file() and p.suffix.lower() in ext_to_mime:
+            img_id = p.stem
+            if img_id not in _uploaded_images:
+                _uploaded_images[img_id] = {
+                    "id": img_id,
+                    "filename": p.name,
+                    "media_type": ext_to_mime[p.suffix.lower()],
+                    "size_bytes": p.stat().st_size,
+                    "path": str(p),
+                    "analyzed": False,
+                    "result": None,
+                }
+
+
+_sync_index()
 
 
 @router.post("/api/images/upload")
@@ -167,12 +201,14 @@ async def images_upload(files: list[UploadFile] = File(...)):
         }.get(suffix, "image/jpeg")
 
         img_id = f"img_{len(_uploaded_images) + 1:04d}_{Path(u.filename).stem}"
+        img_path = _IMAGE_DIR / f"{img_id}{suffix}"
+        img_path.write_bytes(content)
         _uploaded_images[img_id] = {
             "id": img_id,
             "filename": u.filename,
             "media_type": media_type,
             "size_bytes": len(content),
-            "b64": base64.b64encode(content).decode("ascii"),
+            "path": str(img_path),
             "analyzed": False,
             "result": None,
         }
@@ -194,8 +230,10 @@ async def image_data(img_id: str):
     img = _uploaded_images.get(img_id)
     if not img:
         return JSONResponse({"error": "Nicht gefunden"}, 404)
-    content = base64.b64decode(img["b64"])
-    return Response(content=content, media_type=img["media_type"])
+    img_path = Path(img["path"])
+    if not img_path.exists():
+        return JSONResponse({"error": "Datei nicht gefunden"}, 404)
+    return Response(content=img_path.read_bytes(), media_type=img["media_type"])
 
 
 @router.get("/api/images")
@@ -240,7 +278,8 @@ async def images_analyze(request: dict):
             continue
 
         try:
-            data_url = f"data:{img['media_type']};base64,{img['b64']}"
+            b64 = base64.b64encode(Path(img["path"]).read_bytes()).decode("ascii")
+            data_url = f"data:{img['media_type']};base64,{b64}"
             messages = [
                 AIMessage.system(syp),
                 AIMessage.user([
