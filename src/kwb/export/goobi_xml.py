@@ -412,3 +412,6 @@ def dataframe_to_goobi_xml_files(
         written.append(path)
 
     return written
+# Backward compatibility for API imports
+export_goobi_xml = dataframe_to_goobi_xml
+export_goobi_batch = dataframe_to_goobi_xml_files
