@@ -84,6 +84,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="nt" data-p="ner">🔍 NER & Entities</div>
 <div class="nt" data-p="dates">📅 Datierung</div>
 <div class="nt" data-p="images">🖼️ Bild-Analyse</div>
+<div class="nt" data-p="mapping">🗺️ Feld-Mapping</div>
 <div class="nt" data-p="export">📦 Export</div>
 <div class="nt" data-p="config">⚙️ KI-Konfiguration</div>
 <div class="nt" data-p="catalog">📋 Funktionskatalog</div>
@@ -200,8 +201,12 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="g2"><div class="sb">
 <h3>Upload</h3>
 <div style="margin-bottom:.5rem">
-  <label class="lbl">Bilder wählen</label>
+  <label class="lbl">Einzelne Bilder wählen</label>
   <input type="file" id="img-files" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.webp" style="font-size:.75rem;width:100%">
+</div>
+<div style="margin-bottom:.5rem">
+  <label class="lbl">Oder Ordner wählen <span style="font-weight:400;color:#888">(inkl. Unterordner)</span></label>
+  <input type="file" id="img-folder" webkitdirectory multiple style="font-size:.75rem;width:100%">
 </div>
 <button class="btn f" onclick="uploadImages()">⬆️ Hochladen</button>
 <div id="img-upload-status" class="em" style="margin-top:.4rem"></div>
@@ -235,11 +240,9 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div></div>
 </div></div>
 
-<!-- ===== EXPORT ===== -->
-<div class="hint" id="exp-hint">Daten laden, optional NER/EDTF ausführen, dann hierher kommen.</div>
-
-<!-- Field Mapping Panel -->
-<div class="c" style="margin-bottom:1rem"><h2>🗺️ Feld-Mapping: CSV → Goobi</h2>
+<!-- ===== FELD-MAPPING ===== -->
+<div class="pg" data-p="mapping"><div style="max-width:1100px">
+<div class="c"><h2>🗺️ Feld-Mapping: CSV → Goobi</h2>
 <p style="font-size:.78rem;color:#666;margin-bottom:.6rem">Ordne CSV-Spalten den Goobi-Metadatenfeldern zu. Nur gemappte Spalten werden exportiert.</p>
 <label>Datensatz für Mapping</label><select id="fm-ds" onchange="loadFMCols()"><option value="">— Erst Daten laden —</option></select>
 <div id="fm-table-wrap" style="margin-top:.6rem;display:none">
@@ -251,6 +254,11 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <span id="fm-saved" style="font-size:.7rem;color:var(--ok);margin-left:.5rem;display:none">✓ Gespeichert</span>
 </div>
 </div>
+</div></div>
+
+<!-- ===== EXPORT ===== -->
+<div class="pg" data-p="export"><div style="max-width:1100px">
+<div class="hint" id="exp-hint">Daten laden, optional NER/EDTF ausführen, dann hierher kommen.</div>
 
 <!-- Goobi Export Panel -->
 <div class="c"><h2>Goobi-Import XML</h2>
@@ -671,11 +679,14 @@ function applyImgPreset(){
 }
 
 async function uploadImages(){
-  const inp = $('img-files');
-  if(!inp.files.length){alert('Keine Dateien gewählt.');return}
+  const imgExts = /\.(jpg|jpeg|png|tif|tiff|webp)$/i;
+  const fileFiles = [...($('img-files').files || [])];
+  const folderFiles = [...($('img-folder').files || [])].filter(f => imgExts.test(f.name));
+  const allFiles = [...fileFiles, ...folderFiles];
+  if(!allFiles.length){alert('Keine Bilddateien gewählt.');return}
   const fd = new FormData();
-  for(const f of inp.files) fd.append('files', f);
-  sp('Bilder werden hochgeladen…','');
+  for(const f of allFiles) fd.append('files', f, f.webkitRelativePath || f.name);
+  sp('Bilder werden hochgeladen…', allFiles.length + ' Datei(en)');
   try{
     const r = await fetch('/api/images/upload',{method:'POST',body:fd});
     const data = await r.json();
@@ -735,15 +746,15 @@ function renderImgResults(results){
   if(!results.length){empty.style.display='block';el.innerHTML='';return}
   empty.style.display='none';
   el.innerHTML = results.map(res=>{
-    if(res.error) return `<div class="card" style="border-color:#e55"><strong>${esc(res.id||res.filename||'')}</strong><br><span style="color:#c00">${esc(res.error)}</span></div>`;
-    const r = res.result || {};
-    return `<div class="card" style="margin-bottom:.5rem">
-      <strong style="font-size:.8rem">${esc(res.filename||res.id)}</strong>
-      <p style="font-size:.78rem;margin:.3rem 0">${esc(r.description||'')}</p>
-      ${r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':''}
-      ${r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':''}
-      ${r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':''}
-    </div>`;
+    if(res.error) return '<div class="card" style="border-color:#e55"><strong>'+esc(res.id||res.filename||'')+'</strong><br><span style="color:#c00">'+esc(res.error)+'</span></div>';
+    var r = res.result || {};
+    return '<div class="card" style="margin-bottom:.5rem">'
+      +'<strong style="font-size:.8rem">'+esc(res.filename||res.id)+'</strong>'
+      +'<p style="font-size:.78rem;margin:.3rem 0">'+esc(r.description||'')+'</p>'
+      +(r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':'')
+      +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
+      +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +'</div>';
   }).join('');
 }
 

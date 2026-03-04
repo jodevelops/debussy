@@ -20,10 +20,8 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from dataclasses import dataclass, field
 from urllib.request import Request, urlopen
-from urllib.error import URLError, HTTPError
 from urllib.parse import quote
 
 import pandas as pd
@@ -262,7 +260,7 @@ class LobidGNDClient:
             req = Request(url, headers={"Accept": "application/json"})
             with urlopen(req, timeout=self.timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
-        except (HTTPError, URLError, TimeoutError) as e:
+        except Exception as e:
             logger.warning(f"Lobid API unavailable for '{term}': {e}")
             return []
 
@@ -277,7 +275,7 @@ class LobidGNDClient:
                 term=term,
                 gnd_id=gnd_id,
                 preferred_name=preferred,
-                gnd_type=types[0] if types else "",
+                gnd_type=next((t for t in types if t != "AuthorityResource"), types[0] if types else ""),
                 alternatives=alts[:5],
                 confidence=0.8,  # lobid doesn't expose a confidence score
                 source="lobid",
@@ -300,82 +298,136 @@ class LobidGNDClient:
             term=data.get("preferredName", ""),
             gnd_id=gnd_id,
             preferred_name=data.get("preferredName", ""),
-            gnd_type=(data.get("type") or [""])[0],
+            gnd_type=next((t for t in (data.get("type") or []) if t != "AuthorityResource"), (data.get("type") or [""])[0]),
             alternatives=data.get("variantName", [])[:5],
             confidence=1.0,
             source="lobid",
         )
-# --- Compatibility wrappers expected by kwb.api.app ---
 
-import json
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass
 
-LOBID_BASE = "https://lobid.org/gnd/search"
+# ---------------------------------------------------------------------------
+# GND type filter mapping (NER type → lobid type filter)
+# ---------------------------------------------------------------------------
+
+GND_TYPE_FILTER: dict[str, str] = {
+    "PER": "Person",
+    "ORG": "CorporateBody",
+    "LOC": "PlaceOrGeographicName",
+    "GPE": "PlaceOrGeographicName",
+    "FAC": "BuildingOrMemorial",
+    "EVT": "HistoricSingleEventOrEra",
+    "WRK": "Work",
+    "CON": "SubjectHeading",
+}
+
+
+# ---------------------------------------------------------------------------
+# GNDResult — lightweight result dataclass for API/test consumers
+# ---------------------------------------------------------------------------
 
 @dataclass
 class GNDResult:
+    """Simplified GND search result for API responses."""
     gnd_id: str
     preferred_name: str
     gnd_type: str = ""
-    alternative_names: list[str] = None
-    description: str = ""
-    uri: str = ""
-    score: float = 0.0
+    alternative_names: list[str] = field(default_factory=list)
+    confidence: float = 0.8
 
-    def __post_init__(self):
-        if self.alternative_names is None:
-            self.alternative_names = []
-        if not self.uri and self.gnd_id:
-            self.uri = f"https://d-nb.info/gnd/{self.gnd_id}"
+    @property
+    def uri(self) -> str:
+        return f"https://d-nb.info/gnd/{self.gnd_id}" if self.gnd_id else ""
 
     def to_dict(self) -> dict:
         return {
             "gnd_id": self.gnd_id,
             "preferred_name": self.preferred_name,
-            "type": self.gnd_type,
+            "gnd_type": self.gnd_type,
             "alternative_names": self.alternative_names,
-            "description": self.description,
             "uri": self.uri,
-            "score": self.score,
+            "confidence": self.confidence,
         }
 
-def gnd_search(query: str, entity_type: str = "", size: int = 5, timeout: float = 5.0) -> list[GNDResult]:
-    if not query or not str(query).strip():
-        return []
-    params = {"q": str(query).strip(), "size": str(size), "format": "json"}
-    url = f"{LOBID_BASE}?{urllib.parse.urlencode(params)}"
-    try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "Debussy/compat"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except Exception:
+
+# ---------------------------------------------------------------------------
+# Module-level convenience functions (used by routes and tests)
+# ---------------------------------------------------------------------------
+
+_default_client = LobidGNDClient()
+
+
+def gnd_search(
+    term: str,
+    entity_type: str = "",
+    size: int = 5,
+) -> list[GNDResult]:
+    """Search GND for a term. Returns [] on empty query or network error."""
+    if not term or not term.strip():
         return []
 
-    out: list[GNDResult] = []
-    for item in data.get("member", []):
-        gid = item.get("gndIdentifier", "")
-        if not gid:
-            continue
-        preferred = item.get("preferredName", "")
-        types = item.get("type", [])
-        gtype = next((t for t in types if t != "AuthorityResource"), "")
-        alts = [v for v in item.get("variantName", []) if isinstance(v, str)][:5]
-        out.append(GNDResult(gnd_id=gid, preferred_name=preferred, gnd_type=gtype, alternative_names=alts))
-    return out
+    lobid_type = GND_TYPE_FILTER.get(entity_type, entity_type)
+    matches = _default_client.search(term, entity_type=lobid_type, size=size)
+    return [
+        GNDResult(
+            gnd_id=m.gnd_id,
+            preferred_name=m.preferred_name,
+            gnd_type=m.gnd_type,
+            alternative_names=m.alternatives,
+            confidence=m.confidence,
+        )
+        for m in matches
+    ]
 
-def gnd_batch_search(terms: list[dict[str, str]], delay: float = 0.0) -> list[dict]:
-    results = []
-    for item in terms:
+
+def gnd_lookup(gnd_id: str) -> GNDResult | None:
+    """Look up a single GND entity by ID."""
+    m = _default_client.lookup_id(gnd_id)
+    if m is None:
+        return None
+    return GNDResult(
+        gnd_id=m.gnd_id,
+        preferred_name=m.preferred_name,
+        gnd_type=m.gnd_type,
+        alternative_names=m.alternatives,
+        confidence=m.confidence,
+    )
+
+
+def gnd_batch_search(
+    terms: list[dict],
+    delay: float = 0.5,
+) -> list[dict]:
+    """Batch GND search for a list of {text, type, record_id} dicts.
+
+    Returns a list of {text, record_id, results, top_match} dicts.
+    """
+    import time as _time
+
+    if not terms:
+        return []
+
+    output = []
+    for i, item in enumerate(terms):
         text = item.get("text", "")
         etype = item.get("type", "")
-        hits = gnd_search(text, entity_type=etype, size=3)
-        results.append({
+        record_id = item.get("record_id", "")
+
+        try:
+            results = gnd_search(text, entity_type=etype)
+        except Exception as e:
+            logger.warning(f"GND batch search failed for '{text}': {e}")
+            results = []
+
+        top = results[0] if results else None
+        output.append({
             "text": text,
             "type": etype,
-            "record_id": item.get("record_id", ""),
-            "results": [h.to_dict() for h in hits],
-            "top_match": hits[0].to_dict() if hits else None,
+            "record_id": record_id,
+            "results": [r.to_dict() for r in results],
+            "top_match": top.to_dict() if top else None,
         })
-    return results
+
+        if delay > 0 and i < len(terms) - 1:
+            _time.sleep(delay)
+
+    return output

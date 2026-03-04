@@ -21,7 +21,7 @@ except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
 from kwb.api.deps import (
-    ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_UPLOAD_FILES,
+    ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES, MAX_UPLOAD_FILES,
     get_config, get_datasets, get_provider, get_state, get_workspace,
 )
 from kwb.ai.provider import AIMessage
@@ -52,7 +52,8 @@ async def gpu_status():
 
 
 @router.post("/api/gpu/test")
-async def gpu_test(request: dict):
+async def gpu_test(request: dict | None = None):
+    request = request or {}
     mod = request.get("model", "")
     syp = request.get("system_prompt", "Antworte in einem Satz.")
     prov = get_provider(mod)
@@ -71,9 +72,16 @@ async def gpu_test(request: dict):
 # ---------------------------------------------------------------------------
 
 @router.post("/api/ai/describe-columns")
-async def ai_describe_columns(request: dict):
+async def ai_describe_columns(request: dict | None = None):
+    request = request or {}
     dsn = request.get("dataset", "")
-    ds = get_datasets().get(dsn)
+    datasets = get_datasets()
+    if dsn:
+        ds = datasets.get(dsn)
+    elif datasets:
+        dsn, ds = next(iter(datasets.items()))
+    else:
+        ds = None
     if not ds:
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
@@ -102,7 +110,23 @@ async def ai_describe_columns(request: dict):
         else:
             descriptions[col] = {"column": col, "description": br.raw or "", "data_type": "unbekannt"}
 
-    return {"descriptions": descriptions, "model": mod or "default"}
+    col_list = []
+    for c in profile.columns:
+        desc = descriptions.get(c.name, {})
+        col_list.append({
+            "name": c.name,
+            "ai_description": desc.get("description", ""),
+            "data_type": desc.get("data_type", ""),
+        })
+
+    return {
+        "datasets": [{
+            "name": dsn,
+            "columns": col_list,
+        }],
+        "descriptions": descriptions,
+        "model": mod or "default",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -121,8 +145,8 @@ async def images_upload(files: list[UploadFile] = File(...)):
     Accepted formats: JPEG, PNG, TIFF, WebP.
     Returns a list of image handles (id + filename + preview dimensions).
     """
-    if len(files) > MAX_UPLOAD_FILES:
-        return JSONResponse({"error": f"Max {MAX_UPLOAD_FILES} Bilder"}, 400)
+    if len(files) > MAX_IMAGE_FILES:
+        return JSONResponse({"error": f"Max {MAX_IMAGE_FILES} Bilder"}, 400)
 
     accepted = []
     for u in files:
@@ -162,14 +186,16 @@ async def images_upload(files: list[UploadFile] = File(...)):
     return {"uploaded": len(accepted), "images": accepted}
 
 
-@router.get("/api/images/{img_id}")
-async def images_serve(img_id: str):
-    """Serve a single uploaded image as binary with correct Content-Type."""
+@router.get("/api/images/{img_id}/data")
+async def image_data(img_id: str):
+    """Serve raw image bytes so the browser can display thumbnails."""
+    import base64
+    from fastapi.responses import Response
     img = _uploaded_images.get(img_id)
     if not img:
         return JSONResponse({"error": "Nicht gefunden"}, 404)
-    raw = base64.b64decode(img["b64"])
-    return Response(content=raw, media_type=img["media_type"])
+    content = base64.b64decode(img["b64"])
+    return Response(content=content, media_type=img["media_type"])
 
 
 @router.get("/api/images")
