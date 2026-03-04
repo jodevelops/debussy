@@ -3,7 +3,7 @@ Debussy v0.5 — KI-gestützte Kuratierungswerkbank.
 PYTHONPATH=src python -m kwb.api.app → http://localhost:8765
 """
 from __future__ import annotations
-import json, os, re, sys, tempfile, time
+import base64, json, os, re, sys, tempfile, time
 from pathlib import Path
 from typing import Any
 import pandas as pd
@@ -46,6 +46,14 @@ MAX_CSV_ROWS = 500_000
 MAX_CSV_COLS = 200
 ALLOWED_EXTENSIONS = {".csv", ".tsv"}
 ALLOWED_WS_EXT = {".json"}
+MAX_IMAGE_FILES = 500
+ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+_MIME_MAP = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+    ".png": "image/png", ".tif": "image/tiff",
+    ".tiff": "image/tiff", ".webp": "image/webp",
+}
+_uploaded_images: dict = {}
 
 # --- Workspace storage ---
 _WORKSPACE_DIR = Path(os.environ.get(
@@ -510,6 +518,94 @@ async def set_field_mapping(request: dict):
 @app.get("/api/workspace/field-mapping")
 async def get_field_mapping():
     return {"mapping": _ws().field_mapping or {}}
+
+
+# ---------------------------------------------------------------------------
+# Images
+# ---------------------------------------------------------------------------
+@app.post("/api/images/upload")
+async def images_upload(files: list[UploadFile] = File(...)):
+    if len(files) > MAX_IMAGE_FILES:
+        return JSONResponse({"error": f"Max {MAX_IMAGE_FILES} Bilder"}, 400)
+    accepted = []
+    for u in files:
+        suffix = Path(u.filename or "").suffix.lower()
+        if suffix not in ALLOWED_IMAGE_EXT:
+            return JSONResponse({"error": f"'{u.filename}': Nur JPEG/PNG/TIFF/WebP erlaubt"}, 400)
+        content = await u.read()
+        if len(content) > MAX_FILE_BYTES:
+            return JSONResponse({"error": f"'{u.filename}': Max 50 MB"}, 400)
+        media_type = _MIME_MAP[suffix]
+        img_id = f"img_{len(_uploaded_images) + 1:04d}_{Path(u.filename or 'img').stem}"
+        _uploaded_images[img_id] = {
+            "id": img_id, "filename": u.filename,
+            "media_type": media_type, "size_bytes": len(content),
+            "b64": base64.b64encode(content).decode("ascii"),
+            "analyzed": False, "result": None,
+        }
+        accepted.append({"id": img_id, "filename": u.filename,
+                         "size_bytes": len(content), "media_type": media_type})
+    return {"uploaded": len(accepted), "images": accepted}
+
+
+@app.get("/api/images")
+async def images_list():
+    return {"images": [
+        {"id": img["id"], "filename": img["filename"],
+         "size_bytes": img["size_bytes"], "analyzed": img["analyzed"],
+         "result": img["result"]}
+        for img in _uploaded_images.values()
+    ]}
+
+
+@app.post("/api/images/analyze")
+async def images_analyze(request: dict):
+    from kwb.ai.prompts import SYSTEM_VISION_EXPERT_DE
+    image_ids = request.get("image_ids", list(_uploaded_images.keys()))
+    mod = request.get("model", "")
+    syp = request.get("system_prompt", SYSTEM_VISION_EXPERT_DE)
+    if not image_ids:
+        return JSONResponse({"error": "Keine Bilder hochgeladen"}, 400)
+    prov = _prov(mod)
+    results = []
+    for img_id in image_ids:
+        img = _uploaded_images.get(img_id)
+        if not img:
+            results.append({"id": img_id, "error": "Nicht gefunden"})
+            continue
+        try:
+            data_url = f"data:{img['media_type']};base64,{img['b64']}"
+            resp = prov.complete(
+                [
+                    AIMessage.system(syp),
+                    AIMessage.user([
+                        {"type": "image_url", "image_url": {"url": data_url}},
+                        {"type": "text", "text": (
+                            "Beschreibe dieses Bild für eine Museumsdatenbank auf Deutsch. "
+                            'Antworte als JSON: {"description":"...","objects":[],"confidence":0.0}'
+                        )},
+                    ]),
+                ],
+                model=mod or None, max_tokens=512,
+            )
+            parsed = _try_parse_json(resp.content) or {"description": resp.content}
+            img["analyzed"] = True
+            img["result"] = parsed
+            results.append({"id": img_id, "filename": img["filename"], "result": parsed})
+        except Exception as e:
+            results.append({"id": img_id, "error": str(e)})
+    _ws().log_ai_run("image_analysis", mod or "vision", len(results),
+                     len([r for r in results if "result" in r]))
+    return {"total": len(image_ids),
+            "analyzed": len([r for r in results if "result" in r]),
+            "model": mod or "default", "results": results}
+
+
+@app.delete("/api/images")
+async def images_clear():
+    count = len(_uploaded_images)
+    _uploaded_images.clear()
+    return {"cleared": count}
 
 
 # ---------------------------------------------------------------------------
