@@ -65,3 +65,26 @@ def test_parse_function_catalog_on_custom_file(tmp_path: Path):
     assert entries[0].feature_id == "F99"
     assert entries[0].tests_done == 1
     assert entries[0].tests_total == 2
+    assert entries[0].module == "`demo.py`"
+    assert entries[0].note == "Noch offen"
+
+
+def test_parse_function_catalog_without_modul_column(tmp_path: Path):
+    file = tmp_path / "catalog_without_modul.md"
+    file.write_text(
+        "\n".join(
+            [
+                "## 1. Demo",
+                "| ID | Funktion | Status | Tests | Hinweis |",
+                "|----|----------|--------|-------|---------|",
+                "| F42 | Nur Hinweis | ✅ Umgesetzt | 2/2 | Fertig dokumentiert |",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    entries = parse_function_catalog(file)
+    assert len(entries) == 1
+    assert entries[0].feature_id == "F42"
+    assert entries[0].module == ""
+    assert entries[0].note == "Fertig dokumentiert"
