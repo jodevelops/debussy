@@ -675,12 +675,13 @@ function renderImgGrid(){
   const empty = $('img-list-empty');
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
   empty.style.display='none';
-  grid.innerHTML = uploadedImages.map(img => `
-    <div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa">
-      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="${esc(img.filename)}">${esc(img.filename)}</div>
-      <div style="color:#888;font-size:.65rem">${(img.size_bytes/1024).toFixed(1)} KB</div>
-      <div style="margin-top:.2rem"><span class="bg ${img.analyzed?'ac':'no'}">${img.analyzed?'analysiert':'ausstehend'}</span></div>
-    </div>`).join('');
+  grid.innerHTML = uploadedImages.map(function(img){
+    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa">'
+      +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
+      +'<div style="color:#888;font-size:.65rem">'+(img.size_bytes/1024).toFixed(1)+' KB</div>'
+      +'<div style="margin-top:.2rem"><span class="bg '+(img.analyzed?'ac':'no')+'">'+(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
+      +'</div>';
+  }).join('');
 }
 
 async function analyzeImages(){
@@ -714,15 +715,15 @@ function renderImgResults(results){
   if(!results.length){empty.style.display='block';el.innerHTML='';return}
   empty.style.display='none';
   el.innerHTML = results.map(res=>{
-    if(res.error) return `<div class="card" style="border-color:#e55"><strong>${esc(res.id||res.filename||'')}</strong><br><span style="color:#c00">${esc(res.error)}</span></div>`;
-    const r = res.result || {};
-    return `<div class="card" style="margin-bottom:.5rem">
-      <strong style="font-size:.8rem">${esc(res.filename||res.id)}</strong>
-      <p style="font-size:.78rem;margin:.3rem 0">${esc(r.description||'')}</p>
-      ${r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':''}
-      ${r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':''}
-      ${r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':''}
-    </div>`;
+    if(res.error) return '<div class="card" style="border-color:#e55"><strong>'+esc(res.id||res.filename||'')+'</strong><br><span style="color:#c00">'+esc(res.error)+'</span></div>';
+    var r = res.result || {};
+    return '<div class="card" style="margin-bottom:.5rem">'
+      +'<strong style="font-size:.8rem">'+esc(res.filename||res.id)+'</strong>'
+      +'<p style="font-size:.78rem;margin:.3rem 0">'+esc(r.description||'')+'</p>'
+      +(r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':'')
+      +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
+      +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +'</div>';
   }).join('');
 }
 

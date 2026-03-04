@@ -9,7 +9,7 @@ import json
 from pathlib import Path
 
 try:
-    from fastapi import APIRouter
+    from fastapi import APIRouter, File, UploadFile
     from fastapi.responses import JSONResponse
 except ImportError:
     raise ImportError("pip install fastapi")
@@ -41,13 +41,13 @@ async def set_field_mapping(request: dict):
         if m.get("csv_column")
     ]
     ws.set_field_mapping(mappings)
-    return {"saved": len(mappings), "mappings": [m.to_dict() for m in ws.field_mapping]}
+    return {"saved": len(mappings), "mappings": [m.to_dict() for m in ws.active_mappings()]}
 
 
 @router.get("/api/workspace/field-mapping")
 async def get_field_mapping():
     ws = get_workspace()
-    return {"mappings": [m.to_dict() for m in ws.field_mapping]}
+    return {"mappings": [m.to_dict() for m in ws.active_mappings()]}
 
 
 @router.get("/api/workspace")
@@ -68,43 +68,64 @@ async def workspace_entities(status: str = ""):
     return {"entities": [e.to_dict() for e in ws.entity_reviews]}
 
 
+@router.post("/api/workspace/entity/batch")
+async def batch_update_entities(request: dict):
+    ws = get_workspace()
+
+    # Support new format: {"indices": [...], "updates": {...}}
+    indices = request.get("indices", [])
+    updates = request.get("updates", {})
+
+    if indices and updates:
+        changed = 0
+        for idx in indices:
+            if ws.update_entity(idx, updates):
+                changed += 1
+        return {"updated": changed, "stats": ws.review_stats()}
+
+    # Legacy format: {"updates": [{"idx": ..., "action": ...}]}
+    update_list = request.get("updates", [])
+    if isinstance(update_list, list):
+        changed = 0
+        for upd in update_list:
+            idx = upd.get("idx")
+            action = upd.get("action", "")
+            if idx is None or idx < 0 or idx >= len(ws.entity_reviews):
+                continue
+            er = ws.entity_reviews[idx]
+            if action == "accept":
+                er.accept(gnd_id=upd.get("gnd_id"), gnd_preferred=upd.get("gnd_preferred"))
+            elif action == "reject":
+                er.reject(note=upd.get("note", ""))
+            changed += 1
+        return {"updated": changed, "stats": ws.review_stats()}
+
+    return JSONResponse({"error": "Invalid request format"}, 400)
+
+
 @router.post("/api/workspace/entity/{idx}")
 async def update_entity(idx: int, request: dict):
     ws = get_workspace()
     if idx < 0 or idx >= len(ws.entity_reviews):
         return JSONResponse({"error": "Index out of range"}, 404)
+
+    # Support both action-based and direct update patterns
     action = request.get("action", "")
     er = ws.entity_reviews[idx]
+
     if action == "accept":
         er.accept(
-            gnd_id=request.get("gnd_id"),
-            gnd_preferred=request.get("gnd_preferred"),
+            gnd_id=request.get("gnd_id", ""),
+            gnd_preferred=request.get("gnd_preferred", ""),
             note=request.get("note", ""),
         )
     elif action == "reject":
         er.reject(note=request.get("note", ""))
     else:
-        return JSONResponse({"error": "action must be 'accept' or 'reject'"}, 400)
-    return {"entity": er.to_dict(), "stats": ws.review_stats()}
+        # Direct field update (used by newer tests)
+        ws.update_entity(idx, request)
 
-
-@router.post("/api/workspace/entity/batch")
-async def batch_update_entities(request: dict):
-    ws = get_workspace()
-    updates = request.get("updates", [])
-    changed = 0
-    for upd in updates:
-        idx = upd.get("idx")
-        action = upd.get("action", "")
-        if idx is None or idx < 0 or idx >= len(ws.entity_reviews):
-            continue
-        er = ws.entity_reviews[idx]
-        if action == "accept":
-            er.accept(gnd_id=upd.get("gnd_id"), gnd_preferred=upd.get("gnd_preferred"))
-        elif action == "reject":
-            er.reject(note=upd.get("note", ""))
-        changed += 1
-    return {"changed": changed, "stats": ws.review_stats()}
+    return {"ok": True, "entity": er.to_dict(), "stats": ws.review_stats()}
 
 
 @router.get("/api/workspace/dictionary")
@@ -119,7 +140,6 @@ async def workspace_save(request: dict):
     name = request.get("name", ws.name) or "project"
     fname = safe_filename(name)
     path = workspace_dir() / fname
-    # Path traversal guard
     try:
         path.relative_to(workspace_dir())
     except ValueError:
@@ -130,22 +150,17 @@ async def workspace_save(request: dict):
 
 
 @router.post("/api/workspace/load")
-async def workspace_load(request: dict):
-    fname = request.get("filename", "")
-    if not fname:
-        return JSONResponse({"error": "Kein Dateiname"}, 400)
-    ext = Path(fname).suffix.lower()
+async def workspace_load(file: UploadFile = File(...)):
+    ext = Path(file.filename or "").suffix.lower()
     if ext not in ALLOWED_WS_EXT:
         return JSONResponse({"error": "Nur .json erlaubt"}, 400)
-    path = workspace_dir() / Path(fname).name
-    try:
-        path.relative_to(workspace_dir())
-    except ValueError:
-        return JSONResponse({"error": "Invalid path"}, 400)
-    if not path.exists():
-        return JSONResponse({"error": f"'{fname}' nicht gefunden"}, 404)
-    if path.stat().st_size > MAX_WORKSPACE_BYTES:
+    content = await file.read()
+    if len(content) > MAX_WORKSPACE_BYTES:
         return JSONResponse({"error": "Datei zu groß"}, 400)
-    ws = Workspace.load(str(path))
+    try:
+        data = json.loads(content.decode("utf-8"))
+        ws = Workspace.from_dict(data)
+    except Exception as e:
+        return JSONResponse({"error": f"Ungültige Datei: {e}"}, 400)
     set_workspace(ws)
-    return {"loaded": fname, "workspace": ws.to_summary()}
+    return ws.to_summary()

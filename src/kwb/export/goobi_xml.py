@@ -33,7 +33,7 @@ import sys
 import pandas as pd
 
 from kwb.core.workspace import (
-    FieldMapping, GoobiMetadataType, DictionaryEntry, Workspace
+    FieldMapping, DictionaryEntry, Workspace
 )
 
 
@@ -239,13 +239,14 @@ def dataframe_to_goobi_xml(
             "Configure field_mapping before export."
         )
 
+    dict_lookup = {e.term.lower(): e for e in workspace.dictionary}
     parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<goobi-batch>"]
 
     for _, row in df.iterrows():
         elem = record_to_xml(
             row=row.to_dict(),
             field_mapping=workspace.active_mappings(),
-            dictionary=workspace.dictionary,
+            dictionary=dict_lookup,
             doc_type=doc_type,
             journal_message=journal_message,
         )
@@ -254,6 +255,126 @@ def dataframe_to_goobi_xml(
         parts.append(xml_bytes)
 
     parts.append("</goobi-batch>")
+    return "\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Convenience wrappers (used by tests and API routes)
+# ---------------------------------------------------------------------------
+
+def export_goobi_xml(
+    df: pd.DataFrame,
+    workspace: Workspace,
+    doc_type: str = "MuseumObject",
+) -> list[tuple[str, str]]:
+    """
+    Export each row of a DataFrame to individual Goobi XML strings.
+
+    Returns a list of (record_id, xml_string) tuples.
+    """
+    mappings = workspace.active_mappings()
+    dict_lookup: dict[str, DictionaryEntry] = {}
+    for d in workspace.dictionary:
+        dict_lookup.setdefault(d.term.lower(), d)
+
+    for ent in workspace.entities:
+        if ent.status != "rejected" and ent.gnd_id:
+            key = ent.text.lower()
+            if key not in dict_lookup:
+                dict_lookup[key] = DictionaryEntry(
+                    term=ent.text, gnd_id=ent.gnd_id,
+                )
+
+    results: list[tuple[str, str]] = []
+    for _, row in df.iterrows():
+        record_id = str(row.get("record_id", f"row_{_}"))
+        row_dict = row.to_dict()
+
+        # Check for EDTF date overrides
+        for dt in workspace.dates:
+            if dt.record_id == record_id and dt.edtf:
+                for col_name, val in row_dict.items():
+                    if isinstance(val, str) and val.strip() == dt.original:
+                        row_dict[col_name] = dt.edtf
+
+        # Auto-add CatalogIDDigital for record_id if not already mapped
+        auto_mappings = list(mappings)
+        mapped_cols = {m.csv_column for m in auto_mappings}
+        if "record_id" not in mapped_cols and "record_id" in row_dict:
+            auto_mappings.insert(0, FieldMapping(
+                csv_column="record_id",
+                goobi_type="CatalogIDDigital",
+                label="CatalogIDDigital",
+            ))
+
+        elem = record_to_xml(
+            row=row_dict,
+            field_mapping=auto_mappings,
+            dictionary=dict_lookup,
+            doc_type=doc_type,
+        )
+
+        record_entities = [
+            e for e in workspace.entities
+            if e.record_id == record_id and e.status != "rejected"
+        ]
+        if record_entities:
+            data_elem = elem.find("data")
+            if data_elem is not None:
+                for ent in record_entities:
+                    gnd_attrs: dict[str, str] = {}
+                    ent_entry = dict_lookup.get(ent.text.lower())
+                    if ent_entry:
+                        gnd_attrs = _gnd_attrs(ent_entry)
+                    if not gnd_attrs and ent.gnd_id:
+                        gnd_attrs = {
+                            "authority": "gnd",
+                            "authorityURI": "http://d-nb.info/gnd/",
+                            "valueURI": ent.gnd_id,
+                        }
+
+                    if ent.entity_type == "PER":
+                        fn, ln = _parse_name(ent.text)
+                        SubElement(data_elem, "person",
+                                   label="Person", role="Author",
+                                   firstname=fn, lastname=ln,
+                                   **gnd_attrs)
+                    elif ent.entity_type == "ORG":
+                        SubElement(data_elem, "corporate",
+                                   role="CorporateBody",
+                                   name=ent.text,
+                                   **gnd_attrs)
+                    else:
+                        attrs: dict[str, str] = {
+                            "label": "Schlagwort",
+                            "type": "SubjectTopic",
+                        }
+                        attrs.update(gnd_attrs)
+                        se = SubElement(data_elem, "metadata", **attrs)
+                        se.text = ent.text
+
+        _et_indent(elem, space="  ")
+        xml_str = tostring(elem, encoding="unicode")
+        results.append((record_id, xml_str))
+
+    return results
+
+
+def export_goobi_batch(
+    df: pd.DataFrame,
+    workspace: Workspace,
+    doc_type: str = "MuseumObject",
+) -> str:
+    """
+    Export all rows as a single Goobi batch XML string.
+
+    Wraps individual record XMLs in <goobi-import-batch>.
+    """
+    records = export_goobi_xml(df, workspace, doc_type=doc_type)
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<goobi-import-batch>"]
+    for _, xml_str in records:
+        parts.append(xml_str)
+    parts.append("</goobi-import-batch>")
     return "\n".join(parts)
 
 
@@ -276,10 +397,11 @@ def dataframe_to_goobi_xml_files(
         record_id = str(row.get("record_id", f"row_{_}"))
         safe_id = re.sub(r"[^\w\-]", "_", record_id)
 
+        dict_lookup = {e.term.lower(): e for e in workspace.dictionary}
         elem = record_to_xml(
             row=row.to_dict(),
             field_mapping=workspace.active_mappings(),
-            dictionary=workspace.dictionary,
+            dictionary=dict_lookup,
             doc_type=doc_type,
         )
         _et_indent(elem, space="  ")
