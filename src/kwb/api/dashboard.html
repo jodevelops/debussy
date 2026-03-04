@@ -688,6 +688,8 @@ function renderImgGrid(){
   empty.style.display='none';
   grid.innerHTML = uploadedImages.map(function(img){
     return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa">'
+      +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'" loading="lazy"'
+      +' style="width:100%;height:110px;object-fit:cover;border-radius:2px;display:block;margin-bottom:.3rem">'
       +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:150px" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
       +'<div style="color:#888;font-size:.65rem">'+(img.size_bytes/1024).toFixed(1)+' KB</div>'
       +'<div style="margin-top:.2rem"><span class="bg '+(img.analyzed?'ac':'no')+'">'+(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
