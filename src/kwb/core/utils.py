@@ -69,5 +69,14 @@ def safe_int(value: Any, default: int = 0) -> int:
         return default
 
 
+def mask_secret(value: str, visible: int = 4) -> str:
+    """Return *value* with all but the first *visible* characters replaced by asterisks."""
+    if not value:
+        return "(nicht gesetzt)"
+    if len(value) <= visible:
+        return "*" * len(value)
+    return value[:visible] + "*" * (len(value) - visible)
+
+
 # Keep old private alias so existing imports work without breakage
 _try_parse_json = try_parse_json
