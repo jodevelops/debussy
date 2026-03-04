@@ -2,7 +2,7 @@
 
 **Version:** 0.4.0  
 **Stand:** 2025-02-24  
-**Gesamtstatus:** 72/72 automatische Tests bestanden
+**Gesamtstatus:** 343/436 Tests bestanden, 8 fehlgeschlagen, 85 übersprungen
 
 ---
 
@@ -234,10 +234,25 @@
 
 ### Automatische Tests
 
-| Test-Suite | Tests | Status |
-|------------|-------|--------|
-| test_core.py | 18/18 | ✅ |
-| test_ai.py | 19/19 | ✅ |
-| test_ner.py | 11/11 | ✅ |
-| test_edtf.py | 24/24 | ✅ |
-| **Gesamt** | **72/72** | **✅** |
+<!-- AUTO-TESTS-START -->
+| Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
+|------------|-----------|----------------|--------------|--------|
+| test_ai.py | 18/19 | 1 | 0 | ❌ |
+| test_api.py | 0/42 | 0 | 42 | ✅ |
+| test_core.py | 18/18 | 0 | 0 | ✅ |
+| test_edtf.py | 82/82 | 0 | 0 | ✅ |
+| test_gnd.py | 14/14 | 0 | 0 | ✅ |
+| test_gnd_enrich.py | 24/40 | 0 | 16 | ✅ |
+| test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
+| test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
+| test_image_upload.py | 0/27 | 0 | 27 | ✅ |
+| test_ner.py | 29/29 | 0 | 0 | ✅ |
+| test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
+| test_roadmap.py | 5/5 | 0 | 0 | ✅ |
+| test_utils.py | 30/30 | 0 | 0 | ✅ |
+| test_workspace.py | 33/33 | 0 | 0 | ✅ |
+| test_workspace_export.py | 17/24 | 7 | 0 | ❌ |
+| **Gesamt** | **343/436** | **8** | **85** | **❌** |
+<!-- AUTO-TESTS-END -->
+
+_Hinweis: Diese Zahlen werden mit `python scripts/update_test_catalog.py --update-doc` neu berechnet. Vor Releases lokal ausführen; in CI prüft der Workflow `test-catalog-consistency.yml` die Konsistenz via `--check-doc`._
