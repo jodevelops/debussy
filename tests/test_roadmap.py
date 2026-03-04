@@ -9,6 +9,9 @@ from kwb.core.roadmap import (
 from kwb.cli import main
 
 
+FIXTURE_CATALOG = Path("tests/fixtures/roadmap_small_catalog.md")
+
+
 def test_parse_function_catalog_reads_known_feature():
     entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
     feature_ids = {entry.feature_id for entry in entries}
@@ -20,22 +23,57 @@ def test_parse_function_catalog_reads_known_feature():
 
 
 def test_proposals_prioritize_unimplemented_features():
-    entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
-    proposals = build_improvement_proposals(entries, top_n=5)
+    entries = [
+        e
+        for e in parse_function_catalog(FIXTURE_CATALOG)
+        if e.feature_id in {"F10", "F12", "F11", "F09", "F13"}
+    ]
+    proposals = build_improvement_proposals(entries, top_n=4)
 
-    assert len(proposals) == 5
-    assert all(p.priority >= 100 for p in proposals)
-    assert all("Status" in p.rationale for p in proposals)
+    assert [p.feature_id for p in proposals] == ["F10", "F12", "F11", "F09"]
+    assert [p.priority for p in proposals] == [140, 125, 100, 85]
+
+
+def test_proposals_are_deterministic_for_equal_priorities():
+    entries = [e for e in parse_function_catalog(FIXTURE_CATALOG) if e.feature_id in {"F20", "F21", "F22"}]
+
+    first = build_improvement_proposals(entries, top_n=3)
+    second = build_improvement_proposals(entries, top_n=3)
+
+    assert [p.feature_id for p in first] == ["F22", "F21", "F20"]
+    assert [p.feature_id for p in second] == ["F22", "F21", "F20"]
+
+
+def test_parse_function_catalog_handles_invalid_tests_cell_as_zero_zero():
+    entries = parse_function_catalog(FIXTURE_CATALOG)
+
+    malformed = next(e for e in entries if e.feature_id == "F30")
+
+    assert malformed.tests_done == 0
+    assert malformed.tests_total == 0
+
+    proposal = next(p for p in build_improvement_proposals(entries, top_n=8) if p.feature_id == "F30")
+    assert "0/0 Tests" in proposal.rationale
 
 
 def test_render_proposals_markdown_contains_sections():
-    entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
+    entries = parse_function_catalog(FIXTURE_CATALOG)
     proposals = build_improvement_proposals(entries, top_n=2)
     md = render_proposals_markdown(proposals)
 
     assert md.startswith("# Konkrete Entwicklungsvorschläge")
     assert "**Nächste Schritte:**" in md
     assert "**Akzeptanzkriterien:**" in md
+
+    sections = [s for s in md.split("\n## ")[1:] if s.strip()]
+    assert len(sections) == 2
+    for section in sections:
+        assert " — " in section
+        assert "**Begründung:**" in section
+        action_lines = section.split("**Nächste Schritte:**", 1)[1].split("**Akzeptanzkriterien:**", 1)[0]
+        acceptance_lines = section.split("**Akzeptanzkriterien:**", 1)[1]
+        assert action_lines.count("\n-") >= 3
+        assert acceptance_lines.count("\n-") >= 3
 
 
 def test_cli_plan_command_outputs_recommendations(capsys):
