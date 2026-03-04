@@ -21,7 +21,7 @@ except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
 from kwb.api.deps import (
-    ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_UPLOAD_FILES,
+    ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES, MAX_UPLOAD_FILES,
     get_config, get_datasets, get_provider, get_state, get_workspace,
 )
 from kwb.ai.provider import AIMessage
@@ -145,8 +145,8 @@ async def images_upload(files: list[UploadFile] = File(...)):
     Accepted formats: JPEG, PNG, TIFF, WebP.
     Returns a list of image handles (id + filename + preview dimensions).
     """
-    if len(files) > MAX_UPLOAD_FILES:
-        return JSONResponse({"error": f"Max {MAX_UPLOAD_FILES} Bilder"}, 400)
+    if len(files) > MAX_IMAGE_FILES:
+        return JSONResponse({"error": f"Max {MAX_IMAGE_FILES} Bilder"}, 400)
 
     accepted = []
     for u in files:

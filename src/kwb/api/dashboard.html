@@ -196,8 +196,12 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="g2"><div class="sb">
 <h3>Upload</h3>
 <div style="margin-bottom:.5rem">
-  <label class="lbl">Bilder wählen</label>
+  <label class="lbl">Einzelne Bilder wählen</label>
   <input type="file" id="img-files" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.webp" style="font-size:.75rem;width:100%">
+</div>
+<div style="margin-bottom:.5rem">
+  <label class="lbl">Oder Ordner wählen <span style="font-weight:400;color:#888">(inkl. Unterordner)</span></label>
+  <input type="file" id="img-folder" webkitdirectory multiple style="font-size:.75rem;width:100%">
 </div>
 <button class="btn f" onclick="uploadImages()">⬆️ Hochladen</button>
 <div id="img-upload-status" class="em" style="margin-top:.4rem"></div>
@@ -658,11 +662,14 @@ function applyImgPreset(){
 }
 
 async function uploadImages(){
-  const inp = $('img-files');
-  if(!inp.files.length){alert('Keine Dateien gewählt.');return}
+  const imgExts = /\.(jpg|jpeg|png|tif|tiff|webp)$/i;
+  const fileFiles = [...($('img-files').files || [])];
+  const folderFiles = [...($('img-folder').files || [])].filter(f => imgExts.test(f.name));
+  const allFiles = [...fileFiles, ...folderFiles];
+  if(!allFiles.length){alert('Keine Bilddateien gewählt.');return}
   const fd = new FormData();
-  for(const f of inp.files) fd.append('files', f);
-  sp('Bilder werden hochgeladen…','');
+  for(const f of allFiles) fd.append('files', f, f.webkitRelativePath || f.name);
+  sp('Bilder werden hochgeladen…', allFiles.length + ' Datei(en)');
   try{
     const r = await fetch('/api/images/upload',{method:'POST',body:fd});
     const data = await r.json();

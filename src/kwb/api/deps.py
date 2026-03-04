@@ -32,6 +32,7 @@ MAX_CSV_COLS = 200
 ALLOWED_EXTENSIONS = {".csv", ".tsv"}
 ALLOWED_WS_EXT = {".json"}
 ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+MAX_IMAGE_FILES = 500  # folder upload can contain many files
 
 # ---------------------------------------------------------------------------
 # Workspace storage directory
