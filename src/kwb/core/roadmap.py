@@ -30,21 +30,57 @@ def _clean_status(s):
 def parse_function_catalog(path):
     lines = Path(path).read_text(encoding="utf-8").splitlines()
     current_category, entries = "", []
+    header_to_index = None
+
+    def _is_separator_row(row_cells):
+        return all(set(cell.replace(":", "")) <= {"-"} for cell in row_cells if cell)
+
+    def _build_header_map(row_cells):
+        normalized = [cell.strip().lower() for cell in row_cells]
+        required = {"id", "funktion", "status", "tests"}
+        if not required.issubset(set(normalized)):
+            return None
+        return {name: idx for idx, name in enumerate(normalized)}
+
     for line in lines:
         if line.startswith("## "):
             heading = line.lstrip("# ").strip()
             current_category = heading.split("—", 1)[1].strip() if "—" in heading else heading.split(".", 1)[-1].strip()
+            header_to_index = None
             continue
-        if not line.startswith("|"): continue
+
+        if not line.startswith("|"):
+            header_to_index = None
+            continue
+
         cells = [c.strip() for c in line.strip().split("|")[1:-1]]
-        if len(cells) < 5: continue
-        if cells[0] in ("ID","") or cells[0].startswith("----"): continue
-        tests_done, tests_total = _parse_tests(cells[3])
-        note = cells[6] if len(cells) > 6 else ""
+
+        maybe_header = _build_header_map(cells)
+        if maybe_header is not None:
+            header_to_index = maybe_header
+            continue
+
+        if _is_separator_row(cells) or not header_to_index:
+            continue
+
+        def _cell(name):
+            idx = header_to_index.get(name)
+            return cells[idx] if idx is not None and idx < len(cells) else ""
+
+        feature_id = _cell("id")
+        if not feature_id:
+            continue
+
+        tests_done, tests_total = _parse_tests(_cell("tests"))
         entries.append(FeatureEntry(
-            category=current_category, feature_id=cells[0], title=cells[1],
-            status=_clean_status(cells[2]), tests_done=tests_done, tests_total=tests_total,
-            module=cells[4], note=note,
+            category=current_category,
+            feature_id=feature_id,
+            title=_cell("funktion"),
+            status=_clean_status(_cell("status")),
+            tests_done=tests_done,
+            tests_total=tests_total,
+            module=_cell("modul"),
+            note=_cell("hinweis"),
         ))
     return entries
 
