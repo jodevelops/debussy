@@ -140,7 +140,7 @@ CATALOG = [
     {"id": "G-02", "name": "GND Batch",           "module": "Enrich",    "status": "done",    "note": ""},
     {"id": "G-03", "name": "GND Ergebnis-Tabelle","module": "Enrich",    "status": "done",    "note": "gndtbl in GUI"},
     # Workspace
-    {"id": "W-01", "name": "Workspace speichern", "module": "Workspace", "status": "done",    "note": ".debussy.json"},
+    {"id": "W-01", "name": "Workspace speichern", "module": "Workspace", "status": "done",    "note": ".debussy.json (inkl. Bildanalyse-Ergebnisse)"},
     {"id": "W-02", "name": "Workspace laden",     "module": "Workspace", "status": "done",    "note": ""},
     {"id": "W-03", "name": "Dictionary",          "module": "Workspace", "status": "done",    "note": ""},
     {"id": "W-04", "name": "Field Mapping GUI",   "module": "Workspace", "status": "done",    "note": "CSV → Goobi-Typ"},
@@ -154,7 +154,7 @@ CATALOG = [
     {"id": "K-03", "name": "Mock-Provider",       "module": "KI",        "status": "done",    "note": "Tests + kein GPU"},
     {"id": "K-04", "name": "System-Prompts",      "module": "KI",        "status": "done",    "note": "6 Presets"},
     {"id": "K-05", "name": "Modell-Auswahl",      "module": "KI",        "status": "done",    "note": "Alle Endpoints"},
-    {"id": "K-06", "name": "Bild-Analyse (API)",  "module": "KI",        "status": "done",    "note": "/api/images/analyze"},
+    {"id": "K-06", "name": "Bild-Analyse (API)",  "module": "KI",        "status": "done",    "note": "/api/images/analyze, Ergebnisse in Workspace persistiert"},
     # Report
     {"id": "P-01", "name": "Markdown-Report",     "module": "Report",    "status": "done",    "note": ""},
     # Geplant

@@ -27,6 +27,7 @@ from kwb.api.deps import (
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
 from kwb.ai.prompts import SYSTEM_VISION_EXPERT_DE, SYSTEM_METADATA_EXPERT_DE
+from kwb.core.workspace import ImageAnalysisResult
 
 router = APIRouter()
 
@@ -135,9 +136,13 @@ async def ai_describe_columns(request: dict | None = None):
 # Image store — metadata in-memory, raw bytes on disk so they survive reloads
 # ---------------------------------------------------------------------------
 
-# Use a fixed sub-directory of the system temp dir so images survive
-# server restarts / hot-reloads.  Created once per process lifetime.
-_IMAGE_DIR = Path(_tempfile.gettempdir()) / "debussy_uploads"
+# Image storage directory — configurable via KWB_IMAGE_DIR env var.
+# Falls back to system temp dir if not set.
+import os as _os
+_IMAGE_DIR = Path(_os.environ.get(
+    "KWB_IMAGE_DIR",
+    str(Path(_tempfile.gettempdir()) / "debussy_uploads"),
+))
 _IMAGE_DIR.mkdir(exist_ok=True)
 
 # In-memory metadata index (rebuilt from disk on demand, see _sync_index)
@@ -145,24 +150,29 @@ _uploaded_images: dict[str, dict] = {}
 
 
 def _sync_index() -> None:
-    """Re-populate the metadata index from files on disk (called at import time)."""
+    """Re-populate the metadata index from files on disk, restoring workspace results."""
     ext_to_mime = {
         ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
         ".png": "image/png", ".tif": "image/tiff",
         ".tiff": "image/tiff", ".webp": "image/webp",
     }
+    # Restore analysis results from workspace if available
+    ws = get_workspace()
+    ws_results = {r.image_id: r for r in ws.image_analyses}
+
     for p in sorted(_IMAGE_DIR.iterdir()):
         if p.is_file() and p.suffix.lower() in ext_to_mime:
             img_id = p.stem
             if img_id not in _uploaded_images:
+                ws_result = ws_results.get(img_id)
                 _uploaded_images[img_id] = {
                     "id": img_id,
-                    "filename": p.name,
+                    "filename": ws_result.filename if ws_result else p.name,
                     "media_type": ext_to_mime[p.suffix.lower()],
                     "size_bytes": p.stat().st_size,
                     "path": str(p),
-                    "analyzed": False,
-                    "result": None,
+                    "analyzed": ws_result.analyzed if ws_result else False,
+                    "result": ws_result.result if ws_result else None,
                 }
 
 
@@ -295,6 +305,19 @@ async def images_analyze(request: dict):
             img["analyzed"] = True
             img["result"] = parsed
             results.append({"id": img_id, "filename": img["filename"], "result": parsed})
+
+            # Persist to workspace
+            from datetime import datetime
+            ws = get_workspace()
+            ws.save_image_analysis(ImageAnalysisResult(
+                image_id=img_id,
+                filename=img["filename"],
+                media_type=img["media_type"],
+                analyzed=True,
+                result=parsed,
+                model=mod or "default",
+                analyzed_at=datetime.utcnow().isoformat(),
+            ))
 
         except Exception as e:
             results.append({"id": img_id, "error": str(e)})
