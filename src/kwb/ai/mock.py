@@ -99,10 +99,29 @@ class MockProvider(AIProvider):
         })
 
         vision_response = json.dumps({
-            "description": "Fotografische Aufnahme einer Landschaft.",
-            "objects": ["Berge", "Vegetation"],
-            "text_detected": "",
-            "confidence": 0.75,
+            "description": (
+                "Schwarzweißfotografie eines städtischen Gebäudes aus der Zwischenkriegszeit. "
+                "Die Fassade zeigt klassizistische Elemente mit Rundbogenfenstern."
+            ),
+            "objects": ["Gebäude", "Fassade", "Fenster", "Tür", "Straße"],
+            "persons": [],
+            "has_persons": False,
+            "person_count": 0,
+            "has_text": True,
+            "text_type": "Stempel",
+            "text_readable": True,
+            "transcription_hint": "Stadtarchiv Wien 1923",
+            "color_mode": "bw",
+            "material": "Fotopapier",
+            "medium": "Fotografie",
+            "condition": "gut",
+            "iconography": ["Architektur", "Stadtansicht", "Dokumentarfotografie"],
+            "orientation": "landscape",
+            "estimated_date_range": "1920-1940",
+            "style": "Dokumentarfotografie",
+            "period": "Zwischenkriegszeit",
+            "places": ["Wien", "Innere Stadt"],
+            "confidence": 0.82,
         })
 
         return MockProvider(

@@ -429,3 +429,205 @@ class TestImageWorkflow(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------------------
+# Thumb endpoint tests (/api/images/{id}/thumb)
+# ---------------------------------------------------------------------------
+
+@_skip
+class TestImageThumb(unittest.TestCase):
+    """GET /api/images/{img_id}/thumb — browser-renderable thumbnail for all formats."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def _upload(self, data: bytes, name: str) -> str:
+        r = self.client.post("/api/images/upload", files=[_img_file(data, name)])
+        self.assertEqual(r.status_code, 200)
+        return r.json()["images"][0]["id"]
+
+    def test_thumb_jpeg_returns_jpeg(self):
+        """JPEG /thumb serves original JPEG bytes."""
+        img_id = self._upload(_JPEG, "foto.jpg")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("image/jpeg", r.headers["content-type"])
+        self.assertEqual(r.content, _JPEG)
+
+    def test_thumb_png_returns_png(self):
+        """PNG /thumb serves original PNG bytes."""
+        img_id = self._upload(_PNG, "zeichnung.png")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("image/png", r.headers["content-type"])
+
+    def test_thumb_webp_returns_webp(self):
+        """WebP /thumb serves original bytes."""
+        img_id = self._upload(_WEBP, "thumb.webp")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("image/webp", r.headers["content-type"])
+
+    def test_thumb_tiff_no_embedded_returns_svg(self):
+        """TIFF without embedded JPEG preview → SVG placeholder (browser-renderable)."""
+        img_id = self._upload(_TIFF, "archiv.tif")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        ct = r.headers["content-type"]
+        # Must be either image/svg+xml (no embedded preview) or image/jpeg (if preview found)
+        self.assertTrue(
+            "image/svg+xml" in ct or "image/jpeg" in ct,
+            f"Expected SVG or JPEG for TIFF thumb, got: {ct}"
+        )
+        if "image/svg+xml" in ct:
+            # SVG must be valid XML starting with <svg
+            self.assertIn(b"<svg", r.content)
+            self.assertIn(b"TIFF", r.content)
+
+    def test_thumb_tiff_long_ext_returns_svg_or_jpeg(self):
+        """TIFF with .tiff extension also gets SVG/JPEG thumb."""
+        img_id = self._upload(_TIFF, "scan.tiff")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        ct = r.headers["content-type"]
+        self.assertTrue("image/svg+xml" in ct or "image/jpeg" in ct)
+
+    def test_thumb_unknown_id_returns_404(self):
+        """Unknown img_id → 404."""
+        r = self.client.get("/api/images/img_9999_ghost/thumb")
+        self.assertEqual(r.status_code, 404)
+
+    def test_thumb_tiff_with_embedded_jpeg_returns_jpeg(self):
+        """
+        TIFF containing an embedded JPEG thumbnail (tags 513/514) → serve as JPEG.
+
+        We construct a minimal TIFF with a fake embedded JPEG in IFD.
+        """
+        import struct
+
+        # Build minimal little-endian TIFF with one IFD entry pointing to JPEG
+        jpeg_data = _JPEG
+        jpeg_offset = 8 + 2 + 12 * 2 + 4  # header + num_entries + 2 entries + next_ifd
+
+        tiff = bytearray()
+        tiff += b"II"                          # byte order: little-endian
+        tiff += struct.pack("<H", 42)           # TIFF magic
+        tiff += struct.pack("<I", 8)            # IFD offset = 8
+
+        # IFD: 2 entries
+        tiff += struct.pack("<H", 2)            # num_entries
+
+        # Tag 513 = JPEGInterchangeFormat (type=LONG, count=1, value=offset)
+        tiff += struct.pack("<HHII", 513, 4, 1, jpeg_offset)
+        # Tag 514 = JPEGInterchangeFormatLength (type=LONG, count=1, value=length)
+        tiff += struct.pack("<HHII", 514, 4, 1, len(jpeg_data))
+        # Next IFD offset = 0 (no more IFDs)
+        tiff += struct.pack("<I", 0)
+        # Append the actual JPEG data
+        tiff += jpeg_data
+
+        img_id = self._upload(bytes(tiff), "with_preview.tif")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        ct = r.headers["content-type"]
+        self.assertIn("image/jpeg", ct, f"Expected JPEG for TIFF with embedded preview, got: {ct}")
+        self.assertEqual(r.content, jpeg_data)
+
+
+# ---------------------------------------------------------------------------
+# Vision analysis result fields (MockProvider)
+# ---------------------------------------------------------------------------
+
+@_skip
+class TestVisionAnalysisFields(unittest.TestCase):
+    """Verify that vision analysis returns all 16 GLAM fields."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def _upload_and_analyze(self, data=_JPEG, name="test.jpg") -> dict:
+        r = self.client.post("/api/images/upload", files=[_img_file(data, name)])
+        img_id = r.json()["images"][0]["id"]
+        r2 = self.client.post("/api/images/analyze", json={"image_ids": [img_id]})
+        results = r2.json()["results"]
+        return results[0]["result"] if results and "result" in results[0] else {}
+
+    def test_result_has_description(self):
+        r = self._upload_and_analyze()
+        self.assertIn("description", r)
+        self.assertIsInstance(r["description"], str)
+        self.assertGreater(len(r["description"]), 5)
+
+    def test_result_has_color_mode(self):
+        r = self._upload_and_analyze()
+        self.assertIn("color_mode", r)
+        self.assertIn(r["color_mode"], ("bw", "color", "sepia", "colorized"))
+
+    def test_result_has_persons_fields(self):
+        r = self._upload_and_analyze()
+        self.assertIn("has_persons", r)
+        self.assertIn("person_count", r)
+        self.assertIsInstance(r["has_persons"], bool)
+        self.assertIsInstance(r["person_count"], int)
+
+    def test_result_has_text_fields(self):
+        r = self._upload_and_analyze()
+        self.assertIn("has_text", r)
+        self.assertIn("text_readable", r)
+        self.assertIn("text_type", r)
+
+    def test_result_has_medium(self):
+        r = self._upload_and_analyze()
+        self.assertIn("medium", r)
+
+    def test_result_has_condition(self):
+        r = self._upload_and_analyze()
+        self.assertIn("condition", r)
+
+    def test_result_has_orientation(self):
+        r = self._upload_and_analyze()
+        self.assertIn("orientation", r)
+
+    def test_result_has_iconography(self):
+        r = self._upload_and_analyze()
+        self.assertIn("iconography", r)
+        self.assertIsInstance(r["iconography"], list)
+
+    def test_result_has_confidence(self):
+        r = self._upload_and_analyze()
+        self.assertIn("confidence", r)
+        self.assertIsInstance(r["confidence"], (int, float))
+
+    def test_result_has_estimated_date_range(self):
+        r = self._upload_and_analyze()
+        self.assertIn("estimated_date_range", r)
+
+    def test_tiff_also_analyzed(self):
+        """TIFF files are also sent to vision model for analysis."""
+        r = self._upload_and_analyze(_TIFF, "archiv.tif")
+        self.assertIn("description", r)
+
+    def test_mock_provider_vision_fields_complete(self):
+        """MockProvider.with_defaults() returns all 16 GLAM analysis fields."""
+        from kwb.ai.mock import MockProvider
+        from kwb.ai.provider import AIMessage
+        import json
+
+        mock = MockProvider.with_defaults()
+        msgs = [
+            AIMessage.system("test"),
+            AIMessage.user([
+                {"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AAAA"}},
+                {"type": "text", "text": "Analysiere"},
+            ]),
+        ]
+        resp = mock.complete(msgs)
+        data = json.loads(resp.content)
+        for field in [
+            "description", "objects", "persons", "has_persons", "person_count",
+            "has_text", "text_type", "text_readable", "transcription_hint",
+            "color_mode", "material", "medium", "condition", "iconography",
+            "orientation", "estimated_date_range", "confidence",
+        ]:
+            self.assertIn(field, data, f"Missing field: {field}")

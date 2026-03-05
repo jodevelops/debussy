@@ -194,10 +194,27 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div></div>
 </div></div></div>
 
-<!-- ===== EXPORT ===== -->
-<div class="pg" data-p="images"><div style="max-width:1100px">
+<!-- ===== BILDER ===== -->
+<!-- Lightbox Modal -->
+<div id="img-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.88);z-index:2000;flex-direction:column;align-items:center;justify-content:center" onclick="if(event.target===this)closeModal()">
+  <div style="position:absolute;top:.7rem;right:1rem;display:flex;gap:.5rem">
+    <button onclick="closeModal()" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:1.2rem;padding:.3rem .8rem;border-radius:4px;cursor:pointer" title="Schließen (Esc)">✕</button>
+  </div>
+  <div style="position:absolute;left:.7rem;top:50%;transform:translateY(-50%)">
+    <button id="modal-prev" onclick="modalNav(-1)" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:1.8rem;padding:.3rem .7rem;border-radius:4px;cursor:pointer" title="Vorheriges Bild (←)">‹</button>
+  </div>
+  <div style="position:absolute;right:.7rem;top:50%;transform:translateY(-50%)">
+    <button id="modal-next" onclick="modalNav(+1)" style="background:rgba(255,255,255,.15);border:none;color:#fff;font-size:1.8rem;padding:.3rem .7rem;border-radius:4px;cursor:pointer" title="Nächstes Bild (→)">›</button>
+  </div>
+  <img id="modal-img" style="max-height:78vh;max-width:88vw;object-fit:contain;border-radius:4px;box-shadow:0 4px 32px rgba(0,0,0,.5)" alt="">
+  <div id="modal-caption" style="color:#ddd;font-size:.8rem;margin-top:.6rem;max-width:80vw;text-align:center"></div>
+  <div id="modal-badges" style="margin-top:.4rem;display:flex;gap:.3rem;flex-wrap:wrap;justify-content:center;max-width:80vw"></div>
+  <div id="modal-counter" style="color:#888;font-size:.72rem;margin-top:.3rem"></div>
+</div>
+
+<div class="pg" data-p="images"><div style="max-width:1200px">
 <h2>🖼️ Bild-Analyse</h2>
-<div class="hint" id="img-hint">Bilder hochladen (JPEG, PNG, TIFF, WebP), dann mit dem Vision-Modell analysieren.</div>
+<div class="hint" id="img-hint">Bilder hochladen (JPEG, PNG, TIFF, WebP), dann mit dem Vision-Modell analysieren. Klick auf Vorschau öffnet Großansicht.</div>
 
 <div class="g2"><div class="sb">
 <h3>Upload</h3>
@@ -213,6 +230,8 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div id="img-upload-status" class="em" style="margin-top:.4rem"></div>
 
 <h3 style="margin-top:1rem">Analyse</h3>
+<div id="img-mock-hint" class="em" style="font-size:.73rem;color:#996600;display:none;margin-bottom:.4rem;background:#fffbe6;padding:.4rem;border-radius:4px;border:1px solid #f0c000">
+  ⚠️ Testdaten-Modus: Analyse gibt Beispieldaten zurück. Für echte Bilderkennung Vision-Modell in ⚙️ KI konfigurieren.</div>
 <div style="margin-bottom:.4rem">
   <label class="lbl">Modell</label>
   <select id="img-model" class="sel" style="width:100%">
@@ -220,25 +239,45 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
   </select>
 </div>
 <div style="margin-bottom:.4rem">
-  <label class="lbl">System-Prompt</label>
+  <label class="lbl">System-Prompt Vorlage</label>
   <select id="img-preset" class="sel" style="width:100%" onchange="applyImgPreset()">
-    <option value="vision_de">Vision (DE)</option>
+    <option value="vision_de">Vision GLAM (DE)</option>
     <option value="custom">Eigener Prompt</option>
   </select>
-  <textarea id="img-sp" class="ta" style="height:4rem;margin-top:.3rem"></textarea>
+  <textarea id="img-sp" class="ta" style="height:3.5rem;margin-top:.3rem;font-size:.72rem"></textarea>
 </div>
-<button class="btn f" onclick="analyzeImages()">🔍 Analysieren</button>
-<button class="btn f" style="margin-top:.3rem;background:var(--info)" onclick="runOCR()">📖 Text erkennen (OCR)</button>
+<div style="display:flex;flex-direction:column;gap:.3rem">
+  <button class="btn f" onclick="analyzeImages()">🔍 Bild-Inhalt analysieren</button>
+  <button class="btn f" style="background:#5a7fa0" onclick="analyzeSelected()">☑️ Auswahl analysieren</button>
+  <button class="btn f" style="background:#6a6060" onclick="runOCR()">📖 Text erkennen (OCR)</button>
+  <button class="btn sm s" style="margin-top:.4rem" onclick="clearImages()">🗑️ Alle löschen</button>
+</div>
+
+<h3 style="margin-top:1rem">Gesamt</h3>
+<div id="img-stats" style="font-size:.75rem;color:#666;font-family:monospace"></div>
 </div>
 
 <div>
-<h3>Hochgeladene Bilder</h3>
-<div id="img-mock-hint" class="em" style="font-size:.73rem;color:#996600;display:none;margin-bottom:.4rem">Hinweis: Im Testdaten-Modus liefert die Analyse nur Beispieldaten. F&uuml;r echte Bilderkennung ein Vision-Modell in &#9881;&#65039; KI konfigurieren.</div>
+<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.4rem">
+  <h3 style="margin:0">Hochgeladene Bilder <span id="img-count" style="font-size:.72rem;color:#888"></span></h3>
+  <div style="display:flex;gap:.3rem;align-items:center">
+    <label style="font-size:.72rem;color:#666">Ansicht:</label>
+    <button class="btn sm" id="view-grid-btn" onclick="setGridView('grid')" title="Rasteransicht">⊞</button>
+    <button class="btn sm" id="view-list-btn" onclick="setGridView('list')" title="Listenansicht">☰</button>
+  </div>
+</div>
 <div id="img-list-empty" class="em" style="font-size:.78rem">Noch keine Bilder hochgeladen.</div>
-<div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.4rem"></div>
+<div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(175px,1fr));gap:.6rem"></div>
 
-<h3 style="margin-top:1rem">Analyseergebnisse</h3>
-<div id="img-results-empty" class="em" style="font-size:.78rem">Noch keine Ergebnisse.</div>
+<h3 style="margin-top:1.2rem">Analyseergebnisse</h3>
+<div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.4rem" id="res-filter-bar" style="display:none">
+  <div class="fb2 a" onclick="filterResults('all',this)">Alle</div>
+  <div class="fb2" onclick="filterResults('persons',this)">👤 Personen</div>
+  <div class="fb2" onclick="filterResults('text',this)">📝 Text</div>
+  <div class="fb2" onclick="filterResults('bw',this)">⚫ S/W</div>
+  <div class="fb2" onclick="filterResults('color',this)">🟡 Farbe</div>
+</div>
+<div id="img-results-empty" class="em" style="font-size:.78rem">Noch keine Ergebnisse. Bilder hochladen und analysieren.</div>
 <div id="img-results"></div>
 </div></div>
 </div></div>
@@ -694,9 +733,20 @@ function nerSelectAll(checked){
 
 // === IMAGES ===
 let uploadedImages = [];
+let imgViewMode = 'grid';
+let allResults = [];
+let currentModalIdx = -1;
+let selectedIds = new Set();
+
+function setGridView(mode){
+  imgViewMode = mode;
+  document.querySelectorAll('#view-grid-btn,#view-list-btn').forEach(b=>b.classList.remove('a'));
+  $(mode==='grid'?'view-grid-btn':'view-list-btn').classList.add('a');
+  renderImgGrid();
+}
 
 function applyImgPreset(){
-  const key = $('img-preset').value;
+  const key=$('img-preset').value;
   if(key !== 'custom') $('img-sp').value = PRESETS[key] || '';
 }
 
@@ -713,75 +763,280 @@ async function uploadImages(){
     const r = await fetch('/api/images/upload',{method:'POST',body:fd});
     const data = await r.json();
     if(data.error){$('img-upload-status').textContent='Fehler: '+data.error;hp();return}
-    uploadedImages = data.images || [];
+    // Merge with existing (avoid duplicates by id)
+    const existingIds = new Set(uploadedImages.map(i=>i.id));
+    (data.images||[]).forEach(img=>{if(!existingIds.has(img.id))uploadedImages.push(img);});
     $('img-upload-status').textContent = data.uploaded + ' Bild(er) hochgeladen.';
     renderImgGrid();
+    updImgStats();
     hp();
   }catch(e){$('img-upload-status').textContent='Fehler: '+e;hp();}
 }
 
+async function clearImages(){
+  if(!uploadedImages.length)return;
+  if(!confirm('Alle '+uploadedImages.length+' Bilder löschen?'))return;
+  try{
+    await fetch('/api/images',{method:'DELETE'});
+    uploadedImages=[];allResults=[];selectedIds.clear();
+    renderImgGrid();
+    $('img-results').innerHTML='';
+    $('img-results-empty').textContent='Noch keine Ergebnisse. Bilder hochladen und analysieren.';
+    $('img-results-empty').style.display='block';
+    $('img-upload-status').textContent='';
+    updImgStats();
+  }catch(e){alert('Fehler: '+e);}
+}
+
+function updImgStats(){
+  const n=uploadedImages.length;
+  const done=uploadedImages.filter(i=>i.analyzed).length;
+  $('img-count').textContent=n?'('+n+')':'';
+  $('img-stats').textContent=n?n+' Bild(er), '+done+' analysiert'+(selectedIds.size?' — '+selectedIds.size+' ausgewählt':''):'';
+  $('img-list-empty').style.display=n?'none':'block';
+}
+
 function renderImgGrid(){
-  const grid = $('img-grid');
-  const empty = $('img-list-empty');
+  const grid=$('img-grid');
+  const empty=$('img-list-empty');
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
   empty.style.display='none';
-  grid.innerHTML = uploadedImages.map(function(img){
-    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
-      +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
-      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'
-      +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>'
-      +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
-      +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
-      +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
-      +'</div>'}).join('');
+
+  if(imgViewMode==='list'){
+    grid.style.gridTemplateColumns='1fr';
+    grid.innerHTML=uploadedImages.map(function(img,idx){
+      const sel=selectedIds.has(img.id);
+      const r=img.result||{};
+      return '<div style="display:flex;align-items:center;gap:.5rem;padding:.4rem .5rem;border:1px solid '+(sel?'var(--ac)':'var(--brd)')+';border-radius:4px;background:'+(sel?'#f0f7ff':'#fafafa')+';cursor:pointer" onclick="toggleSelect(\''+esc(img.id)+'\','+idx+')" ondblclick="openModal('+idx+')">'
+        +'<img src="/api/images/'+esc(img.id)+'/thumb" style="width:48px;height:48px;object-fit:contain;border-radius:3px;background:#e8e4df;flex-shrink:0" alt="">'
+        +'<div style="flex:1;overflow:hidden">'
+        +'<div style="font-size:.78rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
+        +'<div style="font-size:.68rem;color:#888">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
+        +(img.analyzed&&r.description?'<div style="font-size:.7rem;color:#555;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((r.description||'').substring(0,80))+'</div>':'')
+        +'</div>'
+        +'<div style="display:flex;flex-direction:column;align-items:flex-end;gap:.2rem">'
+        +'<span class="bg '+(img.analyzed?'ac':'no')+'" style="font-size:.62rem">'+esc(img.analyzed?'✓ analysiert':'ausstehend')+'</span>'
+        +(img.analyzed?imgBadges(r,true):'')
+        +'<button onclick="event.stopPropagation();openModal('+idx+')" style="font-size:.68rem;padding:.1rem .4rem;border:1px solid #ccc;border-radius:3px;background:#fff;cursor:pointer" title="Großansicht">⛶</button>'
+        +'</div>'
+        +'</div>';
+    }).join('');
+    return;
+  }
+
+  // Grid mode
+  grid.style.gridTemplateColumns='repeat(auto-fill,minmax(175px,1fr))';
+  grid.innerHTML=uploadedImages.map(function(img,idx){
+    const sel=selectedIds.has(img.id);
+    const r=img.result||{};
+    const analyzed=img.analyzed;
+    return '<div style="border:2px solid '+(sel?'var(--ac)':'(analyzed?\'#b0d4b0\':\'var(--brd)\')')+';border-radius:6px;background:#fafafa;cursor:pointer;overflow:hidden;position:relative;transition:box-shadow .15s" '
+      +'onclick="toggleSelect(\''+esc(img.id)+'\','+idx+')" ondblclick="openModal('+idx+')" title="Klicken = auswählen, Doppelklick = Großansicht">'
+      +'<div style="position:absolute;top:0;left:0;right:0;height:3px;background:'+(analyzed?'var(--ok)':'var(--brd)')+'"></div>'
+      +'<div style="position:relative">'
+      +'<img src="/api/images/'+esc(img.id)+'/thumb" alt="'+esc(img.filename)+'"'
+      +' style="width:100%;height:145px;object-fit:contain;background:#ece8e2;display:block;padding:2px"'
+      +' onerror="this.style.display=\'none\'">'
+      +'<div style="position:absolute;top:.3rem;right:.3rem">'
+      +'<span style="background:rgba(0,0,0,.5);color:#fff;font-size:.6rem;padding:.1rem .3rem;border-radius:3px">'+esc((img.media_type||'').split('/')[1]||'')+'</span>'
+      +'</div>'
+      +(sel?'<div style="position:absolute;top:.3rem;left:.3rem;background:var(--ac);color:#fff;border-radius:50%;width:18px;height:18px;display:flex;align-items:center;justify-content:center;font-size:.7rem">✓</div>':'')
+      +'</div>'
+      +'<div style="padding:.35rem .4rem .4rem">'
+      +'<div style="font-size:.7rem;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
+      +'<div style="font-size:.63rem;color:#888">'+((img.size_bytes/1024).toFixed(1))+' KB</div>'
+      +(analyzed?'<div style="margin-top:.25rem;display:flex;flex-wrap:wrap;gap:.15rem">'+imgBadges(r,false)+'</div>':'<div style="font-size:.63rem;color:#aaa;margin-top:.2rem">noch nicht analysiert</div>')
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+
+function imgBadges(r, small){
+  // Returns badge HTML for an analysis result
+  const sz = small ? 'font-size:.58rem;padding:.05rem .25rem' : 'font-size:.6rem;padding:.05rem .2rem';
+  let b = [];
+  const cm = r.color_mode||'';
+  if(cm==='bw') b.push('<span style="background:#444;color:#fff;border-radius:3px;'+sz+'">⚫ S/W</span>');
+  else if(cm==='sepia') b.push('<span style="background:#8b7355;color:#fff;border-radius:3px;'+sz+'">🟤 Sepia</span>');
+  else if(cm==='color'||cm==='colorized') b.push('<span style="background:#c87000;color:#fff;border-radius:3px;'+sz+'">🟡 Farbe</span>');
+  if(r.has_persons) b.push('<span style="background:#2060a0;color:#fff;border-radius:3px;'+sz+'">👤 '+((r.person_count||0)>0?r.person_count+' P':'Pers.')+'</span>');
+  if(r.has_text) b.push('<span style="background:#207050;color:#fff;border-radius:3px;'+sz+'">'+(r.text_readable?'📝':'📋')+'</span>');
+  return b.join('');
+}
+
+function toggleSelect(id, idx){
+  if(selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  renderImgGrid();
+  updImgStats();
+}
+
+// === LIGHTBOX ===
+function openModal(idx){
+  const img=uploadedImages[idx];
+  if(!img)return;
+  currentModalIdx=idx;
+  const el=$('img-modal');
+  const mimg=$('modal-img');
+  mimg.src='/api/images/'+img.id+'/thumb';
+  mimg.alt=img.filename;
+  // Caption
+  const r=img.result||{};
+  $('modal-caption').textContent=img.filename+' · '+((img.size_bytes/1024).toFixed(1))+' KB'+(r.estimated_date_range?' · '+r.estimated_date_range:'');
+  // Badges in modal (larger)
+  $('modal-badges').innerHTML='';
+  if(img.analyzed&&r.description){
+    const desc=document.createElement('div');
+    desc.style.cssText='color:#ccc;font-size:.75rem;max-width:80vw;text-align:center;margin-bottom:.3rem';
+    desc.textContent=r.description;
+    $('modal-badges').before(desc);
+  }
+  const badges=[];
+  const mo=r.color_mode||'';
+  if(mo==='bw')badges.push(['⚫ Schwarzweiß','#444']);
+  else if(mo==='sepia')badges.push(['🟤 Sepia','#8b7355']);
+  else if(mo==='color'||mo==='colorized')badges.push(['🟡 Farbig','#c87000']);
+  if(r.has_persons)badges.push(['👤 Personen: '+(r.person_count||'ja'),'#2060a0']);
+  if(!r.has_persons&&r.has_persons!==undefined)badges.push(['🚫 Keine Personen','#888']);
+  if(r.has_text&&r.text_readable)badges.push(['📝 Text lesbar','#207050']);
+  else if(r.has_text)badges.push(['📋 Text (unleserlich)','#606020']);
+  if(r.medium)badges.push([r.medium,'#5a5a7a']);
+  if(r.condition)badges.push(['Zustand: '+r.condition,r.condition==='gut'?'#207050':'#805020']);
+  if(r.period)badges.push([r.period,'#605050']);
+  $('modal-badges').innerHTML=badges.map(([t,c])=>'<span style="background:'+c+';color:#fff;border-radius:4px;padding:.2rem .5rem;font-size:.72rem">'+esc(t)+'</span>').join('');
+  // Transcription if available
+  if(r.transcription_hint){
+    const tx=document.createElement('div');
+    tx.style.cssText='color:#aae;font-size:.7rem;font-family:monospace;margin-top:.3rem;padding:.3rem .6rem;background:rgba(255,255,255,.08);border-radius:4px;max-width:80vw';
+    tx.textContent='📝 ' + r.transcription_hint;
+    $('modal-badges').after(tx);
+  }
+  $('modal-counter').textContent=(idx+1)+' / '+uploadedImages.length;
+  el.style.display='flex';
+  document.addEventListener('keydown', _modalKey);
+}
+
+function closeModal(){
+  $('img-modal').style.display='none';
+  document.removeEventListener('keydown', _modalKey);
+  currentModalIdx=-1;
+}
+
+function modalNav(dir){
+  const n=uploadedImages.length;
+  if(!n)return;
+  currentModalIdx=(currentModalIdx+dir+n)%n;
+  openModal(currentModalIdx);
+}
+
+function _modalKey(e){
+  if(e.key==='Escape')closeModal();
+  else if(e.key==='ArrowRight'||e.key==='ArrowDown')modalNav(+1);
+  else if(e.key==='ArrowLeft'||e.key==='ArrowUp')modalNav(-1);
 }
 
 async function analyzeImages(){
   if(!uploadedImages.length){alert('Erst Bilder hochladen.');return}
-  const mod = $('img-model').value;
-  const sp_text = $('img-sp').value;
-  const ids = uploadedImages.map(i=>i.id);
-  sp('Bildanalyse läuft…', ids.length + ' Bild(er)');
+  const mod=$('img-model').value;
+  const sp_text=$('img-sp').value;
+  const ids=uploadedImages.map(i=>i.id);
+  sp('Bildanalyse läuft…',ids.length+' Bild(er)');
+  await _doAnalyze(ids,mod,sp_text);
+}
+
+async function analyzeSelected(){
+  const ids=[...selectedIds];
+  if(!ids.length){alert('Erst Bilder auswählen (Klick auf Karte).');return}
+  sp('Analyse läuft…',ids.length+' ausgewählt');
+  await _doAnalyze(ids,$('img-model').value,$('img-sp').value);
+}
+
+async function _doAnalyze(ids,mod,sp_text){
   try{
-    const r = await fetch('/api/images/analyze',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text})
+    const r=await fetch('/api/images/analyze',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image_ids:ids,model:mod,system_prompt:sp_text})
     });
-    const data = await r.json();
+    const data=await r.json();
     if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
-    renderImgResults(data.results||[]);
-    hp();
-    // Persistence hint
-    if((data.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
-    // Update analyzed flag
+    // Update local analyzed flag + result
     (data.results||[]).forEach(res=>{
-      const img = uploadedImages.find(i=>i.id===res.id);
-      if(img) img.analyzed = !!res.result;
+      const img=uploadedImages.find(i=>i.id===res.id);
+      if(img&&res.result){img.analyzed=true;img.result=res.result;}
     });
+    allResults=(data.results||[]).filter(r=>r.result);
     renderImgGrid();
+    renderImgResults(data.results||[]);
+    updImgStats();
+    hp();
   }catch(e){$('img-results-empty').textContent='Fehler: '+e;hp();}
+}
+
+function filterResults(key,btn){
+  document.querySelectorAll('#res-filter-bar .fb2').forEach(b=>b.classList.remove('a'));
+  if(btn)btn.classList.add('a');
+  if(key==='all'){renderImgResults(allResults.map(r=>({id:r.id,filename:r.filename||'',result:r.result})));return;}
+  const filtered=allResults.filter(r=>{
+    const res=r.result||{};
+    if(key==='persons')return res.has_persons;
+    if(key==='text')return res.has_text;
+    if(key==='bw')return res.color_mode==='bw';
+    if(key==='color')return res.color_mode==='color'||res.color_mode==='colorized';
+    return true;
+  });
+  renderImgResults(filtered);
 }
 
 function renderImgResults(results){
   const el=$('img-results');
   const empty=$('img-results-empty');
-  if(!results.length){empty.style.display='block';el.innerHTML='';return}
+  if(!results||!results.length){empty.style.display='block';el.innerHTML='';return}
   empty.style.display='none';
-  el.innerHTML = results.map(res=>{
-    if(res.error) return '<div class="card" style="border-color:#e55"><strong>'+esc(res.id||res.filename||'')+'</strong><br><span style="color:#c00">'+esc(res.error)+'</span></div>';
-    var r = res.result || {};
-    return '<div class="card" style="margin-bottom:.5rem">'
-      +'<strong style="font-size:.8rem">'+esc(res.filename||res.id)+'</strong>'
-      +'<p style="font-size:.78rem;margin:.3rem 0">'+esc(r.description||'')+'</p>'
-      +(r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':'')
-      +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
-      +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+  const bar=$('res-filter-bar');
+  if(bar)bar.style.display='flex';
+  el.innerHTML=results.map(function(res){
+    if(res.error)return'<div style="border:1px solid #e55;padding:.5rem;margin-bottom:.4rem;border-radius:6px;background:#fff5f5"><strong style="font-size:.78rem">'+esc(res.filename||res.id||'')+'</strong><br><span style="color:#c00;font-size:.75rem">'+esc(res.error)+'</span></div>';
+    var r=res.result||{};
+    // Color mode badge
+    const cmColor={'bw':'#333','sepia':'#8b7355','color':'#c87000','colorized':'#c87000'}[r.color_mode]||'#777';
+    const cmLabel={'bw':'⚫ Schwarzweiß','sepia':'🟤 Sepia','color':'🟡 Farbig','colorized':'🟡 Koloriert'}[r.color_mode]||r.color_mode||'';
+    return'<div style="border:1px solid var(--brd);padding:.6rem .7rem;margin-bottom:.5rem;border-radius:6px;background:#fff">'
+      // Header row
+      +'<div style="display:flex;align-items:flex-start;gap:.5rem;flex-wrap:wrap;margin-bottom:.4rem">'
+      +'<img src="/api/images/'+esc(res.id)+'/thumb" style="width:56px;height:56px;object-fit:contain;background:#ece8e2;border-radius:4px;flex-shrink:0;cursor:pointer" onclick="openModal(uploadedImages.findIndex(i=>i.id===\''+esc(res.id)+'\'))" alt="">'
+      +'<div style="flex:1">'
+      +'<div style="font-weight:600;font-size:.82rem;margin-bottom:.2rem">'+esc(res.filename||res.id)+'</div>'
+      // Badge bar
+      +'<div style="display:flex;gap:.25rem;flex-wrap:wrap">'
+      +(cmLabel?'<span style="background:'+cmColor+';color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">'+esc(cmLabel)+'</span>':'')
+      +(r.medium?'<span style="background:#5a5a7a;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">'+esc(r.medium)+'</span>':'')
+      +(r.has_persons?'<span style="background:#2060a0;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">👤 '+(r.person_count>0?r.person_count+' Person(en)':'Personen')+'</span>':'')
+      +(r.has_text&&r.text_readable?'<span style="background:#207050;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">📝 Text lesbar</span>':'')
+      +(r.has_text&&!r.text_readable?'<span style="background:#707020;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">📋 Text unleserlich</span>':'')
+      +(r.condition?'<span style="background:'+(r.condition==='gut'?'#207050':r.condition==='beschädigt'?'#805020':'#607060')+';color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">'+esc(r.condition)+'</span>':'')
+      +(r.orientation?'<span style="background:#606060;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">'+esc(r.orientation)+'</span>':'')
+      +(r.estimated_date_range?'<span style="background:#505060;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">📅 '+esc(r.estimated_date_range)+'</span>':'')
+      +(r.confidence?'<span style="background:#888;color:#fff;border-radius:4px;padding:.1rem .45rem;font-size:.65rem">'+(r.confidence*100).toFixed(0)+'%</span>':'')
+      +'</div>'
+      +'</div>'
+      +'</div>'
+      // Description
+      +(r.description?'<div style="font-size:.78rem;margin:.3rem 0;color:#333">'+esc(r.description)+'</div>':'')
+      // Detail grid
+      +'<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.3rem;margin-top:.35rem;font-size:.7rem">'
+      +(r.objects&&r.objects.length?'<div><strong>Objekte</strong><br>'+r.objects.map(esc).join(', ')+'</div>':'')
+      +(r.persons&&r.persons.length?'<div><strong>Personen</strong><br>'+r.persons.map(esc).join(', ')+'</div>':'')
+      +(r.places&&r.places.length?'<div><strong>Orte</strong><br>'+r.places.map(esc).join(', ')+'</div>':'')
+      +(r.iconography&&r.iconography.length?'<div><strong>Ikonographie</strong><br>'+r.iconography.map(esc).join(', ')+'</div>':'')
+      +(r.material?'<div><strong>Material</strong><br>'+esc(r.material)+'</div>':'')
+      +(r.text_type&&r.text_type!=='kein Text'?'<div><strong>Text-Typ</strong><br>'+esc(r.text_type)+'</div>':'')
+      +(r.transcription_hint?'<div style="grid-column:1/-1"><strong>Transkription-Hinweis</strong><br><em style="font-family:monospace;font-size:.68rem">'+esc(r.transcription_hint)+'</em></div>':'')
+      +(r.style?'<div><strong>Stil</strong><br>'+esc(r.style)+'</div>':'')
+      +(r.period?'<div><strong>Epoche</strong><br>'+esc(r.period)+'</div>':'')
+      +'</div>'
       +'</div>';
   }).join('');
 }
-
 
 // === WIKIDATA ===
 async function runWikidataLookup(){

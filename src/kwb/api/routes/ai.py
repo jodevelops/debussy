@@ -232,7 +232,7 @@ async def images_upload(files: list[UploadFile] = File(...)):
 
 @router.get("/api/images/{img_id}/data")
 async def image_data(img_id: str):
-    """Serve raw image bytes so the browser can display thumbnails."""
+    """Serve raw image bytes (original format, may not be browser-renderable for TIFF)."""
     img = _uploaded_images.get(img_id)
     if not img:
         return JSONResponse({"error": "Nicht gefunden"}, 404)
@@ -240,6 +240,108 @@ async def image_data(img_id: str):
     if not img_path.exists():
         return JSONResponse({"error": "Datei nicht gefunden"}, 404)
     return Response(content=img_path.read_bytes(), media_type=img["media_type"])
+
+
+def _extract_tiff_jpeg_thumbnail(data: bytes) -> bytes | None:
+    """
+    Extract embedded JPEG thumbnail from TIFF IFD tags 513/514 (JPEGInterchangeFormat).
+
+    Many archival TIFFs contain a full embedded JPEG preview — standard since TIFF 6.0.
+    Supports both little-endian (II) and big-endian (MM) byte orders.
+    Returns JPEG bytes on success, None if not found or on parse error.
+    """
+    import struct
+    if len(data) < 8:
+        return None
+    if data[:2] == b"II":
+        bo = "<"
+    elif data[:2] == b"MM":
+        bo = ">"
+    else:
+        return None
+    magic = struct.unpack_from(bo + "H", data, 2)[0]
+    if magic not in (42, 43):  # classic TIFF or BigTIFF
+        return None
+    try:
+        ifd_offset = struct.unpack_from(bo + "I", data, 4)[0]
+        num_entries = struct.unpack_from(bo + "H", data, ifd_offset)[0]
+        jpeg_offset = jpeg_length = 0
+        for i in range(num_entries):
+            entry_off = ifd_offset + 2 + i * 12
+            tag = struct.unpack_from(bo + "H", data, entry_off)[0]
+            val = struct.unpack_from(bo + "I", data, entry_off + 8)[0]
+            if tag == 513:    # JPEGInterchangeFormat
+                jpeg_offset = val
+            elif tag == 514:  # JPEGInterchangeFormatLength
+                jpeg_length = val
+        if jpeg_offset and jpeg_length:
+            thumb = data[jpeg_offset: jpeg_offset + jpeg_length]
+            if thumb[:2] == b"\xff\xd8":  # JPEG SOI marker
+                return thumb
+    except Exception:
+        pass
+    return None
+
+
+def _make_svg_placeholder(filename: str, size_bytes: int, media_type: str) -> bytes:
+    """Return a browser-renderable SVG placeholder for non-displayable image formats."""
+    import html as _html
+    ext = media_type.split("/")[-1].upper() if "/" in media_type else "IMG"
+    kb = size_bytes / 1024
+    name_safe = _html.escape(Path(filename).name[:32])
+    size_str = f"{kb:.0f} KB" if kb < 1024 else f"{kb/1024:.1f} MB"
+    svg = (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="220">'
+        '<rect width="300" height="220" fill="#ede8e2" rx="6"/>'
+        '<rect x="90" y="35" width="120" height="100" rx="4" fill="#c8bfb4"/>'
+        '<rect x="100" y="45" width="100" height="80" rx="2" fill="#f5f0eb"/>'
+        f'<text x="150" y="100" text-anchor="middle" font-family="monospace" '
+        f'font-size="22" font-weight="bold" fill="#7a6f65">{ext}</text>'
+        f'<text x="150" y="158" text-anchor="middle" font-family="sans-serif" '
+        f'font-size="10" fill="#6a6058">{name_safe}</text>'
+        f'<text x="150" y="175" text-anchor="middle" font-family="sans-serif" '
+        f'font-size="9" fill="#9a9088">{size_str}</text>'
+        '</svg>'
+    )
+    return svg.encode("utf-8")
+
+
+@router.get("/api/images/{img_id}/thumb")
+async def image_thumb(img_id: str):
+    """
+    Serve a browser-displayable thumbnail for any uploaded image format.
+
+    - JPEG / PNG / WebP: served directly (browsers support these natively).
+    - TIFF: attempts to extract an embedded JPEG thumbnail from the TIFF IFD
+      (tags 513/514). Falls back to an SVG placeholder if no JPEG preview
+      is embedded.
+    """
+    img = _uploaded_images.get(img_id)
+    if not img:
+        return JSONResponse({"error": "Nicht gefunden"}, 404)
+    img_path = Path(img["path"])
+    if not img_path.exists():
+        return JSONResponse({"error": "Datei nicht gefunden"}, 404)
+
+    mime = img["media_type"]
+    data = img_path.read_bytes()
+
+    # Browser-native formats — serve as-is
+    if mime in ("image/jpeg", "image/png", "image/webp"):
+        return Response(content=data, media_type=mime)
+
+    # TIFF — try embedded JPEG preview first
+    if mime in ("image/tiff", "image/tif"):
+        jpeg_thumb = _extract_tiff_jpeg_thumbnail(data)
+        if jpeg_thumb:
+            return Response(content=jpeg_thumb, media_type="image/jpeg")
+        # No embedded preview → return SVG placeholder
+        svg = _make_svg_placeholder(img["filename"], img["size_bytes"], mime)
+        return Response(content=svg, media_type="image/svg+xml")
+
+    # Unknown format — SVG placeholder
+    svg = _make_svg_placeholder(img["filename"], img["size_bytes"], mime)
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @router.get("/api/images")
@@ -291,10 +393,29 @@ async def images_analyze(request: dict):
                 AIMessage.user([
                     {"type": "image_url", "image_url": {"url": data_url}},
                     {"type": "text", "text": (
-                        "Beschreibe dieses Bild für eine Museumsdatenbank auf Deutsch. "
-                        "Identifiziere sichtbare Objekte, Personen, Orte und Stilmerkmale. "
-                        'Antworte als JSON: {"description": "...", "objects": [], '
-                        '"persons": [], "places": [], "style": "...", "period": "...", "confidence": 0.0}'
+                        "Analysiere dieses Bild für eine GLAM-Museumsdatenbank auf Deutsch. "
+                        "Beantworte alle Kategorien so präzise wie möglich. "
+                        "Antworte AUSSCHLIESSLICH als valides JSON-Objekt mit diesen Feldern:\n"
+                        '{"description": "Kurze Bildbeschreibung (1-3 Sätze)", '
+                        '"objects": ["sichtbare Objekte und Gegenstände"], '
+                        '"persons": ["Namen oder Beschreibung erkennbarer Personen"], '
+                        '"has_persons": true/false, '
+                        '"person_count": 0, '
+                        '"has_text": true/false, '
+                        '"text_type": "Bildunterschrift|Stempel|Handschrift|Druck|Gravur|kein Text", '
+                        '"text_readable": true/false, '
+                        '"transcription_hint": "Lesbarer Text im Bild oder leer", '
+                        '"color_mode": "color|bw|sepia|colorized", '
+                        '"material": "Fotopapier|Leinwand|Holz|Metall|Pergament|Papier|unbekannt", '
+                        '"medium": "Fotografie|Zeichnung|Gemälde|Druckgrafik|Skulptur|Karte|Dokument|unbekannt", '
+                        '"condition": "gut|beschädigt|stark beschädigt|restauriert|unbekannt", '
+                        '"iconography": ["Ikonographie-Stichworte z.B. Architektur, Portrait, Landschaft"], '
+                        '"orientation": "portrait|landscape|square", '
+                        '"estimated_date_range": "z.B. 1880-1920 oder leer", '
+                        '"style": "Stilrichtung oder Gattung", '
+                        '"period": "Historische Epoche", '
+                        '"places": ["erkennbare Orte"], '
+                        '"confidence": 0.0}'
                     )},
                 ]),
             ]
