@@ -344,3 +344,71 @@ async def images_clear():
             p.unlink(missing_ok=True)
     _uploaded_images.clear()
     return {"cleared": count}
+
+
+# ---------------------------------------------------------------------------
+# OCR / HTR analysis (F30)
+# ---------------------------------------------------------------------------
+
+@router.post("/api/images/ocr")
+async def images_ocr(request: dict):
+    """
+    Run OCR/HTR text recognition on uploaded images using vision LLM (F30).
+
+    Request body:
+        image_ids: list[str]    -- IDs from /api/images/upload (all if empty)
+        model: str              -- optional model override
+        additional_context: str -- optional context for OCR prompt
+    """
+    from kwb.ai.prompts import prompt_ocr_analysis
+    from kwb.core.utils import try_parse_json
+
+    image_ids = request.get("image_ids", list(_uploaded_images.keys()))
+    mod = request.get("model", "")
+    ctx = request.get("additional_context", "")
+
+    if not image_ids:
+        return JSONResponse({"error": "Keine Bilder hochgeladen"}, 400)
+
+    prov = get_provider(mod)
+    results = []
+
+    for img_id in image_ids:
+        img = _uploaded_images.get(img_id)
+        if not img:
+            results.append({"id": img_id, "error": "Nicht gefunden"})
+            continue
+
+        try:
+            b64 = base64.b64encode(Path(img["path"]).read_bytes()).decode("ascii")
+            data_url = f"data:{img['media_type']};base64,{b64}"
+
+            # Build OCR prompt with image prepended
+            ocr_msgs = prompt_ocr_analysis(additional_context=ctx or img["filename"])
+            # Replace the user message to include image
+            ocr_msgs[1] = AIMessage.user([
+                {"type": "image_url", "image_url": {"url": data_url}},
+                {"type": "text", "text": ocr_msgs[1].content},
+            ])
+
+            resp = prov.complete(ocr_msgs, model=mod or None, max_tokens=1024)
+            parsed = try_parse_json(resp.content) or {
+                "text_found": False,
+                "transcription": resp.content,
+                "overall_confidence": 0.0,
+            }
+            results.append({
+                "id": img_id,
+                "filename": img["filename"],
+                "result": parsed,
+            })
+        except Exception as e:
+            results.append({"id": img_id, "error": str(e)})
+
+    successful = [r for r in results if "result" in r]
+    return {
+        "total": len(image_ids),
+        "processed": len(successful),
+        "model": mod or "default",
+        "results": results,
+    }

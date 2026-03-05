@@ -1,5 +1,5 @@
 """
-Enrichment routes: GND search, GND batch lookup, (future: Wikidata, GeoNames).
+Enrichment routes: GND search, GND batch lookup, Wikidata SPARQL.
 
 Router prefix: /api
 """
@@ -36,7 +36,7 @@ async def gnd_batch_api(request: dict):
     ws = get_workspace()
     unique = ws.unique_entities()
     if not unique:
-        return JSONResponse({"error": "Erst NER ausführen"}, 400)
+        return JSONResponse({"error": "Erst NER ausfuehren"}, 400)
 
     limit = min(request.get("limit", 50), 200)
     terms = [
@@ -63,5 +63,87 @@ async def gnd_batch_api(request: dict):
 
     return {
         "total": len(terms), "matched": matched,
+        "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Wikidata Enrichment (F28)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/wikidata/search")
+async def wikidata_search_api(q: str = "", type: str = "", lang: str = "de", size: int = 5):
+    """
+    Live Wikidata entity lookup via SPARQL.
+
+    Parameters:
+        q:    Search term
+        type: Entity type filter: PER, LOC, GPE, ORG or empty for all
+        lang: Language for labels (default "de")
+        size: Max results (default 5)
+    """
+    if not q:
+        return {"results": []}
+    try:
+        from kwb.enrich.wikidata import wikidata_search
+        results = wikidata_search(q, entity_type=type, lang=lang, limit=min(size, 10))
+        return {"results": [r.to_dict() for r in results]}
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, 500)
+
+
+@router.post("/api/wikidata/batch")
+async def wikidata_batch_api(request: dict):
+    """
+    Batch Wikidata enrichment for all unique entities in the current workspace.
+
+    Request body:
+        limit: int   -- max entities to process (default 30, max 100)
+        lang: str    -- language for labels (default "de")
+    """
+    ws = get_workspace()
+    unique = ws.unique_entities()
+    if not unique:
+        return JSONResponse({"error": "Erst NER ausfuehren"}, 400)
+
+    limit = min(request.get("limit", 30), 100)
+    lang = request.get("lang", "de")
+
+    terms = [
+        {"text": e.text, "type": e.entity_type, "record_id": e.record_id}
+        for e in unique[:limit]
+    ]
+
+    try:
+        from kwb.enrich.wikidata import wikidata_batch_search
+        results = wikidata_batch_search(terms, lang=lang, limit=3, delay=1.0)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, 500)
+
+    matched = 0
+    for wr in results:
+        if wr.get("top_match"):
+            tm = wr["top_match"]
+            qid = tm.get("qid", "")
+            entry = ws.lookup(wr["text"])
+            if entry:
+                entry.wikidata_id = qid
+                if not entry.gnd_id and tm.get("gnd_id"):
+                    entry.gnd_id = tm["gnd_id"]
+            else:
+                ws.add_to_dictionary([{
+                    "term": wr["text"],
+                    "gnd_id": tm.get("gnd_id", ""),
+                    "category": wr.get("type", ""),
+                    "source": "wikidata",
+                }])
+                fresh = ws.lookup(wr["text"])
+                if fresh:
+                    fresh.wikidata_id = qid
+            matched += 1
+
+    return {
+        "total": len(terms),
+        "matched": matched,
         "results": results,
     }
