@@ -96,7 +96,7 @@ class TestPrompts:
     def test_ocr_analysis(self):
         msgs = prompt_ocr_analysis()
         assert len(msgs) == 2
-        assert "Transkription" in msgs[1].content
+        assert "transcription" in msgs[1].content
 
 
 # ---------------------------------------------------------------------------

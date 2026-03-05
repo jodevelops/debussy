@@ -1,8 +1,8 @@
 # Debussy — Funktionskatalog & Testmatrix
 
-**Version:** 0.4.0  
-**Stand:** 2025-02-24  
-**Gesamtstatus:** 343/436 Tests bestanden, 8 fehlgeschlagen, 85 übersprungen
+**Version:** 0.6.0  
+**Stand:** 2026-03-05  
+**Gesamtstatus:** 433/449 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
 
 ---
 
@@ -170,8 +170,8 @@
 |----|----------|--------|-------|-------|---------|
 | F19 | Markdown-Report | ✅ Umgesetzt | 2/2 | `report/markdown.py` | Vollständiger Qualitätsbericht |
 | F26 | Goobi XML Preview | 🟡 Teilweise | 0/1 | `api/app.py` | Vorschau, Record-basiert |
-| F34 | CSV-Export bereinigt | 🔴 Geplant | 0/0 | `export/` | Mit NER + EDTF Anreicherungen |
-| F35 | JSON-LD Export | 🔴 Geplant | 0/0 | `export/` | Linked Open Data |
+| F34 | CSV-Export bereinigt | ✅ Umgesetzt | 10/10 | `export/csv_export.py`, `/api/export/csv` | NER + EDTF + GND Anreicherungen, BOM für Excel |
+| F35 | JSON-LD Export | ✅ Umgesetzt | 10/10 | `export/jsonld.py`, `/api/export/jsonld` | Schema.org, GND + Wikidata sameAs, EDTF Dates |
 
 ### Testanleitung F26
 ```
@@ -188,9 +188,9 @@
 
 | ID | Funktion | Status | Tests | Modul | Hinweis |
 |----|----------|--------|-------|-------|---------|
-| F27 | GND-Enrichment | 🔴 Geplant | 0/0 | `enrich/` | lobid.org API Batch-Lookup |
-| F28 | Wikidata-Enrichment | 🔴 Geplant | 0/0 | `enrich/` | SPARQL-Abfragen |
-| F33 | Normdaten-Wörterbuch | 🔴 Geplant | 0/0 | `enrich/` | Editierbare Dictionaries im GUI |
+| F27 | GND-Enrichment | ✅ Umgesetzt | 2/2 | `enrich/gnd.py`, `api/routes/enrich.py` | lobid.org API Batch-Lookup via `/api/gnd/batch` |
+| F28 | Wikidata-Enrichment | ✅ Umgesetzt | 9/9 | `enrich/wikidata.py`, `api/routes/enrich.py` | SPARQL via query.wikidata.org, offline-sicher |
+| F33 | Normdaten-Wörterbuch | ✅ Umgesetzt | — | `core/workspace.py` | Im Workspace mit GND+Wikidata Verknüpfung |
 
 ---
 
@@ -211,8 +211,8 @@
 | F39 | .env Konfiguration | ✅ Umgesetzt | — | Keine hardcodierten Secrets |
 | F40 | Maskierte API-Keys | ✅ Umgesetzt | — | `display_safe()` für Logs |
 | F41 | Modulares Design | ✅ Umgesetzt | — | Jedes Modul einzeln testbar |
-| F29 | Bild-Analyse (Vision) | 🟡 Teilweise | 1/2 | Modul + Prompt vorhanden, GUI fehlt |
-| F30 | OCR/HTR | 🟡 Teilweise | 0/1 | Prompt vorhanden, Integration ausstehend |
+| F29 | Bild-Analyse (Vision) | ✅ Umgesetzt | 10/10 | `api/routes/ai.py`, Dashboard | Upload, Analyse, Thumbnail, Workspace-Persistenz |
+| F30 | OCR/HTR | ✅ Umgesetzt | 5/5 | `api/routes/ai.py` `/api/images/ocr`, Dashboard | Vision-LLM Texterkennung, JSON-Output |
 | F32 | Goobi API Integration | 🔴 Geplant | 0/0 | Viewer API lesen/schreiben |
 
 ---
@@ -226,33 +226,35 @@
 | NER | 4 | 1 | 0 | 5 |
 | Datierung | 2 | 0 | 0 | 2 |
 | KI-Integration | 6 | 0 | 0 | 6 |
-| Export | 2 | 1 | 2 | 5 |
-| Enrichment | 0 | 0 | 3 | 3 |
+| Export | 4 | 0 | 1 | 5 |
+| Enrichment | 2 | 0 | 1 | 3 |
 | Dashboard | 3 | 0 | 0 | 3 |
-| Infrastruktur | 3 | 2 | 1 | 6 |
-| **Gesamt** | **29** | **4** | **8** | **41** |
+| Infrastruktur | 5 | 0 | 1 | 6 |
+| **Gesamt** | **37** | **0** | **4** | **41** |
 
 ### Automatische Tests
 
 <!-- AUTO-TESTS-START -->
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
-| test_ai.py | 18/19 | 1 | 0 | ❌ |
-| test_api.py | 0/42 | 0 | 42 | ✅ |
+| test_ai.py | 19/19 | 0 | 0 | ✅ |
+| test_api.py | 42/42 | 0 | 0 | ✅ |
+| test_comprehensive.py | 25/25 | 0 | 0 | ✅ |
 | test_core.py | 18/18 | 0 | 0 | ✅ |
 | test_edtf.py | 82/82 | 0 | 0 | ✅ |
 | test_gnd.py | 14/14 | 0 | 0 | ✅ |
 | test_gnd_enrich.py | 24/40 | 0 | 16 | ✅ |
 | test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
-| test_image_upload.py | 0/27 | 0 | 27 | ✅ |
+| test_image_upload.py | 30/30 | 0 | 0 | ✅ |
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
 | test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
+| test_new_features.py | 39/39 | 0 | 0 | ✅ |
 | test_roadmap.py | 5/5 | 0 | 0 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
-| test_workspace_export.py | 17/24 | 7 | 0 | ❌ |
-| **Gesamt** | **343/436** | **8** | **85** | **❌** |
+| test_workspace_export.py | 24/24 | 0 | 0 | ✅ |
+| **Gesamt** | **433/449** | **0** | **16** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

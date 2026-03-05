@@ -154,6 +154,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <button class="btn sm s" onclick="batchEntities('rejected')">✗ Alle ablehnen</button>
 <button class="btn sm" onclick="exportNER()">CSV Export</button>
 <button class="btn sm" onclick="runGNDLookup()">🔍 GND-Lookup</button>
+<button class="btn sm" onclick="runWikidataLookup()" title="Wikidata SPARQL-Anreicherung">🌐 Wikidata</button>
 </div>
 </div>
 <!-- GND results table -->
@@ -227,6 +228,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
   <textarea id="img-sp" class="ta" style="height:4rem;margin-top:.3rem"></textarea>
 </div>
 <button class="btn f" onclick="analyzeImages()">🔍 Analysieren</button>
+<button class="btn f" style="margin-top:.3rem;background:var(--info)" onclick="runOCR()">📖 Text erkennen (OCR)</button>
 </div>
 
 <div>
@@ -270,6 +272,24 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <button class="btn s" onclick="batchXML()">Alle Records exportieren</button>
 </div>
 <div id="exp-xml" class="ar" style="display:none;margin-top:.5rem"></div>
+</div>
+
+<div class="c" style="margin-top:1rem"><h2>CSV-Export (angereichert)</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.5rem">Exportiert den Datensatz mit NER-Entitäten und EDTF-Daten als CSV (mit BOM für Excel).</p>
+<label>Datensatz</label><select id="exp-csv-ds" onchange=""><option value="">— Erst Daten laden —</option></select>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.4rem">
+<label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" id="exp-csv-ner" checked> NER-Spalten</label>
+<label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" id="exp-csv-edtf" checked> EDTF-Spalten</label>
+<label style="display:flex;align-items:center;gap:.3rem;font-size:.75rem"><input type="checkbox" id="exp-csv-gnd" checked> GND-IDs</label>
+</div>
+<button class="btn" style="margin-top:.5rem" onclick="exportCSV()">⬇️ CSV herunterladen</button>
+</div>
+
+<div class="c" style="margin-top:1rem"><h2>JSON-LD Export (Linked Open Data)</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.5rem">Exportiert Records als JSON-LD nach Schema.org / Linked Open Data.</p>
+<label>Datensatz</label><select id="exp-ld-ds"><option value="">— Erst Daten laden —</option></select>
+<label>Base-URL</label><input type="text" id="exp-ld-url" value="https://example.org/collection/" placeholder="https://example.org/collection/">
+<button class="btn" style="margin-top:.5rem" onclick="exportJSONLD()">⬇️ JSON-LD herunterladen</button>
 </div>
 
 <div class="c" style="margin-top:1rem"><h2>Workspace-Export</h2>
@@ -353,7 +373,7 @@ function rfl(){
 }
 function populateDS(){
   const n=Object.keys(ufiles);
-  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','fm-ds']){
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds']){
     const s=$(id);if(!s)continue;
     s.innerHTML=n.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
   if(n.length>0){
@@ -760,6 +780,82 @@ function renderImgResults(results){
       +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
       +'</div>';
   }).join('');
+}
+
+
+// === WIKIDATA ===
+async function runWikidataLookup(){
+  sp('Wikidata-Suche …','SPARQL');
+  try{
+    const r=await(await fetch('/api/wikidata/batch',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({limit:20,lang:'de'})})).json();
+    if(r.error){alert('Wikidata-Fehler: '+r.error);hp();return;}
+    alert('Wikidata: '+(r.matched||0)+' von '+(r.total||0)+' Entitäten gefunden und im Wörterbuch gespeichert.');
+    updWS();
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
+// === OCR ===
+async function runOCR(){
+  if(!uploadedImages.length){alert('Erst Bilder hochladen.');return;}
+  const mod=$('img-model').value;
+  const ids=uploadedImages.map(i=>i.id);
+  sp('OCR läuft…',ids.length+' Bild(er)');
+  try{
+    const r=await fetch('/api/images/ocr',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image_ids:ids,model:mod})
+    });
+    const data=await r.json();
+    if(data.error){$('img-results-empty').textContent='OCR-Fehler: '+data.error;hp();return;}
+    const el=$('img-results');
+    el.innerHTML='<h3 style="margin:.5rem 0">OCR-Ergebnisse ('+(data.processed||0)+'/'+(data.total||0)+')</h3>'
+      +(data.results||[]).map(function(res){
+        if(res.error)return '<div style="border:1px solid #e55;padding:.4rem;margin-bottom:.3rem;border-radius:4px">'+esc(res.id)+': '+esc(res.error)+'</div>';
+        var rc=res.result||{};var txt=rc.transcription||rc.text||'(kein Text erkannt)';
+        return '<div style="border:1px solid var(--brd);padding:.5rem;margin-bottom:.3rem;border-radius:4px">'
+          +'<strong style="font-size:.78rem">'+esc(res.filename||res.id)+'</strong> '
+          +(rc.text_found?'<span class="bg ac">Text</span>':'<span class="bg no">Kein Text</span>')
+          +'<div style="font-family:monospace;font-size:.75rem;margin:.3rem 0;padding:.3rem;background:var(--pw);border-radius:3px">'+esc(txt)+'</div>'
+          +(rc.overall_confidence?'<div style="font-size:.68rem;color:#888">Konfidenz: '+(rc.overall_confidence*100).toFixed(0)+'%</div>':'')
+          +'</div>';
+      }).join('');
+    $('img-results-empty').textContent='';
+  }catch(e){$('img-results-empty').textContent='Fehler: '+e;}finally{hp();}
+}
+
+// === CSV EXPORT ===
+async function exportCSV(){
+  const ds=($('exp-csv-ds')&&$('exp-csv-ds').value)||($('exp-ds')&&$('exp-ds').value)||'';
+  if(!ds){alert('Datensatz wählen');return;}
+  sp('CSV Export …','');
+  try{
+    const r=await fetch('/api/export/csv',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        dataset:ds,
+        include_ner:$('exp-csv-ner')?$('exp-csv-ner').checked:true,
+        include_edtf:$('exp-csv-edtf')?$('exp-csv-edtf').checked:true,
+        include_gnd:$('exp-csv-gnd')?$('exp-csv-gnd').checked:true,
+      })});
+    if(!r.ok){var e=await r.json();alert('Fehler: '+(e.error||r.statusText));hp();return;}
+    var blob=await r.blob();
+    dl(ds+'_enriched.csv',await blob.text(),'text/csv;charset=utf-8-sig');
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
+// === JSON-LD EXPORT ===
+async function exportJSONLD(){
+  const ds=($('exp-ld-ds')&&$('exp-ld-ds').value)||($('exp-ds')&&$('exp-ds').value)||'';
+  if(!ds){alert('Datensatz wählen');return;}
+  var url=($('exp-ld-url')&&$('exp-ld-url').value)||'https://example.org/collection/';
+  sp('JSON-LD Export …','');
+  try{
+    const r=await fetch('/api/export/jsonld',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dataset:ds,base_url:url,as_file:true,limit:10000})});
+    if(!r.ok){var e=await r.json();alert('Fehler: '+(e.error||r.statusText));hp();return;}
+    var blob=await r.blob();
+    dl(ds+'.jsonld',await blob.text(),'application/ld+json');
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
 }
 
 // === CATALOG ===
