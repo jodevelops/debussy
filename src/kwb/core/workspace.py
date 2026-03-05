@@ -257,6 +257,41 @@ class CuratedDate:
 # Workspace
 # ---------------------------------------------------------------------------
 
+@dataclass
+class ImageAnalysisResult:
+    """Persisted image analysis result from vision AI."""
+    image_id: str
+    filename: str = ""
+    media_type: str = ""
+    analyzed: bool = False
+    result: dict = field(default_factory=dict)
+    model: str = ""
+    analyzed_at: str = ""
+
+    def to_dict(self) -> dict:
+        return {
+            "image_id": self.image_id,
+            "filename": self.filename,
+            "media_type": self.media_type,
+            "analyzed": self.analyzed,
+            "result": self.result,
+            "model": self.model,
+            "analyzed_at": self.analyzed_at,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "ImageAnalysisResult":
+        return ImageAnalysisResult(
+            image_id=d.get("image_id", ""),
+            filename=d.get("filename", ""),
+            media_type=d.get("media_type", ""),
+            analyzed=d.get("analyzed", False),
+            result=d.get("result", {}),
+            model=d.get("model", ""),
+            analyzed_at=d.get("analyzed_at", ""),
+        )
+
+
 class Workspace:
     """
     Central state for one curation project.
@@ -294,6 +329,7 @@ class Workspace:
         self.extras: dict[str, Any] = {}
         self.source_files: list[str] = []
         self.ai_runs: list[dict] = []
+        self.image_analyses: list[ImageAnalysisResult] = []
 
     @property
     def field_mapping(self):
@@ -518,6 +554,26 @@ class Workspace:
         return added
 
     # ------------------------------------------------------------------
+    # Image analysis helpers
+    # ------------------------------------------------------------------
+
+    def save_image_analysis(self, result: ImageAnalysisResult) -> None:
+        """Add or update an image analysis result."""
+        for i, existing in enumerate(self.image_analyses):
+            if existing.image_id == result.image_id:
+                self.image_analyses[i] = result
+                self._touch()
+                return
+        self.image_analyses.append(result)
+        self._touch()
+
+    def get_image_analysis(self, image_id: str) -> ImageAnalysisResult | None:
+        for r in self.image_analyses:
+            if r.image_id == image_id:
+                return r
+        return None
+
+    # ------------------------------------------------------------------
     # AI run logging
     # ------------------------------------------------------------------
 
@@ -576,6 +632,7 @@ class Workspace:
             "entity_reviews": [r.to_dict() for r in self.entity_reviews],
             "dates": [d.to_dict() for d in self.dates],
             "ai_runs": self.ai_runs,
+            "image_analyses": [r.to_dict() for r in self.image_analyses],
             "notes": self.notes,
             "model_text": self.model_text,
             "model_vision": self.model_vision,
@@ -617,6 +674,9 @@ class Workspace:
             CuratedDate.from_dict(dt) for dt in d.get("dates", [])
         ]
         ws.ai_runs = d.get("ai_runs", [])
+        ws.image_analyses = [
+            ImageAnalysisResult.from_dict(r) for r in d.get("image_analyses", [])
+        ]
         ws.source_files = d.get("source_files", [])
         ws.notes = d.get("notes", "")
         ws.model_text = d.get("model_text", "")

@@ -1,7 +1,7 @@
 # Debussy — Kuratierwerkbank
 
 KI-gestützte Kuratierungswerkbank für GLAM-Sammlungsdaten (Galerien, Bibliotheken, Archive, Museen).
-Python 3.10+, MIT-Lizenz, v0.5.1.
+Python 3.10+, MIT-Lizenz, v0.5.2.
 
 ## Schnellreferenz
 

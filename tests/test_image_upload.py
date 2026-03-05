@@ -76,7 +76,7 @@ def _get_client():
     # Reset the module-level image store between tests
     ai_routes._uploaded_images.clear()
 
-    from kwb.api.app_new import app
+    from kwb.api.app import app
     return TestClient(app)
 
 
@@ -336,6 +336,95 @@ class TestImageData(unittest.TestCase):
         r = self.client.get(f"/api/images/{img_id}/data")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.content, _JPEG)
+
+
+# ---------------------------------------------------------------------------
+# Full workflow integration tests
+# ---------------------------------------------------------------------------
+
+@_skip
+class TestImageWorkflow(unittest.TestCase):
+    """Full workflow: Upload → Thumbnail → Analyze → Workspace persistence."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def _upload(self, data: bytes, name: str) -> str:
+        r = self.client.post("/api/images/upload", files=[_img_file(data, name)])
+        self.assertEqual(r.status_code, 200)
+        return r.json()["images"][0]["id"]
+
+    def test_full_workflow(self):
+        """Upload, verify thumbnail, analyze, check workspace persistence."""
+        # 1. Upload
+        img_id = self._upload(_JPEG, "workflow.jpg")
+
+        # 2. Verify thumbnail works
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["content-type"], "image/jpeg")
+
+        # 3. Analyze
+        r = self.client.post("/api/images/analyze", json={"image_ids": [img_id]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["analyzed"], 1)
+        result = r.json()["results"][0]["result"]
+        self.assertIn("description", result)
+
+        # 4. Verify workspace has the analysis result
+        from kwb.api.deps import get_workspace
+        ws = get_workspace()
+        self.assertEqual(len(ws.image_analyses), 1)
+        ia = ws.image_analyses[0]
+        self.assertEqual(ia.image_id, img_id)
+        self.assertTrue(ia.analyzed)
+        self.assertIn("description", ia.result)
+
+        # 5. List should show analyzed=True
+        r = self.client.get("/api/images")
+        img = next(i for i in r.json()["images"] if i["id"] == img_id)
+        self.assertTrue(img["analyzed"])
+
+    def test_workspace_serialization_with_images(self):
+        """Image analyses survive workspace save/load cycle."""
+        from kwb.core.workspace import Workspace, ImageAnalysisResult
+
+        ws = Workspace(name="img-test")
+        ws.save_image_analysis(ImageAnalysisResult(
+            image_id="img_0001_test",
+            filename="test.jpg",
+            media_type="image/jpeg",
+            analyzed=True,
+            result={"description": "Ein Testbild"},
+            model="mock-model",
+            analyzed_at="2026-01-01T00:00:00",
+        ))
+
+        # Roundtrip
+        json_str = ws.to_json()
+        ws2 = Workspace.from_json(json_str)
+        self.assertEqual(len(ws2.image_analyses), 1)
+        ia = ws2.image_analyses[0]
+        self.assertEqual(ia.image_id, "img_0001_test")
+        self.assertTrue(ia.analyzed)
+        self.assertEqual(ia.result["description"], "Ein Testbild")
+
+    def test_clear_removes_from_disk(self):
+        """DELETE /api/images also removes files from disk."""
+        img_id = self._upload(_JPEG, "delete_me.jpg")
+
+        # Verify file exists
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 200)
+
+        # Clear
+        r = self.client.delete("/api/images")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["cleared"], 1)
+
+        # File should be gone
+        r = self.client.get(f"/api/images/{img_id}/data")
+        self.assertEqual(r.status_code, 404)
 
 
 if __name__ == "__main__":

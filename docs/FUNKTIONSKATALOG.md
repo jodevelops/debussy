@@ -255,4 +255,30 @@
 | **Gesamt** | **343/436** | **8** | **85** | **❌** |
 <!-- AUTO-TESTS-END -->
 
+---
+
+## Empfohlene Entwicklungsreihenfolge
+
+**Stand:** 2026-03-05 (v0.5.2)
+
+### Priorität 1: Stabilisieren
+Alle bestehenden Features müssen zuverlässig funktionieren, bevor neue hinzukommen:
+1. Export-Pipeline (BUG-01 bis BUG-04 im Testbericht) — **erledigt in v0.5.2**
+2. Thumbnail-Anzeige und XSS-Schutz im Dashboard — **erledigt in v0.5.2**
+3. Image-Cleanup und Persistenz — **erledigt in v0.5.2**
+
+### Priorität 2: Test-Abdeckung erweitern
+4. Image-Integration-Tests (Upload → Thumbnail → Analyse → Workspace)
+5. GPUStack-Provider mit gemocktem HTTP-Aufruf
+6. MockProvider-Fehlerszenarien (ungültiges JSON, leere Antworten)
+7. CLI-Tests für `analyze` und `plan`
+
+### Priorität 3: Neue Features (Phase 3+)
+8. Wikidata-Enrichment (SPARQL) — R-01
+9. OCR/HTR-Integration — R-02
+10. METS/MODS-Export — R-04
+11. GeoNames-Lookup — R-05
+12. Goobi Viewer API (REST Push) — R-03
+13. XML/PDF-Ingest — R-06
+
 _Hinweis: Diese Zahlen werden mit `python scripts/update_test_catalog.py --update-doc` neu berechnet. Vor Releases lokal ausführen; in CI prüft der Workflow `test-catalog-consistency.yml` die Konsistenz via `--check-doc`._

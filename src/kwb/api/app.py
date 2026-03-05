@@ -1,783 +1,199 @@
 """
 Debussy v0.5 — KI-gestützte Kuratierungswerkbank.
+
 PYTHONPATH=src python -m kwb.api.app → http://localhost:8765
+
+Architecture:
+  app.py          — FastAPI app, router registration, HTML template
+  routes/analyze  — /api/analyze, /api/dataset/*, /api/ner, /api/scan, /api/edtf
+  routes/enrich   — /api/gnd/*
+  routes/export   — /api/export/*
+  routes/workspace — /api/workspace/*
+  routes/ai       — /api/gpu/*, /api/ai/*, /api/images/*
+  deps.py         — shared state, config, provider factory
 """
 from __future__ import annotations
-import base64, json, os, re, sys, tempfile, time
+
+import json
+import os
+import sys
 from pathlib import Path
-from typing import Any
-import pandas as pd
 
 try:
-    from fastapi import FastAPI, UploadFile, File
-    from fastapi.responses import HTMLResponse, JSONResponse
+    from fastapi import FastAPI
+    from fastapi.responses import HTMLResponse
     import uvicorn
 except ImportError:
-    print("pip install fastapi uvicorn python-multipart"); sys.exit(1)
+    print("pip install fastapi uvicorn python-multipart")
+    sys.exit(1)
 
-from kwb.core.config import load_config
-from kwb.core.models import Severity
-from kwb.core.workspace import Workspace
-from kwb.ingest.csv_loader import ingest_csv
-from kwb.analyze.structural import analyze_datasets
-from kwb.analyze.semantic import classify_subjects
-from kwb.analyze.ner import ner_hybrid, scan_problematic_terms, SYSTEM_NER
-from kwb.enrich.edtf import normalize_dates, normalize_date_rules, SYSTEM_EDTF
-from kwb.enrich.gnd import gnd_search, gnd_batch_search
-from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
-from kwb.ai.provider import AIMessage
-from kwb.ai.gpustack import GPUStackProvider
-from kwb.ai.mock import MockProvider
-from kwb.ai.batch import process_batch, BatchReport
-from kwb.core.utils import try_parse_json as _try_parse_json
+from kwb.analyze.ner import SYSTEM_NER
+from kwb.enrich.edtf import SYSTEM_EDTF
 from kwb.ai.prompts import (
     SYSTEM_METADATA_EXPERT_DE, SYSTEM_METADATA_EXPERT_EN,
-    SYSTEM_VISION_EXPERT_DE, NER_CATEGORIES,
+    SYSTEM_VISION_EXPERT_DE,
 )
-from kwb.report.markdown import render_report
 
-app = FastAPI(title="Debussy", version="0.5.1")
+# Route modules
+from kwb.api.routes.analyze import router as analyze_router
+from kwb.api.routes.enrich import router as enrich_router
+from kwb.api.routes.export import router as export_router
+from kwb.api.routes.workspace import router as workspace_router
+from kwb.api.routes.ai import router as ai_router
 
-# --- Security limits ---
-MAX_UPLOAD_FILES = 10
-MAX_FILE_BYTES = 50 * 1024 * 1024
-MAX_WORKSPACE_BYTES = 20 * 1024 * 1024
-MAX_CSV_ROWS = 500_000
-MAX_CSV_COLS = 200
-ALLOWED_EXTENSIONS = {".csv", ".tsv"}
-ALLOWED_WS_EXT = {".json"}
-MAX_IMAGE_FILES = 500
-ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
-_MIME_MAP = {
-    ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-    ".png": "image/png", ".tif": "image/tiff",
-    ".tiff": "image/tiff", ".webp": "image/webp",
-}
-_uploaded_images: dict = {}
+# ---------------------------------------------------------------------------
+# FastAPI app
+# ---------------------------------------------------------------------------
+app = FastAPI(
+    title="Debussy",
+    version="0.5.2",
+    description="KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen",
+)
 
-# --- Workspace storage ---
-_WORKSPACE_DIR = Path(os.environ.get(
-    "KWB_WORKSPACE_DIR",
-    str(Path(tempfile.gettempdir()) / "debussy_workspaces")
-))
-_WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+app.include_router(analyze_router)
+app.include_router(enrich_router)
+app.include_router(export_router)
+app.include_router(workspace_router)
+app.include_router(ai_router)
 
-
-def _safe_filename(name: str, ext: str = ".debussy.json") -> str:
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name.strip())[:80]
-    safe = re.sub(r"\.{2,}", ".", safe)
-    safe = safe.strip("._- ")
-    if not safe:
-        safe = "project"
-    return safe + ext
-
-
-_state: dict[str, Any] = {
-    "datasets": {},
-    "report": None,
-    "config": None,
-    "workspace": Workspace(name="default"),
-}
+# ---------------------------------------------------------------------------
+# UI data injected into the dashboard HTML template
+# ---------------------------------------------------------------------------
 _HTML_DIR = Path(__file__).parent
 
-# Cache config (not re-loaded per request)
-_config_cache = None
-
-def _cfg():
-    global _config_cache
-    if _config_cache is None:
-        _config_cache = load_config()
-    return _config_cache
-
-
-def _prov(model: str = ""):
-    """Build AI provider. Uses GPUStack if configured, else Mock."""
-    c = _cfg()
-    if c.is_gpustack_configured:
-        pc = c.to_provider_config()
-        if model:
-            pc.default_model = model
-        return GPUStackProvider(pc)
-    return MockProvider.with_defaults()
-
-
-def _ws() -> Workspace:
-    return _state["workspace"]
-
-
-# ---------------------------------------------------------------------------
-# JSON injected into HTML
-# ---------------------------------------------------------------------------
 PRESETS = {
     "meta_de": SYSTEM_METADATA_EXPERT_DE,
     "meta_en": SYSTEM_METADATA_EXPERT_EN,
     "vision_de": SYSTEM_VISION_EXPERT_DE,
     "ner_de": SYSTEM_NER,
     "edtf_de": SYSTEM_EDTF,
-    "scan_de": "Du bist ein Experte fuer Metadatenqualitaet. Identifiziere veraltete, koloniale oder problematische Begriffe. Antworte als JSON.",
+    "scan_de": (
+        "Du bist ein Experte fuer Metadatenqualitaet. "
+        "Identifiziere veraltete, koloniale oder problematische Begriffe. "
+        "Antworte als JSON."
+    ),
     "custom": "",
 }
 
 TASKS_UI = {
-    "ner": {"name": "Named Entity Recognition", "type": "NER",
-            "description": "Erkennt Personen, Orte, Organisationen etc. (SpaCy+LLM)"},
-    "scan": {"name": "Problematische Begriffe", "type": "Scan",
-             "description": "Durchsucht Datenset nach veralteten/koloniale Terminologie"},
-    "edtf": {"name": "EDTF-Normalisierung", "type": "EDTF",
-             "description": "Datumsangaben → LOC Extended Date/Time Format"},
-    "gnd": {"name": "GND-Lookup", "type": "GND",
-            "description": "Echte GND-IDs via lobid.org API (kein KI-Raten)"},
-    "classify": {"name": "Schlagwort-Klassifikation", "type": "KI",
-                 "description": "Klassifiziert Subjects in NER-Kategorien"},
-    "describe": {"name": "Spalten-Beschreibungen", "type": "KI",
-                 "description": "KI-generierte Inhaltsbeschreibungen"},
-    "export": {"name": "Goobi-XML-Export", "type": "Export",
-               "description": "Export im goobi-import Format mit kuratierten Entities"},
+    "ner": {
+        "name": "Named Entity Recognition", "type": "NER",
+        "description": "Erkennt Personen, Orte, Organisationen etc. (SpaCy+LLM)",
+    },
+    "scan": {
+        "name": "Problematische Begriffe", "type": "Scan",
+        "description": "Durchsucht Datenset nach veralteten/kolonialen Begriffen",
+    },
+    "edtf": {
+        "name": "EDTF-Normalisierung", "type": "EDTF",
+        "description": "Datumsangaben → LOC Extended Date/Time Format",
+    },
+    "gnd": {
+        "name": "GND-Lookup", "type": "GND",
+        "description": "Echte GND-IDs via lobid.org API (kein KI-Raten)",
+    },
+    "classify": {
+        "name": "Schlagwort-Klassifikation", "type": "KI",
+        "description": "Klassifiziert Subjects in NER-Kategorien",
+    },
+    "describe": {
+        "name": "Spalten-Beschreibungen", "type": "KI",
+        "description": "KI-generierte Inhaltsbeschreibungen",
+    },
+    "images": {
+        "name": "Bild-Analyse", "type": "Vision",
+        "description": "KI-gestützte Bildbeschreibung (Vision-Modell erforderlich)",
+    },
+    "export": {
+        "name": "Goobi-XML-Export", "type": "Export",
+        "description": "Export im goobi-import Format mit kuratierten Entities",
+    },
 }
 
+# Function catalogue — single source of truth, rendered in dashboard
 CATALOG = [
-    {"id":"I-01","name":"CSV-Import","module":"Ingest","status":"done","status_label":"Aktiv","tests":"TestIngest","note":"Encoding-Erkennung"},
-    {"id":"I-02","name":"Datei-Selektion","module":"Ingest","status":"done","status_label":"Aktiv","tests":"GUI","note":"Checkbox"},
-    {"id":"I-03","name":"Bild-Import","module":"Ingest","status":"done","status_label":"Aktiv","tests":"TestImageLoader","note":"EXIF"},
-    {"id":"A-01","name":"Fehlende Werte","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
-    {"id":"A-02","name":"Duplikate","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
-    {"id":"A-03","name":"Encoding","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
-    {"id":"A-04","name":"Format-Inkonsistenzen","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
-    {"id":"A-05","name":"Term-Varianten","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
-    {"id":"A-06","name":"Cross-File-Linkage","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestIntegration","note":""},
-    {"id":"A-07","name":"GND-Abdeckung","module":"Analyse","status":"done","status_label":"Aktiv","tests":"TestAnalysis","note":""},
-    {"id":"N-01","name":"NER (LLM)","module":"NER","status":"done","status_label":"Aktiv","tests":"TestNERWithMock","note":"10 Entity-Typen"},
-    {"id":"N-02","name":"NER (SpaCy)","module":"NER","status":"done","status_label":"Aktiv","tests":"Import-Test","note":"Optional"},
-    {"id":"N-03","name":"NER Hybrid","module":"NER","status":"done","status_label":"Aktiv","tests":"test_hybrid","note":"SpaCy+LLM, dedupliziert"},
-    {"id":"N-04","name":"Problematische Begriffe","module":"NER","status":"done","status_label":"Aktiv","tests":"test_scan","note":"Fullscan"},
-    {"id":"N-05","name":"Entity-Editor","module":"NER","status":"done","status_label":"Aktiv","tests":"GUI","note":"Accept/Reject/Filter"},
-    {"id":"E-01","name":"EDTF Regeln","module":"EDTF","status":"done","status_label":"Aktiv","tests":"TestEDTFRules (24)","note":"normalize/edtf.py"},
-    {"id":"E-02","name":"EDTF LLM-Fallback","module":"EDTF","status":"done","status_label":"Aktiv","tests":"TestEDTFHybrid","note":""},
-    {"id":"E-03","name":"EDTF in GUI","module":"EDTF","status":"done","status_label":"Aktiv","tests":"GUI","note":""},
-    {"id":"G-01","name":"GND-Lookup (live)","module":"Enrich","status":"done","status_label":"Aktiv","tests":"TestGNDModule","note":"lobid.org API"},
-    {"id":"G-02","name":"GND Batch","module":"Enrich","status":"done","status_label":"Aktiv","tests":"TestGNDModule","note":""},
-    {"id":"W-01","name":"Workspace speichern","module":"Workspace","status":"done","status_label":"Aktiv","tests":"TestWorkspacePersistence","note":".debussy.json"},
-    {"id":"W-02","name":"Workspace laden","module":"Workspace","status":"done","status_label":"Aktiv","tests":"TestWorkspacePersistence","note":""},
-    {"id":"W-03","name":"Dictionary","module":"Workspace","status":"done","status_label":"Aktiv","tests":"TestWorkspaceBasic","note":""},
-    {"id":"X-01","name":"Goobi-XML-Export","module":"Export","status":"done","status_label":"Aktiv","tests":"TestGoobiExport (6)","note":"goobi-import Format"},
-    {"id":"X-02","name":"Goobi Batch-Export","module":"Export","status":"done","status_label":"Aktiv","tests":"TestGoobiExport","note":""},
-    {"id":"X-03","name":"Field-Mapping GUI","module":"Export","status":"done","status_label":"Aktiv","tests":"GUI","note":"CSV-Spalten → Goobi-Typ"},
-    {"id":"K-01","name":"Provider-Abstraktion","module":"KI","status":"done","status_label":"Aktiv","tests":"TestMockProvider","note":"GPUStack/Mock"},
-    {"id":"K-02","name":"System-Prompts","module":"KI","status":"done","status_label":"Aktiv","tests":"GUI","note":"6 Presets"},
-    {"id":"K-03","name":"Modell-Auswahl","module":"KI","status":"done","status_label":"Aktiv","tests":"GUI","note":"Alle Endpoints"},
-    {"id":"P-01","name":"Markdown-Report","module":"Report","status":"done","status_label":"Aktiv","tests":"TestReport","note":""},
-    {"id":"R-01","name":"Wikidata","module":"Enrich","status":"no","status_label":"Geplant","tests":"—","note":"SPARQL"},
-    {"id":"R-02","name":"OCR/HTR","module":"Analyse","status":"no","status_label":"Geplant","tests":"—","note":""},
-    {"id":"R-03","name":"Goobi Viewer API","module":"Export","status":"no","status_label":"Geplant","tests":"—","note":"REST"},
+    # Ingest
+    {"id": "I-01", "name": "CSV-Import",         "module": "Ingest",    "status": "done",    "note": "Encoding-Erkennung"},
+    {"id": "I-02", "name": "Datei-Selektion",     "module": "Ingest",    "status": "done",    "note": "Checkbox"},
+    {"id": "I-03", "name": "Bild-Upload (API)",   "module": "Ingest",    "status": "done",    "note": "/api/images/upload"},
+    {"id": "I-03a","name": "Bild-Analyse (GUI)",  "module": "Ingest",    "status": "partial", "note": "API vorhanden, Tab in Arbeit"},
+    # Analysis
+    {"id": "A-01", "name": "Fehlende Werte",      "module": "Analyse",   "status": "done",    "note": ""},
+    {"id": "A-02", "name": "Duplikate",           "module": "Analyse",   "status": "done",    "note": ""},
+    {"id": "A-03", "name": "Encoding",            "module": "Analyse",   "status": "done",    "note": ""},
+    {"id": "A-04", "name": "Format-Inkonsistenzen","module": "Analyse",  "status": "done",    "note": ""},
+    {"id": "A-05", "name": "Term-Varianten",      "module": "Analyse",   "status": "done",    "note": ""},
+    {"id": "A-06", "name": "Cross-File-Linkage",  "module": "Analyse",   "status": "done",    "note": ""},
+    {"id": "A-07", "name": "GND-Abdeckung",       "module": "Analyse",   "status": "done",    "note": ""},
+    # NER
+    {"id": "N-01", "name": "NER (LLM)",           "module": "NER",       "status": "done",    "note": "10 Entity-Typen"},
+    {"id": "N-02", "name": "NER (SpaCy)",         "module": "NER",       "status": "done",    "note": "Optional"},
+    {"id": "N-03", "name": "NER Hybrid",          "module": "NER",       "status": "done",    "note": "SpaCy+LLM, dedupliziert, _merge_entity_lists"},
+    {"id": "N-04", "name": "Problematische Begriffe","module": "NER",    "status": "done",    "note": "Fullscan"},
+    {"id": "N-05", "name": "Entity-Editor",       "module": "NER",       "status": "done",    "note": "Accept/Reject/Status-Filter"},
+    # EDTF
+    {"id": "E-01", "name": "EDTF Regeln",         "module": "EDTF",      "status": "done",    "note": "normalize/edtf.py — Umlaut-Monate, Jahreszeiten, ISO"},
+    {"id": "E-02", "name": "EDTF LLM-Fallback",   "module": "EDTF",      "status": "done",    "note": "normalize_edtf_hybrid"},
+    {"id": "E-03", "name": "EDTF in GUI",         "module": "EDTF",      "status": "done",    "note": "Modell-Auswahl verdrahtet"},
+    # Enrichment
+    {"id": "G-01", "name": "GND-Lookup (live)",   "module": "Enrich",    "status": "done",    "note": "lobid.org API"},
+    {"id": "G-02", "name": "GND Batch",           "module": "Enrich",    "status": "done",    "note": ""},
+    {"id": "G-03", "name": "GND Ergebnis-Tabelle","module": "Enrich",    "status": "done",    "note": "gndtbl in GUI"},
+    # Workspace
+    {"id": "W-01", "name": "Workspace speichern", "module": "Workspace", "status": "done",    "note": ".debussy.json (inkl. Bildanalyse-Ergebnisse)"},
+    {"id": "W-02", "name": "Workspace laden",     "module": "Workspace", "status": "done",    "note": ""},
+    {"id": "W-03", "name": "Dictionary",          "module": "Workspace", "status": "done",    "note": ""},
+    {"id": "W-04", "name": "Field Mapping GUI",   "module": "Workspace", "status": "done",    "note": "CSV → Goobi-Typ"},
+    # Export
+    {"id": "X-01", "name": "Goobi-XML-Export",    "module": "Export",    "status": "done",    "note": "goobi-import Format"},
+    {"id": "X-02", "name": "Goobi Batch-Export",  "module": "Export",    "status": "done",    "note": ""},
+    {"id": "X-03", "name": "Field-Mapping",       "module": "Export",    "status": "done",    "note": ""},
+    # KI Infrastructure
+    {"id": "K-01", "name": "GPUStack-Provider",   "module": "KI",        "status": "done",    "note": ""},
+    {"id": "K-02", "name": "Ollama-Provider",     "module": "KI",        "status": "done",    "note": "Local dev fallback"},
+    {"id": "K-03", "name": "Mock-Provider",       "module": "KI",        "status": "done",    "note": "Tests + kein GPU"},
+    {"id": "K-04", "name": "System-Prompts",      "module": "KI",        "status": "done",    "note": "6 Presets"},
+    {"id": "K-05", "name": "Modell-Auswahl",      "module": "KI",        "status": "done",    "note": "Alle Endpoints"},
+    {"id": "K-06", "name": "Bild-Analyse (API)",  "module": "KI",        "status": "done",    "note": "/api/images/analyze, Ergebnisse in Workspace persistiert"},
+    # Report
+    {"id": "P-01", "name": "Markdown-Report",     "module": "Report",    "status": "done",    "note": ""},
+    # Geplant
+    {"id": "R-01", "name": "Wikidata",            "module": "Enrich",    "status": "planned", "note": "SPARQL"},
+    {"id": "R-02", "name": "OCR/HTR",             "module": "Analyse",   "status": "planned", "note": ""},
+    {"id": "R-03", "name": "Goobi Viewer API",    "module": "Export",    "status": "planned", "note": "REST Push"},
+    {"id": "R-04", "name": "METS/MODS Export",    "module": "Export",    "status": "planned", "note": ""},
+    {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "planned", "note": ""},
+    {"id": "R-06", "name": "XML/PDF Ingest",      "module": "Ingest",    "status": "planned", "note": ""},
 ]
 
 
 # ---------------------------------------------------------------------------
-# HTML
+# HTML dashboard
 # ---------------------------------------------------------------------------
-def _build_html():
+def _build_html() -> str:
     tpl = (_HTML_DIR / "dashboard.html").read_text(encoding="utf-8")
-    return (tpl
+    return (
+        tpl
         .replace("__PRESETS_JSON__", json.dumps(PRESETS, ensure_ascii=False))
         .replace("__TASKS_JSON__", json.dumps(TASKS_UI, ensure_ascii=False))
         .replace("__CATALOG_JSON__", json.dumps(CATALOG, ensure_ascii=False))
     )
 
-# ---------------------------------------------------------------------------
-# Core routes
-# ---------------------------------------------------------------------------
+
 @app.get("/", response_class=HTMLResponse)
-async def dashboard():
+async def index():
     return _build_html()
 
 
-@app.get("/api/gpu/status")
-async def gpu_status():
-    c = _cfg()
-    r = {"available": False, "models": [], "config": c.display_safe()}
-    if c.is_gpustack_configured:
-        try:
-            p = GPUStackProvider(c.to_provider_config())
-            r["available"] = p.is_available()
-            if r["available"]:
-                r["models"] = p.list_models()
-        except Exception as e:
-            r["error"] = str(e)
-    return r
-
-
-@app.post("/api/gpu/test")
-async def gpu_test():
-    prov = _prov()
-    try:
-        r = prov.complete([AIMessage.system("Test"), AIMessage.user("Sage 'OK'.")], max_tokens=10)
-        return {"ok": True, "response": r.content, "model": r.model}
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
-
-
-@app.post("/api/analyze")
-async def analyze(files: list[UploadFile] = File(...)):
-    if len(files) > MAX_UPLOAD_FILES:
-        return JSONResponse({"error": f"Maximal {MAX_UPLOAD_FILES} Dateien erlaubt"}, 400)
-    _state["datasets"] = {}
-    datasets = []
-    ws = _ws()
-    ws.source_files = []
-    for u in files:
-        suffix = Path(u.filename or "").suffix.lower()
-        if suffix not in ALLOWED_EXTENSIONS:
-            return JSONResponse({"error": f"'{u.filename}': Nur {', '.join(ALLOWED_EXTENSIONS)} erlaubt"}, 400)
-        content = await u.read()
-        if len(content) > MAX_FILE_BYTES:
-            return JSONResponse({"error": f"'{u.filename}': Max {MAX_FILE_BYTES // (1024*1024)} MB"}, 400)
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
-            tmp.write(content)
-            tp = Path(tmp.name)
-        try:
-            df, pr = ingest_csv(tp)
-            if len(df) > MAX_CSV_ROWS:
-                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_ROWS:,} Zeilen"}, 400)
-            if len(df.columns) > MAX_CSV_COLS:
-                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_COLS} Spalten"}, 400)
-            pr.source_name = Path(u.filename).stem
-            pr.source_path = u.filename
-            datasets.append((df, pr))
-            _state["datasets"][u.filename] = (df, pr)
-            ws.source_files.append(u.filename)
-        except Exception as e:
-            return JSONResponse({"error": f"{u.filename}: {e}"}, 400)
-        finally: tp.unlink(missing_ok=True)
-    try:
-        report = analyze_datasets(datasets)
-        _state["report"] = report
-        return _report_json(report, render_report(report))
-    except Exception as e:
-        return JSONResponse({"error": f"Analyse fehlgeschlagen: {e}"}, 500)
-
-
-@app.get("/api/dataset/{name}/columns")
-async def dataset_columns(name: str):
-    ds = _state["datasets"].get(name)
-    if not ds:
-        return JSONResponse({"error": f"'{name}' nicht geladen"}, 404)
-    _, pr = ds
-    return {"columns": [
-        {"name": c.name, "fill_rate": c.fill_rate,
-         "unique_count": c.unique_count, "sample_values": c.sample_values[:3]}
-        for c in pr.columns
-    ]}
-
-
-@app.get("/api/dataset/{name}/records")
-async def dataset_records(name: str):
-    ds = _state["datasets"].get(name)
-    if not ds:
-        return JSONResponse({"error": "Nicht geladen"}, 404)
-    df, pr = ds
-    id_col = pr.id_column or df.columns[0]
-    ids = df[id_col].dropna().astype(str).unique().tolist()
-    return {"record_ids": ids[:200]}
-
-
 # ---------------------------------------------------------------------------
-# NER
+# Entry point
 # ---------------------------------------------------------------------------
-@app.post("/api/ner")
-async def api_ner(request: dict):
-    dsn = request.get("dataset", "")
-    ds = _state["datasets"].get(dsn)
-    if not ds:
-        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
-    df, profile = ds
-    cols = request.get("columns", [])
-    if not cols:
-        cols = [c for c in df.columns if df[c].dtype == object]
-    method = request.get("method", "llm")
-    ss = min(request.get("sample_size", 10), 500)
-    syp = request.get("system_prompt", "")
-    mod = request.get("model", "")   # ← model wired
-    prov = _prov(mod)
-    ws = _ws()
-
-    result = ner_hybrid(
-        df, cols,
-        provider=prov if method != "spacy" else None,
-        id_column=profile.id_column,
-        sample_size=ss,
-        model=mod or None,
-        system_prompt=syp,
-        use_spacy=(method in ("spacy", "hybrid")),
-        use_llm=(method in ("llm", "hybrid")),
-    )
-    ents = result.to_dict_list()
-    ws.add_entities(ents, replace=True)
-    ws.log_ai_run("ner_extract", mod or method, len(ents),
-                  len([e for e in ents if e.get("confidence", 0) > 0.5]))
-
-    return {
-        "task_name": "NER", "total": len(ents),
-        "succeeded": len([e for e in ents if e.get("confidence", 0) > 0.3]),
-        "model": mod or method,
-        "entities": ents[:500],
-        "by_type": {t.value: len(es) for t, es in result.by_type.items()},
-        "workspace": ws.to_summary(),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Scan (problematic terms)
-# ---------------------------------------------------------------------------
-@app.post("/api/scan")
-async def api_scan(request: dict):
-    dsn = request.get("dataset", "")
-    ds = _state["datasets"].get(dsn)
-    if not ds:
-        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
-    df, profile = ds
-    ss = min(request.get("sample_size", 20), 500)
-    syp = request.get("system_prompt", "")
-    mod = request.get("model", "")   # ← model wired
-    prov = _prov(mod)
-    issues, batch = scan_problematic_terms(
-        df, prov,
-        id_column=profile.id_column,
-        sample_size=ss,
-        model=mod or None,
-        system_prompt=syp,
-    )
-    return {
-        "task_name": "Scan", "total": batch.total,
-        "succeeded": batch.succeeded, "model": mod or "default",
-        "issues": issues[:200],
-    }
-
-
-# ---------------------------------------------------------------------------
-# EDTF
-# ---------------------------------------------------------------------------
-@app.post("/api/edtf")
-async def api_edtf(request: dict):
-    dsn = request.get("dataset", "")
-    ds = _state["datasets"].get(dsn)
-    if not ds:
-        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
-    df, profile = ds
-    col = request.get("column", "")
-    if not col:
-        return JSONResponse({"error": "Spalte wählen"}, 400)
-    if col not in df.columns:
-        return JSONResponse({"error": f"Spalte '{col}' nicht vorhanden"}, 400)
-    ss = request.get("sample_size", 0)
-    use_llm = request.get("use_llm", False)
-    syp = request.get("system_prompt", "")
-    mod = request.get("model", "")   # ← model wired
-    ws = _ws()
-
-    mask = df[col].replace("", pd.NA).notna()
-    working = df[mask]
-    if ss and ss > 0 and ss < len(working):
-        working = working.sample(n=ss, random_state=42)
-
-    items = [
-        {
-            "record_id": str(row.get(profile.id_column, "")) if profile.id_column else "",
-            "text": str(row[col]).strip(),
-        }
-        for _, row in working.iterrows()
-        if str(row[col]).strip()
-    ]
-
-    prov = _prov(mod) if use_llm else None
-    results, batch = normalize_dates(
-        items, provider=prov,
-        model=mod or None, system_prompt=syp,
-    )
-
-    ws.add_dates([
-        {"original": r.original, "edtf": r.edtf, "confidence": r.confidence,
-         "method": r.method, "record_id": r.record_id, "column": col}
-        for r in results
-    ], replace=True)
-
-    converted = len([r for r in results if r.edtf])
-    undated = len([r for r in results if not r.edtf and "undatiert" in r.note])
-    failed = len(results) - converted - undated
-
-    return {
-        "task_name": "EDTF", "total": len(results),
-        "converted": converted, "failed": failed, "undated": undated,
-        "model": mod or "rule",
-        "results": [
-            {"record_id": r.record_id, "original": r.original, "edtf": r.edtf,
-             "confidence": round(r.confidence, 3), "method": r.method, "note": r.note}
-            for r in results
-        ],
-    }
-
-
-# ---------------------------------------------------------------------------
-# GND search
-# ---------------------------------------------------------------------------
-@app.get("/api/gnd/search")
-async def gnd_search_api(q: str = "", type: str = "", size: int = 5):
-    if not q:
-        return {"results": []}
-    results = gnd_search(q, entity_type=type, size=size)
-    return {"results": [r.to_dict() for r in results]}
-
-
-@app.post("/api/gnd/batch")
-async def gnd_batch_api(request: dict):
-    ws = _ws()
-    unique = ws.unique_entities()
-    if not unique:
-        return JSONResponse({"error": "Erst NER ausführen"}, 400)
-    limit = min(request.get("limit", 50), 200)
-    terms = [
-        {"text": e.text, "type": e.entity_type, "record_id": e.record_id}
-        for e in unique[:limit]
-    ]
-    results = gnd_batch_search(terms, delay=0.15)
-    matched = 0
-    for gr in results:
-        if gr.get("top_match"):
-            tm = gr["top_match"]
-            for i, e in enumerate(ws.entities):
-                if e.text == gr["text"] and e.entity_type == gr["type"]:
-                    ws.update_entity(i, {
-                        "gnd_id": tm["gnd_id"],
-                        "gnd_preferred": tm["preferred_name"],
-                    })
-            ws.add_to_dictionary([{
-                "term": gr["text"], "gnd_id": tm["gnd_id"],
-                "gnd_preferred": tm["preferred_name"],
-                "category": gr["type"], "source": "gnd-api",
-            }])
-            matched += 1
-    return {
-        "total": len(terms), "matched": matched,
-        "results": results,
-        "dictionary_size": len(ws.dictionary),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Export
-# ---------------------------------------------------------------------------
-@app.post("/api/export/goobi-preview")
-async def export_goobi_preview(request: dict):
-    dsn = request.get("dataset", "")
-    ds = _state["datasets"].get(dsn)
-    if not ds:
-        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
-    df, profile = ds
-    ws = _ws()
-    rid = request.get("record_id", "")
-    if rid:
-        df_filtered = df[df[profile.id_column or df.columns[0]].astype(str) == rid]
-        if df_filtered.empty:
-            return JSONResponse({"error": f"Record '{rid}' nicht gefunden"}, 400)
-    else:
-        df_filtered = df.head(1)
-    fmap = ws.field_mapping or {}
-    results = export_goobi_xml(
-        df_filtered, ws,
-        record_id_col=profile.id_column or "record_id",
-        field_map={k: tuple(v) if isinstance(v, (list, tuple)) else v for k, v in fmap.items()},
-    )
-    if results:
-        return {"xml": results[0][1], "record_id": results[0][0]}
-    return {"xml": "<!-- Kein Record -->", "record_id": ""}
-
-
-@app.post("/api/export/goobi-batch")
-async def export_goobi_batch_api(request: dict):
-    dsn = request.get("dataset", "")
-    ds = _state["datasets"].get(dsn)
-    if not ds:
-        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
-    df, profile = ds
-    ws = _ws()
-    xml = export_goobi_batch(df, ws, record_id_col=profile.id_column or "record_id")
-    return {"xml": xml, "record_count": len(df)}
-
-
-# ---------------------------------------------------------------------------
-# Field mapping (new endpoint)
-# ---------------------------------------------------------------------------
-@app.post("/api/workspace/field-mapping")
-async def set_field_mapping(request: dict):
-    """Save field mapping. request: {mapping: {csv_col: {label, type}}}"""
-    mapping = request.get("mapping", {})
-    ws = _ws()
-    ws.field_mapping = mapping
-    return {"ok": True, "mapping_size": len(mapping)}
-
-
-@app.get("/api/workspace/field-mapping")
-async def get_field_mapping():
-    return {"mapping": _ws().field_mapping or {}}
-
-
-# ---------------------------------------------------------------------------
-# Images
-# ---------------------------------------------------------------------------
-@app.post("/api/images/upload")
-async def images_upload(files: list[UploadFile] = File(...)):
-    if len(files) > MAX_IMAGE_FILES:
-        return JSONResponse({"error": f"Max {MAX_IMAGE_FILES} Bilder"}, 400)
-    accepted = []
-    for u in files:
-        suffix = Path(u.filename or "").suffix.lower()
-        if suffix not in ALLOWED_IMAGE_EXT:
-            return JSONResponse({"error": f"'{u.filename}': Nur JPEG/PNG/TIFF/WebP erlaubt"}, 400)
-        content = await u.read()
-        if len(content) > MAX_FILE_BYTES:
-            return JSONResponse({"error": f"'{u.filename}': Max 50 MB"}, 400)
-        media_type = _MIME_MAP[suffix]
-        img_id = f"img_{len(_uploaded_images) + 1:04d}_{Path(u.filename or 'img').stem}"
-        _uploaded_images[img_id] = {
-            "id": img_id, "filename": u.filename,
-            "media_type": media_type, "size_bytes": len(content),
-            "b64": base64.b64encode(content).decode("ascii"),
-            "analyzed": False, "result": None,
-        }
-        accepted.append({"id": img_id, "filename": u.filename,
-                         "size_bytes": len(content), "media_type": media_type})
-    return {"uploaded": len(accepted), "images": accepted}
-
-
-@app.get("/api/images/{img_id}/data")
-async def image_data(img_id: str):
-    """Serve raw image bytes so the browser can display thumbnails."""
-    from fastapi.responses import Response
-    img = _uploaded_images.get(img_id)
-    if not img:
-        return JSONResponse({"error": "Nicht gefunden"}, 404)
-    import base64
-    content = base64.b64decode(img["b64"])
-    return Response(content=content, media_type=img["media_type"])
-
-
-@app.get("/api/images")
-async def images_list():
-    return {"images": [
-        {"id": img["id"], "filename": img["filename"],
-         "size_bytes": img["size_bytes"], "analyzed": img["analyzed"],
-         "result": img["result"]}
-        for img in _uploaded_images.values()
-    ]}
-
-
-@app.post("/api/images/analyze")
-async def images_analyze(request: dict):
-    from kwb.ai.prompts import SYSTEM_VISION_EXPERT_DE
-    image_ids = request.get("image_ids", list(_uploaded_images.keys()))
-    mod = request.get("model", "")
-    syp = request.get("system_prompt", SYSTEM_VISION_EXPERT_DE)
-    if not image_ids:
-        return JSONResponse({"error": "Keine Bilder hochgeladen"}, 400)
-    prov = _prov(mod)
-    results = []
-    for img_id in image_ids:
-        img = _uploaded_images.get(img_id)
-        if not img:
-            results.append({"id": img_id, "error": "Nicht gefunden"})
-            continue
-        try:
-            data_url = f"data:{img['media_type']};base64,{img['b64']}"
-            resp = prov.complete(
-                [
-                    AIMessage.system(syp),
-                    AIMessage.user([
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                        {"type": "text", "text": (
-                            "Beschreibe dieses Bild für eine Museumsdatenbank auf Deutsch. "
-                            'Antworte als JSON: {"description":"...","objects":[],"confidence":0.0}'
-                        )},
-                    ]),
-                ],
-                model=mod or None, max_tokens=512,
-            )
-            parsed = _try_parse_json(resp.content) or {"description": resp.content}
-            img["analyzed"] = True
-            img["result"] = parsed
-            results.append({"id": img_id, "filename": img["filename"], "result": parsed})
-        except Exception as e:
-            results.append({"id": img_id, "error": str(e)})
-    _ws().log_ai_run("image_analysis", mod or "vision", len(results),
-                     len([r for r in results if "result" in r]))
-    return {"total": len(image_ids),
-            "analyzed": len([r for r in results if "result" in r]),
-            "model": mod or "default", "results": results}
-
-
-@app.delete("/api/images")
-async def images_clear():
-    count = len(_uploaded_images)
-    _uploaded_images.clear()
-    return {"cleared": count}
-
-
-# ---------------------------------------------------------------------------
-# Workspace
-# ---------------------------------------------------------------------------
-@app.get("/api/workspace")
-async def workspace_get():
-    return _ws().to_summary()
-
-
-@app.get("/api/workspace/entities")
-async def workspace_entities(status: str = ""):
-    """Return entities, optionally filtered by status."""
-    ws = _ws()
-    ents = ws.entities
-    if status:
-        ents = [e for e in ents if e.status == status]
-    return {
-        "entities": [
-            {"idx": i, "text": e.text, "type": e.entity_type, "confidence": e.confidence,
-             "source": e.source, "record_id": e.record_id, "gnd_id": e.gnd_id,
-             "gnd_preferred": e.gnd_preferred, "status": e.status, "editor_note": e.editor_note}
-            for i, e in enumerate(ws.entities)
-            if not status or e.status == status
-        ],
-        "status_counts": ws.entities_by_status(),
-    }
-
-
-@app.post("/api/workspace/entity/{idx}")
-async def workspace_entity_update(idx: int, updates: dict):
-    if _ws().update_entity(idx, updates):
-        return {"ok": True}
-    return JSONResponse({"error": "Index ungültig"}, 400)
-
-
-@app.post("/api/workspace/entity/batch")
-async def workspace_entity_batch(request: dict):
-    indices = request.get("indices", [])
-    updates = request.get("updates", {})
-    count = sum(1 for i in indices if _ws().update_entity(i, updates))
-    return {"updated": count}
-
-
-@app.post("/api/workspace/entity/{idx}")
-async def workspace_entity_update(idx: int, updates: dict):
-    if _ws().update_entity(idx, updates): return {"ok":True}
-    return JSONResponse({"error":"Index ungültig"},400)
-
-@app.get("/api/workspace/dictionary")
-async def workspace_dictionary():
-    ws = _ws()
-    return {"entries": [
-        {"idx": i, "term": e.term, "normalized": e.normalized, "gnd_id": e.gnd_id,
-         "gnd_preferred": e.gnd_preferred, "category": e.category, "status": e.status}
-        for i, e in enumerate(ws.dictionary)
-    ]}
-
-
-@app.post("/api/workspace/save")
-async def workspace_save(request: dict):
-    name = request.get("name", "project")
-    filename = _safe_filename(name)
-    path = (_WORKSPACE_DIR / filename).resolve()
-    if not str(path).startswith(str(_WORKSPACE_DIR.resolve())):
-        return JSONResponse({"error": "Ungültiger Projektname"}, 400)
-    _ws().name = name
-    _ws().save(path)
-    return {"path": str(path), "summary": _ws().to_summary()}
-
-
-@app.post("/api/workspace/load")
-async def workspace_load(file: UploadFile = File(...)):
-    suffix = Path(file.filename or "").suffix.lower()
-    if suffix not in ALLOWED_WS_EXT:
-        return JSONResponse({"error": "Nur .json Dateien erlaubt"}, 400)
-    content = await file.read()
-    if len(content) > MAX_WORKSPACE_BYTES:
-        return JSONResponse({"error": f"Workspace-Datei zu gross"}, 400)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-        tmp.write(content)
-        tp = Path(tmp.name)
-    try:
-        _state["workspace"] = Workspace.load(tp)
-        return _ws().to_summary()
-    finally:
-        tp.unlink(missing_ok=True)
-
-
-# ---------------------------------------------------------------------------
-# KI-Beschreibungen
-# ---------------------------------------------------------------------------
-@app.post("/api/ai/describe-columns")
-async def ai_describe_columns(request: dict = None):
-    if request is None:
-        request = {}
-    if not _state["datasets"]:
-        return JSONResponse({"error": "Keine Daten"}, 400)
-    mod = request.get("model", "")   # ← model wired
-    prov = _prov(mod)
-    all_ds = []
-    for name, (df, profile) in _state["datasets"].items():
-        cols = []
-        for cp in profile.columns:
-            vals = df[cp.name].replace("", pd.NA).dropna().astype(str).unique()[:5].tolist()
-            ctx = f"Spalte '{cp.name}', {cp.fill_rate:.0%} gefüllt, {cp.unique_count} unique. Beispiele: {', '.join(vals)}"
-            try:
-                r = prov.complete(
-                    [AIMessage.system(SYSTEM_METADATA_EXPERT_DE),
-                     AIMessage.user(f"Beschreibe kurz:\n{ctx}\nJSON: {{\"description\":\"...\"}}")],
-                    max_tokens=200, model=mod or None,
-                )
-                p = _try_parse_json(r.content)
-                desc = p.get("description", r.content) if p else r.content
-            except Exception as e:
-                desc = f"(Fehler: {e})"
-            cols.append({
-                "name": cp.name, "fill_rate": cp.fill_rate,
-                "unique_count": cp.unique_count,
-                "description": f"{cp.fill_rate:.0%}, {cp.unique_count} Werte",
-                "ai_description": desc,
-            })
-        all_ds.append({"name": profile.source_name, "columns": cols})
-    return {"datasets": all_ds}
-
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-def _report_json(report, md):
-    return {
-        "summary": report.summary,
-        "datasets": [
-            {"source_name": p.source_name, "source_path": p.source_path,
-             "row_count": p.row_count, "column_count": p.column_count,
-             "id_column": p.id_column, "encoding_detected": p.encoding_detected,
-             "has_bom": p.has_bom, "line_ending": p.line_ending,
-             "columns": [
-                 {"name": c.name, "fill_rate": c.fill_rate,
-                  "unique_count": c.unique_count, "sample_values": c.sample_values}
-                 for c in p.columns
-             ]}
-            for p in report.datasets
-        ],
-        "findings": [
-            {"category": f.category.value, "severity": f.severity.value,
-             "message": f.message, "column": f.column,
-             "record_ids": f.record_ids[:10], "suggestion": f.suggestion}
-            for f in report.findings
-        ],
-        "markdown": md,
-    }
-
-
 if __name__ == "__main__":
     host = os.environ.get("KWB_HOST", "127.0.0.1")
     port = int(os.environ.get("KWB_PORT", "8765"))
     if host != "127.0.0.1":
         print(f"⚠️  Binding to {host} — no auth configured!")
     print("=" * 50)
-    print(f"  Debussy v0.5  —  http://{host}:{port}")
+    print(f"  Debussy v0.5.2  —  http://{host}:{port}")
     print("=" * 50)
     uvicorn.run(app, host=host, port=port)

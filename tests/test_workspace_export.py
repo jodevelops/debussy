@@ -136,6 +136,7 @@ class TestGoobiExport(unittest.TestCase):
     def test_export_with_entities(self):
         df = pd.DataFrame({"record_id": ["obj_1"], "title": ["Test"]})
         ws = Workspace()
+        ws.field_mapping = {"title": ("Titel", "TitleDocMain")}
         ws.add_entities([
             {"text": "Peter Müller", "type": "PER", "record_id": "obj_1",
              "gnd_id": "123456", "source": "llm"},
@@ -155,8 +156,9 @@ class TestGoobiExport(unittest.TestCase):
         self.assertIn("4005762-8", xml)
 
     def test_rejected_entities_excluded(self):
-        df = pd.DataFrame({"record_id": ["obj_1"]})
+        df = pd.DataFrame({"record_id": ["obj_1"], "title": ["Test"]})
         ws = Workspace()
+        ws.field_mapping = {"title": ("Titel", "TitleDocMain")}
         ws.add_entities([{"text": "Wrong", "type": "PER", "record_id": "obj_1"}])
         ws.update_entity(0, {"status": "rejected"})
         results = export_goobi_xml(df, ws)
@@ -174,8 +176,9 @@ class TestGoobiExport(unittest.TestCase):
         self.assertIn("1920~", xml)
 
     def test_batch_export(self):
-        df = pd.DataFrame({"record_id": ["r1", "r2"]})
+        df = pd.DataFrame({"record_id": ["r1", "r2"], "title": ["A", "B"]})
         ws = Workspace()
+        ws.field_mapping = {"title": ("Titel", "TitleDocMain")}
         batch_xml = export_goobi_batch(df, ws)
         self.assertIn("goobi-import-batch", batch_xml)
         self.assertIn("r1", batch_xml)
@@ -255,15 +258,15 @@ class TestSecurityP0(unittest.TestCase):
         self.assertIn("KWB_HOST", code)
 
     def test_upload_limits_in_code(self):
-        """P0-4: Security limits are defined."""
-        code = Path("src/kwb/api/app.py").read_text()
-        for c in ["MAX_UPLOAD_FILES","MAX_FILE_BYTES","MAX_WORKSPACE_BYTES",
-                   "MAX_CSV_ROWS","MAX_CSV_COLS","ALLOWED_EXTENSIONS"]:
+        """P0-4: Security limits are defined in deps.py."""
+        code = Path("src/kwb/api/deps.py").read_text()
+        for c in ["MAX_UPLOAD_FILES", "MAX_FILE_BYTES", "MAX_WORKSPACE_BYTES",
+                   "MAX_CSV_ROWS", "MAX_CSV_COLS", "ALLOWED_EXTENSIONS"]:
             self.assertIn(c, code, f"Missing: {c}")
 
     def test_upload_validation_in_analyze(self):
-        """P0-4: analyze endpoint validates uploads."""
-        code = Path("src/kwb/api/app.py").read_text()
+        """P0-4: analyze route validates uploads."""
+        code = Path("src/kwb/api/routes/analyze.py").read_text()
         self.assertIn("MAX_UPLOAD_FILES", code)
         self.assertIn("ALLOWED_EXTENSIONS", code)
         self.assertIn("MAX_FILE_BYTES", code)
@@ -271,10 +274,10 @@ class TestSecurityP0(unittest.TestCase):
 
     def test_workspace_save_uses_safe_filename(self):
         """P0-3: workspace save uses sanitized filename."""
-        code = Path("src/kwb/api/app.py").read_text()
-        self.assertIn("_safe_filename", code)
-        self.assertIn("_WORKSPACE_DIR", code)
-        self.assertIn(".resolve()", code)
+        code = Path("src/kwb/api/routes/workspace.py").read_text()
+        self.assertIn("safe_filename", code)
+        deps_code = Path("src/kwb/api/deps.py").read_text()
+        self.assertIn("_WORKSPACE_DIR", deps_code)
 
     def test_xss_protection_in_html(self):
         """P0-1: HTML has XSS protection."""

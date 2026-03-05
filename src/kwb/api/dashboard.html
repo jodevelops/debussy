@@ -80,14 +80,14 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <span style="margin-left:auto"><button class="btn sm" onclick="saveWS()">💾 Speichern</button></span>
 </div>
 <div class="nav">
-<div class="nt a" data-p="data">📂 Daten</div>
-<div class="nt" data-p="ner">🔍 NER & Entities</div>
-<div class="nt" data-p="dates">📅 Datierung</div>
-<div class="nt" data-p="images">🖼️ Bild-Analyse</div>
-<div class="nt" data-p="mapping">🗺️ Feld-Mapping</div>
-<div class="nt" data-p="export">📦 Export</div>
-<div class="nt" data-p="config">⚙️ KI-Konfiguration</div>
-<div class="nt" data-p="catalog">📋 Funktionskatalog</div>
+<div class="nt a" data-p="data">① Daten</div>
+<div class="nt" data-p="ner">② NER</div>
+<div class="nt" data-p="dates">③ Datierung</div>
+<div class="nt" data-p="images">④ Bilder</div>
+<div class="nt" data-p="mapping">⑤ Mapping</div>
+<div class="nt" data-p="export">⑥ Export</div>
+<div class="nt" data-p="config">⚙️ KI</div>
+<div class="nt" data-p="catalog">📋 Katalog</div>
 </div>
 <main>
 
@@ -97,7 +97,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="c" id="fc" style="display:none"><h2>Dateien</h2><div class="cl" id="fcl"></div><button class="btn f" onclick="runStruct()">🔬 Strukturelle Analyse starten</button></div>
 <div class="c"><h2>GPUStack</h2><div id="gi" style="font-size:.75rem">Prüfe …</div></div>
 </div><div>
-<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p></div>
+<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p><div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Empfohlener Workflow:</strong><br>① Daten &ndash; CSV laden &amp; Strukturanalyse starten<br>② NER &ndash; Entit&auml;ten erkennen (Personen, Orte, …)<br>③ Datierung &ndash; EDTF-Normalisierung<br>④ Bilder &ndash; Bild-Upload &amp; KI-Analyse<br>⑤ Mapping &ndash; CSV-Spalten &rarr; Goobi-Felder zuordnen<br>⑥ Export &ndash; Goobi-XML erzeugen (Mapping erforderlich!)</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
 <div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="prof">Profile</div><div class="tab" data-t="cold">Spalten</div><div class="tab" data-t="md">Markdown</div></div>
 <div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
@@ -231,6 +231,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 
 <div>
 <h3>Hochgeladene Bilder</h3>
+<div id="img-mock-hint" class="em" style="font-size:.73rem;color:#996600;display:none;margin-bottom:.4rem">Hinweis: Im Testdaten-Modus liefert die Analyse nur Beispieldaten. F&uuml;r echte Bilderkennung ein Vision-Modell in &#9881;&#65039; KI konfigurieren.</div>
 <div id="img-list-empty" class="em" style="font-size:.78rem">Noch keine Bilder hochgeladen.</div>
 <div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.4rem"></div>
 
@@ -608,7 +609,7 @@ async function previewXML(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz 
   try{const r=await(await fetch('/api/export/goobi-preview',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dataset:ds,record_id:$('exp-rec').value})})).json();
     if(r.error)throw Error(r.error);$('exp-xml').style.display='block';$('exp-xml').textContent=r.xml||'(leer)'
-  }catch(e){alert(e.message)}finally{hp()}}
+  }catch(e){alert(e.message&&e.message.includes('field mapping')?'Export fehlgeschlagen: Bitte erst im Tab \u2554 Mapping die CSV-Spalten den Goobi-Feldern zuordnen.':e.message)}finally{hp()}}
 
 async function batchXML(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz wählen');return}
   sp('Batch-Export …','');
@@ -616,7 +617,7 @@ async function batchXML(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz w�
     body:JSON.stringify({dataset:ds})})).json();
     if(r.error)throw Error(r.error);dl('debussy_goobi.xml',r.xml||'','application/xml');
     $('exp-xml').style.display='block';$('exp-xml').textContent='Exportiert: '+r.record_count+' Records'
-  }catch(e){alert(e.message)}finally{hp()}}
+  }catch(e){alert(e.message&&e.message.includes('field mapping')?'Export fehlgeschlagen: Bitte erst im Tab \u2554 Mapping die CSV-Spalten den Goobi-Feldern zuordnen.':e.message)}finally{hp()}}
 
 // === WORKSPACE ===
 async function updWS(){try{const r=await(await fetch('/api/workspace')).json();
@@ -651,8 +652,9 @@ function rcd(ds){$('cdarea').innerHTML=ds.map(d=>'<h3 style="margin:.5rem 0 .3re
 // === GPU ===
 async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json();
     if(!d.configured){
-      $('gd').className='dot mock';$('gl').textContent='Mock-Modus aktiv';
-      $('gi').textContent='GPUStack nicht konfiguriert. KWB_GPUSTACK_URL in .env setzen.';
+      $('gd').className='dot mock';$('gl').textContent='Testdaten-Modus';
+      $('gi').textContent='KI-Analyse verwendet Testdaten. F\u00fcr echte Ergebnisse: KWB_GPUSTACK_URL in .env konfigurieren.';
+      if($('img-mock-hint'))$('img-mock-hint').style.display='block';
     }else if(d.available){
       $('gd').className='dot on';$('gl').textContent='GPUStack: '+(d.models?.length||0)+' Modelle';
       gpuM=d.models||[];const cfg=d.config||{};
@@ -703,16 +705,16 @@ function renderImgGrid(){
   const empty = $('img-list-empty');
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
   empty.style.display='none';
-  grid.innerHTML = uploadedImages.map(img => `
-    <div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">
-      <img src="/api/images/${esc(img.id)}" alt="${esc(img.filename)}"
-           style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"
-           onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-      <div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>
-      <div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(img.filename)}">${esc(img.filename)}</div>
-      <div style="color:#888;font-size:.65rem">${(img.size_bytes/1024).toFixed(1)} KB · ${esc(img.media_type||'')}</div>
-      <div><span class="bg ${img.analyzed?'ac':'no'}">${img.analyzed?'analysiert':'ausstehend'}</span></div>
-    </div>`).join('');
+  grid.innerHTML = uploadedImages.map(function(img){
+    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
+      +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
+      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'
+      +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>'
+      +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
+      +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
+      +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
+      +'</div>'}).join('');
 }
 
 async function analyzeImages(){
@@ -731,6 +733,8 @@ async function analyzeImages(){
     if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
     renderImgResults(data.results||[]);
     hp();
+    // Persistence hint
+    if((data.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
     // Update analyzed flag
     (data.results||[]).forEach(res=>{
       const img = uploadedImages.find(i=>i.id===res.id);
