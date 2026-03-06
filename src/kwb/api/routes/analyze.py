@@ -25,6 +25,7 @@ from kwb.analyze.structural import analyze_datasets
 from kwb.analyze.ner import ner_hybrid, scan_problematic_terms, SYSTEM_NER
 from kwb.enrich.edtf import normalize_dates, SYSTEM_EDTF
 from kwb.report.markdown import render_report
+from kwb.ai.prompts import PROMPT_VERSIONS
 
 router = APIRouter()
 
@@ -179,11 +180,17 @@ async def api_ner(request: dict):
     )
     ents = result.to_dict_list()
     ws.add_entities(ents, replace=True)
-    ws.log_ai_run("ner_extract", mod or method, len(ents),
-                  len([e for e in ents if e.get("confidence", 0) > 0.5]))
+    ws.log_ai_run(
+        "ner_extract", mod or method, len(ents),
+        len([e for e in ents if e.get("confidence", 0) > 0.5]),
+        prompt_name="entity_extraction_normdata",
+        prompt_version=PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0"),
+    )
 
     return {
         "task_name": "NER", "total": len(ents),
+        "prompt_name": "entity_extraction_normdata",
+        "prompt_version": PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0"),
         "succeeded": len([e for e in ents if e.get("confidence", 0) > 0.3]),
         "model": mod or method,
         "entities": ents[:500],

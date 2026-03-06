@@ -119,11 +119,15 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div id="ner-cols" class="cl"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
 <label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy+LLM)</option></select>
 <label>Samples</label><input type="number" id="ner-n" value="10" min="1" max="500">
+<label>NER Prompt-Preset</label><select id="ner-preset" onchange="applyActionPreset('ner')"><option value="ner_de">NER (DE)</option><option value="custom">Eigen</option></select>
+<textarea id="ner-sp" rows="4" style="margin-top:.3rem"></textarea>
 <button class="btn f" onclick="runNER()">🔍 NER starten</button>
 </div>
 <div class="c"><h2>Problematische Begriffe</h2>
 <label>Datensatz</label><select id="scan-ds"><option value="">—</option></select>
 <label>Samples</label><input type="number" id="scan-n" value="20" min="1" max="500">
+<label>Scan Prompt-Preset</label><select id="scan-preset" onchange="applyActionPreset('scan')"><option value="scan_de">Scan</option><option value="custom">Eigen</option></select>
+<textarea id="scan-sp" rows="3" style="margin-top:.3rem"></textarea>
 <button class="btn f s" onclick="runScan()">🔎 Scan starten</button>
 </div>
 </div><div>
@@ -175,6 +179,8 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <label>Datums-Spalte</label><select id="edtf-col"><option value="">—</option></select>
 <label>Samples (0 = alle)</label><input type="number" id="edtf-n" value="0" min="0" max="10000">
 <label>LLM-Fallback?</label><select id="edtf-llm"><option value="0">Nein (nur Regeln)</option><option value="1">Ja (LLM-Fallback)</option></select>
+<label>EDTF Prompt-Preset</label><select id="edtf-preset" onchange="applyActionPreset('edtf')"><option value="edtf_de">EDTF</option><option value="custom">Eigen</option></select>
+<textarea id="edtf-sp" rows="3" style="margin-top:.3rem"></textarea>
 <button class="btn f" onclick="runEDTF()">📅 Konvertieren</button>
 </div>
 <div class="c"><h2>EDTF-Regeln (LOC Standard)</h2>
@@ -227,7 +233,10 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
   </select>
   <textarea id="img-sp" class="ta" style="height:4rem;margin-top:.3rem"></textarea>
 </div>
+<label class="lbl" style="margin-top:.3rem">Analyseaufgabe</label><select id="img-task" class="sel" style="width:100%"><option value="image_description">Bildbeschreibung/Alt-Text</option><option value="person_face_visibility">Personen-/Gesichtssichtbarkeit</option></select>
 <button class="btn f" onclick="analyzeImages()">🔍 Analysieren</button>
+<label class="lbl" style="margin-top:.5rem">OCR Prompt-Preset</label><select id="ocr-preset" class="sel" style="width:100%" onchange="applyActionPreset('ocr')"><option value="vision_de">Vision/OCR</option><option value="custom">Eigen</option></select>
+<textarea id="ocr-sp" class="ta" style="height:3.5rem;margin-top:.3rem"></textarea>
 <button class="btn f" style="margin-top:.3rem;background:var(--info)" onclick="runOCR()">📖 Text erkennen (OCR)</button>
 </div>
 
@@ -240,6 +249,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <h3 style="margin-top:1rem">Analyseergebnisse</h3>
 <div id="img-results-empty" class="em" style="font-size:.78rem">Noch keine Ergebnisse.</div>
 <div id="img-results"></div>
+<div class="c" style="margin-top:1rem"><h2>Experten-Review (KI-Vorschläge)</h2><div id="img-review-stats" style="font-size:.72rem;color:#666;margin-bottom:.4rem"></div><div id="img-review-list"></div></div>
 </div></div>
 </div></div>
 
@@ -487,7 +497,7 @@ async function runNER(){
   try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,
       model:$('cfg-mt').value||'',
-      system_prompt:$('cfg-sys').value})})).json();
+      system_prompt:$('ner-sp').value||$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
@@ -594,7 +604,7 @@ async function runScan(){const ds=$('scan-ds').value;if(!ds){alert('Datensatz w�
   try{const r=await(await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dataset:ds,sample_size:parseInt($('scan-n').value)||20,
       model:$('cfg-mt').value||'',
-      system_prompt:$('cfg-sys').value})})).json();
+      system_prompt:$('scan-sp').value||$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);renderScan(r)
   }catch(e){alert(e.message)}finally{hp()}}
 
@@ -614,7 +624,7 @@ async function runEDTF(){const ds=$('edtf-ds').value,col=$('edtf-col').value;
     body:JSON.stringify({dataset:ds,column:col,sample_size:parseInt($('edtf-n').value)||0,
       use_llm:$('edtf-llm').value==='1',
       model:$('cfg-mt').value||'',
-      system_prompt:$('cfg-sys').value})})).json();
+      system_prompt:$('edtf-sp').value||$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}}
 
@@ -652,6 +662,7 @@ async function loadWS(file){if(!file)return;const fd=new FormData();fd.append('f
 
 // === CONFIG ===
 function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
+function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const k=$(m[0]).value;if(k!=='custom')$(m[1]).value=PRESETS[k]||'';}
 async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
   try{const r=await(await fetch('/api/gpu/test',{method:'POST'})).json();
     $('cfg-test').style.display='block';$('cfg-test').textContent=JSON.stringify(r,null,2)
@@ -747,7 +758,7 @@ async function analyzeImages(){
     const r = await fetch('/api/images/analyze',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text})
+      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value})
     });
     const data = await r.json();
     if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
@@ -777,9 +788,29 @@ function renderImgResults(results){
       +'<p style="font-size:.78rem;margin:.3rem 0">'+esc(r.description||'')+'</p>'
       +(r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':'')
       +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
-      +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +(r.confidence?'<div style=\"font-size:.65rem;color:#888\">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +'<div style="margin-top:.35rem"><button class="btn sm" onclick="reviewImage(\''+esc(res.id)+'\',\'approved\')">Freigeben</button> <button class="btn sm s" onclick="reviewImage(\''+esc(res.id)+'\',\'rejected\')">Ablehnen</button></div>'
       +'</div>';
   }).join('');
+}
+
+async function reviewImage(imageId,status){
+  try{
+    const r=await fetch('/api/images/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_id:imageId,status})});
+    const d=await r.json();
+    if(d.error){alert(d.error);return}
+    await refreshReviewStats();
+  }catch(e){alert('Review-Fehler: '+e.message)}
+}
+
+async function refreshReviewStats(){
+  try{
+    const ws=await (await fetch('/api/workspace')).json();
+    const rs=ws.image_review||{};
+    if($('img-review-stats'))$('img-review-stats').textContent='Pending: '+(rs.pending||0)+' · Freigegeben: '+(rs.approved||0)+' · Abgelehnt: '+(rs.rejected||0);
+    const list=(uploadedImages||[]).map(img=>'<div class="rev-pending" style="font-size:.74rem;margin:.2rem 0">'+esc(img.filename||img.id)+' <button class="btn sm" onclick="reviewImage(\''+esc(img.id)+'\',\'approved\')">✓</button> <button class="btn sm s" onclick="reviewImage(\''+esc(img.id)+'\',\'rejected\')">✗</button></div>').join('');
+    if($('img-review-list'))$('img-review-list').innerHTML=list||'<span style="font-size:.72rem;color:#888">Keine Vorschläge.</span>';
+  }catch(e){}
 }
 
 
@@ -804,7 +835,7 @@ async function runOCR(){
   try{
     const r=await fetch('/api/images/ocr',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids,model:mod})
+      body:JSON.stringify({image_ids:ids,model:mod,system_prompt:$('ocr-sp').value||''})
     });
     const data=await r.json();
     if(data.error){$('img-results-empty').textContent='OCR-Fehler: '+data.error;hp();return;}
@@ -866,7 +897,7 @@ function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classLi
 function hp(){$('po').classList.remove('a')}
 
 // === INIT ===
-(function(){loadPreset(); applyImgPreset();
+(function(){loadPreset(); applyImgPreset(); applyActionPreset('ner'); applyActionPreset('scan'); applyActionPreset('edtf'); applyActionPreset('ocr'); refreshReviewStats();
   $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
   renderCatalog();chkGPU();updWS()})();
 </script>
