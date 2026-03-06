@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 414/517 Tests bestanden, 0 fehlgeschlagen, 103 übersprungen
+**Gesamtstatus:** 418/527 Tests bestanden, 0 fehlgeschlagen, 109 übersprungen
 
 ---
 
@@ -213,7 +213,7 @@
 | F41 | Modulares Design | ✅ Umgesetzt | — | Jedes Modul einzeln testbar |
 | F29 | Bild-Analyse (Vision) | ✅ Umgesetzt | 10/10 | `api/routes/ai.py`, Dashboard | Upload, Analyse, Thumbnail, Workspace-Persistenz |
 | F30 | OCR/HTR | ✅ Umgesetzt | 5/5 | `api/routes/ai.py` `/api/images/ocr`, Dashboard | Vision-LLM Texterkennung, JSON-Output |
-| F32 | Goobi API Integration | 🔴 Geplant | 0/0 | Viewer API lesen/schreiben |
+| F32 | Goobi API Integration | ✅ Umgesetzt | 6/6 | `/api/goobi/status`, `/api/goobi/push-record`, `/api/goobi/push-batch` |
 
 ---
 
@@ -229,8 +229,8 @@
 | Export | 5 | 0 | 0 | 5 |
 | Enrichment | 2 | 0 | 1 | 3 |
 | Dashboard | 3 | 0 | 0 | 3 |
-| Infrastruktur | 5 | 0 | 1 | 6 |
-| **Gesamt** | **38** | **0** | **3** | **41** |
+| Infrastruktur | 6 | 0 | 0 | 6 |
+| **Gesamt** | **39** | **0** | **2** | **41** |
 
 ### Automatische Tests
 
@@ -238,13 +238,14 @@
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
 | test_ai.py | 19/19 | 0 | 0 | ✅ |
-| test_api.py | 0/44 | 0 | 44 | ✅ |
+| test_api.py | 0/50 | 0 | 50 | ✅ |
 | test_cli.py | 8/8 | 0 | 0 | ✅ |
 | test_comprehensive.py | 22/22 | 0 | 0 | ✅ |
 | test_core.py | 18/18 | 0 | 0 | ✅ |
 | test_edtf.py | 82/82 | 0 | 0 | ✅ |
 | test_gnd.py | 14/14 | 0 | 0 | ✅ |
 | test_gnd_enrich.py | 24/40 | 0 | 16 | ✅ |
+| test_goobi_api.py | 4/4 | 0 | 0 | ✅ |
 | test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
 | test_image_upload.py | 0/31 | 0 | 31 | ✅ |
@@ -255,7 +256,7 @@
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
 | test_workspace_export.py | 25/25 | 0 | 0 | ✅ |
-| **Gesamt** | **414/517** | **0** | **103** | **✅** |
+| **Gesamt** | **418/527** | **0** | **109** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
@@ -281,7 +282,7 @@ Alle bestehenden Features müssen zuverlässig funktionieren, bevor neue hinzuko
 9. OCR/HTR-Integration — R-02
 10. METS/MODS-Export — R-04
 11. GeoNames-Lookup — R-05
-12. Goobi Viewer API (REST Push) — R-03
+12. Goobi Viewer API (REST Push) — R-03 — **erledigt in v0.6.0**
 13. XML/PDF-Ingest — R-06
 
 _Hinweis: Diese Zahlen werden mit `python scripts/update_test_catalog.py --update-doc` neu berechnet. Vor Releases lokal ausführen; in CI prüft der Workflow `test-catalog-consistency.yml` die Konsistenz via `--check-doc`._

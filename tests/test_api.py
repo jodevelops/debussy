@@ -457,6 +457,96 @@ class TestExportEndpoints(unittest.TestCase):
         self.assertIn("@graph", body["jsonld"])
 
 
+    def test_goobi_status_not_configured(self):
+        with patch("kwb.api.routes.export._goobi_client") as mk:
+            cfg = type("Cfg", (), {"configured": False, "project": ""})()
+            mk.return_value = type("C", (), {"config": cfg})()
+            r = self.client.get("/api/goobi/status")
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertFalse(body["configured"])
+        self.assertFalse(body["reachable"])
+
+    def test_goobi_status_reachable(self):
+        class _C:
+            def __init__(self):
+                self.config = type("Cfg", (), {"configured": True, "project": "demo"})()
+
+            def status(self):
+                return {"service": "goobi", "ok": True}
+
+        with patch("kwb.api.routes.export._goobi_client", return_value=_C()):
+            r = self.client.get("/api/goobi/status")
+
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.json()["reachable"])
+        self.assertEqual(r.json()["project"], "demo")
+
+    def test_goobi_push_record(self):
+        class _C:
+            def __init__(self):
+                self.config = type("Cfg", (), {"configured": True, "project": "demo"})()
+
+            def push_record_xml(self, xml: str, record_id: str = ""):
+                return {"received": bool(xml), "record_id": record_id}
+
+        with patch("kwb.api.routes.export._goobi_client", return_value=_C()):
+            r = self.client.post("/api/goobi/push-record", json={
+                "dataset": "export.csv",
+                "record_id": "obj_001",
+            })
+
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["record_id"], "obj_001")
+        self.assertTrue(body["remote"]["received"])
+
+    def test_goobi_push_batch(self):
+        class _C:
+            def __init__(self):
+                self.config = type("Cfg", (), {"configured": True, "project": "demo"})()
+
+            def push_batch_xml(self, xml: str, dataset: str = ""):
+                return {"received": bool(xml), "dataset": dataset}
+
+        with patch("kwb.api.routes.export._goobi_client", return_value=_C()):
+            r = self.client.post("/api/goobi/push-batch", json={"dataset": "export.csv"})
+
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["record_count"], 5)
+        self.assertTrue(body["remote"]["received"])
+
+    def test_goobi_push_record_not_configured(self):
+        class _C:
+            def __init__(self):
+                self.config = type("Cfg", (), {"configured": False, "project": ""})()
+
+        with patch("kwb.api.routes.export._goobi_client", return_value=_C()):
+            r = self.client.post("/api/goobi/push-record", json={"dataset": "export.csv"})
+
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("nicht konfiguriert", r.json()["error"])
+
+    def test_goobi_push_batch_remote_error(self):
+        from kwb.export.goobi_api import GoobiAPIError
+
+        class _C:
+            def __init__(self):
+                self.config = type("Cfg", (), {"configured": True, "project": "demo"})()
+
+            def push_batch_xml(self, xml: str, dataset: str = ""):
+                raise GoobiAPIError("HTTP 500: upstream")
+
+        with patch("kwb.api.routes.export._goobi_client", return_value=_C()):
+            r = self.client.post("/api/goobi/push-batch", json={"dataset": "export.csv"})
+
+        self.assertEqual(r.status_code, 502)
+        self.assertIn("HTTP 500", r.json()["error"])
+
+
 # ---------------------------------------------------------------------------
 # Tests: Workspace endpoints
 # ---------------------------------------------------------------------------

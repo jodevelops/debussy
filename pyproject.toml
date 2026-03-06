@@ -1,6 +1,6 @@
 [project]
 name = "debussy"
-version = "0.5.2"
+version = "0.6.0"
 description = "AI-assisted curation workbench for GLAM collection data"
 readme = "README.md"
 license = {text = "MIT"}

@@ -314,10 +314,14 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <button class="btn sm" id="exp-rec-next" onclick="pageRecords(1)">Weiter →</button>
 <span id="exp-rec-info" style="font-size:.72rem;color:#666"></span>
 </div>
-<div style="display:flex;gap:.5rem;margin-top:.5rem">
+<div style="display:flex;gap:.5rem;margin-top:.5rem;flex-wrap:wrap">
 <button class="btn" onclick="previewXML()">XML-Vorschau</button>
 <button class="btn s" onclick="batchXML()">Alle Records exportieren</button>
+<button class="btn" onclick="goobiStatus()">Goobi Status</button>
+<button class="btn s" onclick="goobiPushRecord()">Record → Goobi pushen</button>
+<button class="btn s" onclick="goobiPushBatch()">Batch → Goobi pushen</button>
 </div>
+<div id="exp-goobi-status" class="ar" style="display:none;margin-top:.5rem"></div>
 <div id="exp-xml" class="ar" style="display:none;margin-top:.5rem"></div>
 </div>
 
@@ -726,6 +730,32 @@ async function batchXML(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz w�
     if(r.error)throw Error(r.error);dl('debussy_goobi.xml',r.xml||'','application/xml');
     $('exp-xml').style.display='block';$('exp-xml').textContent='Exportiert: '+r.record_count+' Records'
   }catch(e){alert(e.message&&e.message.includes('field mapping')?'Export fehlgeschlagen: Bitte erst im Tab \u2554 Mapping die CSV-Spalten den Goobi-Feldern zuordnen.':e.message)}finally{hp()}}
+
+
+async function goobiStatus(){
+  sp('Goobi Status …','');
+  try{const r=await(await fetch('/api/goobi/status')).json();
+    $('exp-goobi-status').style.display='block';
+    $('exp-goobi-status').textContent=JSON.stringify(r,null,2);
+  }catch(e){alert(e.message)}finally{hp()}}
+
+async function goobiPushRecord(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('Goobi Record Push …','');
+  try{const r=await(await fetch('/api/goobi/push-record',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds,record_id:$('exp-rec').value})})).json();
+    if(r.error)throw Error(r.error);
+    $('exp-goobi-status').style.display='block';
+    $('exp-goobi-status').textContent='Record '+(r.record_id||'')+' erfolgreich gepusht\n'+JSON.stringify(r.remote||{},null,2);
+  }catch(e){alert(e.message)}finally{hp()}}
+
+async function goobiPushBatch(){const ds=$('exp-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('Goobi Batch Push …','');
+  try{const r=await(await fetch('/api/goobi/push-batch',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds})})).json();
+    if(r.error)throw Error(r.error);
+    $('exp-goobi-status').style.display='block';
+    $('exp-goobi-status').textContent='Batch erfolgreich gepusht ('+(r.record_count||0)+' Records)\n'+JSON.stringify(r.remote||{},null,2);
+  }catch(e){alert(e.message)}finally{hp()}}
 
 // === WORKSPACE ===
 async function updWS(){try{const r=await(await fetch('/api/workspace')).json();
