@@ -31,24 +31,44 @@ router = APIRouter()
 
 def _report_json(report, markdown: str) -> dict:
     """Serialise an AnalysisReport for the API response."""
-    from kwb.core.models import Severity
-    findings = [
-        f for f in report.findings
-        if f.severity in (Severity.CRITICAL, Severity.WARNING)
-    ]
     s = report.summary
+    datasets = [
+        {
+            "source_name": dp.source_name,
+            "row_count": dp.row_count,
+            "column_count": dp.column_count,
+            "id_column": dp.id_column,
+            "columns": [
+                {
+                    "name": c.name,
+                    "fill_rate": c.fill_rate,
+                    "unique_count": c.unique_count,
+                    "sample_values": c.sample_values[:5],
+                }
+                for c in dp.columns
+            ],
+        }
+        for dp in report.datasets
+    ]
     return {
-        "total_rows": s.get("total_records", 0),
-        "total_columns": s.get("total_columns", 0),
-        "total_findings": s.get("total_findings", 0),
+        "summary": {
+            "total_records": s.get("total_records", 0),
+            "total_columns": s.get("total_columns", 0),
+            "critical": s.get("critical", 0),
+            "warnings": s.get("warnings", 0),
+            "info": s.get("info", 0),
+        },
+        "datasets": datasets,
         "findings": [
             {
                 "message": f.message,
                 "severity": f.severity.value,
+                "category": f.category.value,
                 "column": f.column,
+                "suggestion": f.suggestion,
                 "record_ids": f.record_ids[:10],
             }
-            for f in findings[:200]
+            for f in report.findings[:200]
         ],
         "markdown": markdown,
     }

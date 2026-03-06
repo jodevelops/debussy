@@ -145,13 +145,13 @@ class TestCSVIngest(unittest.TestCase):
 
     def test_analyze_returns_report(self):
         data = self._ingest()
-        self.assertIn("total_rows", data)
-        self.assertEqual(data["total_rows"], 5)
+        self.assertIn("summary", data)
+        self.assertEqual(data["summary"]["total_records"], 5)
 
     def test_analyze_reports_columns(self):
         data = self._ingest()
-        self.assertIn("total_columns", data)
-        self.assertEqual(data["total_columns"], 5)
+        self.assertIn("summary", data)
+        self.assertEqual(data["summary"]["total_columns"], 5)
 
     def test_dataset_columns_endpoint(self):
         self._ingest()
