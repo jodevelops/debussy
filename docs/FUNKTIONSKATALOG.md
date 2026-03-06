@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 442/458 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
+**Gesamtstatus:** 414/517 Tests bestanden, 0 fehlgeschlagen, 103 übersprungen
 
 ---
 
@@ -238,24 +238,24 @@
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
 | test_ai.py | 19/19 | 0 | 0 | ✅ |
-| test_api.py | 42/42 | 0 | 0 | ✅ |
-| test_comprehensive.py | 25/25 | 0 | 0 | ✅ |
+| test_api.py | 0/44 | 0 | 44 | ✅ |
+| test_cli.py | 8/8 | 0 | 0 | ✅ |
+| test_comprehensive.py | 22/22 | 0 | 0 | ✅ |
 | test_core.py | 18/18 | 0 | 0 | ✅ |
 | test_edtf.py | 82/82 | 0 | 0 | ✅ |
 | test_gnd.py | 14/14 | 0 | 0 | ✅ |
 | test_gnd_enrich.py | 24/40 | 0 | 16 | ✅ |
 | test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
-| test_image_upload.py | 31/31 | 0 | 0 | ✅ |
+| test_image_upload.py | 0/31 | 0 | 31 | ✅ |
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
 | test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
-| test_new_features.py | 39/39 | 0 | 0 | ✅ |
-| test_roadmap.py | 5/5 | 0 | 0 | ✅ |
+| test_new_features.py | 29/41 | 0 | 12 | ✅ |
+| test_roadmap.py | 8/8 | 0 | 0 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
-| test_cli.py | 8/8 | 0 | 0 | ✅ |
-| test_workspace_export.py | 24/24 | 0 | 0 | ✅ |
-| **Gesamt** | **442/458** | **0** | **16** | **✅** |
+| test_workspace_export.py | 25/25 | 0 | 0 | ✅ |
+| **Gesamt** | **414/517** | **0** | **103** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
