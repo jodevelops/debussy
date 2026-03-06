@@ -85,6 +85,16 @@ def _image_rows_as_jsonld(rows, base_url: str = "https://example.org/images/") -
     return {"@context": context, "@graph": graph}
 
 
+def _ensure_ai_review_completed(ws):
+    if ws.has_pending_ai_suggestions():
+        return JSONResponse({
+            "error": "Es gibt noch ungeprüfte KI-Vorschläge. Bitte im Bild-Tab freigeben/ablehnen.",
+            "review": ws.image_review_stats(),
+        }, 409)
+    return None
+
+
+
 @router.post("/api/export/goobi-preview")
 async def export_preview(request: dict):
     """
@@ -96,6 +106,9 @@ async def export_preview(request: dict):
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     rid = request.get("record_id", "")
 
     if rid:
@@ -131,6 +144,9 @@ async def export_batch(request: dict):
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     limit = min(request.get("limit", 500), 5000)
     try:
         xml = export_goobi_batch(df.head(limit), ws)
@@ -165,6 +181,9 @@ async def export_csv(request: dict):
 
     df, profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     limit = min(request.get("limit", 10_000), 100_000)
 
     try:
@@ -209,6 +228,9 @@ async def export_jsonld_route(request: dict):
 
     df, _profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     limit = min(request.get("limit", 1000), 50_000)
     base_url = request.get("base_url", "https://example.org/collection/")
 
@@ -270,3 +292,32 @@ async def export_image_results(request: dict):
         return {"jsonld": doc, "count": len(rows)}
 
     return JSONResponse({"error": "format must be csv or jsonld"}, 400)
+@router.get("/api/export/image-analyses")
+async def export_image_analyses(format: str = "json"):
+    """Export image analysis results incl. technical metadata as JSON or CSV."""
+    ws = get_workspace()
+    rows = [r.to_dict() for r in ws.image_analyses]
+
+    if format.lower() == "csv":
+        out = io.StringIO()
+        fieldnames = [
+            "image_id", "filename", "media_type", "size_bytes", "width", "height",
+            "hash_sha256", "exif_subset", "analyzed", "model", "analyzed_at", "result",
+        ]
+        w = csv.DictWriter(out, fieldnames=fieldnames)
+        w.writeheader()
+        for row in rows:
+            row = dict(row)
+            row["exif_subset"] = json.dumps(row.get("exif_subset", {}), ensure_ascii=False)
+            row["result"] = json.dumps(row.get("result", {}), ensure_ascii=False)
+            w.writerow({k: row.get(k, "") for k in fieldnames})
+        return Response(
+            content=out.getvalue().encode("utf-8-sig"),
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": 'attachment; filename="image_analyses.csv"'},
+        )
+
+    if format.lower() == "json":
+        return {"image_analyses": rows, "count": len(rows)}
+
+    return JSONResponse({"error": "format muss 'json' oder 'csv' sein"}, 400)

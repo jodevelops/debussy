@@ -164,11 +164,14 @@ class TestCSVIngest(unittest.TestCase):
 
     def test_dataset_records_endpoint(self):
         self._ingest()
-        r = self.client.get("/api/dataset/test.csv/records")
+        r = self.client.get("/api/dataset/test.csv/records?offset=0&limit=2&q=obj_")
         self.assertEqual(r.status_code, 200)
         data = r.json()
         self.assertIn("record_ids", data)
-        self.assertIn("obj_001", data["record_ids"])
+        self.assertLessEqual(len(data["record_ids"]), 2)
+        self.assertIn("total", data)
+        self.assertIn("has_more", data)
+        self.assertTrue(all("obj_" in rid for rid in data["record_ids"]))
 
     def test_dataset_not_found_returns_404(self):
         r = self.client.get("/api/dataset/nonexistent.csv/columns")
@@ -206,6 +209,7 @@ class TestNEREndpoint(unittest.TestCase):
         self.assertEqual(body["task_name"], "NER")
         self.assertIn("entities", body)
         self.assertIn("workspace", body)
+        self.assertIn("run_metrics", body)
 
     def test_ner_unknown_dataset(self):
         r = self.client.post("/api/ner", json={
@@ -247,6 +251,7 @@ class TestScanEndpoint(unittest.TestCase):
         self.assertEqual(body["task_name"], "Scan")
         self.assertIn("total", body)
         self.assertIn("issues", body)
+        self.assertIn("run_metrics", body)
 
     def test_scan_unknown_dataset(self):
         r = self.client.post("/api/scan", json={"dataset": "nope.csv"})
@@ -273,6 +278,7 @@ class TestEDTFEndpoint(unittest.TestCase):
         body = r.json()
         self.assertEqual(body["task_name"], "EDTF")
         self.assertGreater(body["total"], 0)
+        self.assertIn("run_metrics", body)
         converted = [d for d in body["results"] if d["edtf"]]
         self.assertGreater(len(converted), 0)
 

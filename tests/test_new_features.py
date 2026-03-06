@@ -567,6 +567,39 @@ class TestNewExportRoutes(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("ld+json", r.headers.get("content-type", ""))
 
+
+    def test_image_analysis_export_json(self):
+        """GET /api/export/image-analyses returns JSON including metadata fields."""
+        from kwb.api import deps
+        from kwb.core.workspace import ImageAnalysisResult
+        ws = deps._state["workspace"]
+        ws.save_image_analysis(ImageAnalysisResult(
+            image_id="img_0001_x",
+            filename="x.png",
+            media_type="image/png",
+            size_bytes=12,
+            width=1,
+            height=1,
+            hash_sha256="deadbeef",
+            exif_subset={"Model": "Scanner"},
+            analyzed=True,
+            result={"description": "test"},
+            model="mock",
+            analyzed_at="2026-01-01T00:00:00",
+        ))
+        r = self.client.get('/api/export/image-analyses?format=json')
+        self.assertEqual(r.status_code, 200)
+        data = r.json()
+        self.assertEqual(data.get('count'), 1)
+        self.assertEqual(data['image_analyses'][0]['width'], 1)
+        self.assertEqual(data['image_analyses'][0]['hash_sha256'], 'deadbeef')
+
+    def test_image_analysis_export_csv(self):
+        """GET /api/export/image-analyses?format=csv returns downloadable CSV."""
+        r = self.client.get('/api/export/image-analyses?format=csv')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('text/csv', r.headers.get('content-type', ''))
+
     def test_wikidata_search_endpoint_offline(self):
         """GET /api/wikidata/search returns empty list when network unavailable."""
         # This tests the endpoint exists; offline behavior depends on environment

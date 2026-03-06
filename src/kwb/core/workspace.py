@@ -269,6 +269,11 @@ class ImageAnalysisResult:
     image_id: str
     filename: str = ""
     media_type: str = ""
+    size_bytes: int = 0
+    width: int | None = None
+    height: int | None = None
+    hash_sha256: str = ""
+    exif_subset: dict = field(default_factory=dict)
     analyzed: bool = False
     result: dict = field(default_factory=dict)
     model: str = ""
@@ -318,12 +323,22 @@ class ImageAnalysisResult:
                 self.result = {}
             self.result.update(result_updates)
         self.reviewed_at = datetime.utcnow().isoformat()
+    prompt_name: str = ""
+    prompt_version: str = ""
+    review_status: str = "pending"
+    review_note: str = ""
+    reviewed_at: str = ""
 
     def to_dict(self) -> dict:
         return {
             "image_id": self.image_id,
             "filename": self.filename,
             "media_type": self.media_type,
+            "size_bytes": self.size_bytes,
+            "width": self.width,
+            "height": self.height,
+            "hash_sha256": self.hash_sha256,
+            "exif_subset": self.exif_subset,
             "analyzed": self.analyzed,
             "result": self.result,
             "model": self.model,
@@ -332,6 +347,10 @@ class ImageAnalysisResult:
             "review_status": self.review_status.value,
             "review_comment": self.review_comment,
             "reviewer": self.reviewer,
+            "prompt_name": self.prompt_name,
+            "prompt_version": self.prompt_version,
+            "review_status": self.review_status,
+            "review_note": self.review_note,
             "reviewed_at": self.reviewed_at,
         }
 
@@ -341,6 +360,11 @@ class ImageAnalysisResult:
             image_id=d.get("image_id", ""),
             filename=d.get("filename", ""),
             media_type=d.get("media_type", ""),
+            size_bytes=int(d.get("size_bytes", 0) or 0),
+            width=d.get("width"),
+            height=d.get("height"),
+            hash_sha256=d.get("hash_sha256", ""),
+            exif_subset=d.get("exif_subset", {}) or {},
             analyzed=d.get("analyzed", False),
             result=d.get("result", {}),
             model=d.get("model", ""),
@@ -349,6 +373,10 @@ class ImageAnalysisResult:
             review_status=ImageReviewStatus(d.get("review_status", "pending")),
             review_comment=d.get("review_comment", ""),
             reviewer=d.get("reviewer", ""),
+            prompt_name=d.get("prompt_name", ""),
+            prompt_version=d.get("prompt_version", ""),
+            review_status=d.get("review_status", "pending"),
+            review_note=d.get("review_note", ""),
             reviewed_at=d.get("reviewed_at", ""),
         )
 
@@ -653,13 +681,28 @@ class Workspace:
     def log_ai_run(
         self, task: str, model: str,
         total: int = 0, succeeded: int = 0, duration: float = 0,
+        prompt_name: str = "", prompt_version: str = "",
     ) -> None:
         self.ai_runs.append({
             "task": task, "model": model,
             "total": total, "succeeded": succeeded,
             "duration": duration,
+            "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
             "timestamp": datetime.utcnow().isoformat(),
         })
+
+    def image_review_stats(self) -> dict[str, int]:
+        stats = {"pending": 0, "approved": 0, "rejected": 0, "total": len(self.image_analyses)}
+        for result in self.image_analyses:
+            status = result.review_status or "pending"
+            if status not in stats:
+                continue
+            stats[status] += 1
+        return stats
+
+    def has_pending_ai_suggestions(self) -> bool:
+        return any((r.review_status or "pending") == "pending" for r in self.image_analyses)
 
     # ------------------------------------------------------------------
     # Summary
@@ -675,6 +718,7 @@ class Workspace:
             "mapping_count": len(self._field_mapping),
             "entity_status": self.entities_by_status(),
             "ai_runs": len(self.ai_runs),
+            "image_review": self.image_review_stats(),
             "source_files": self.source_files,
             "image_analysis_count": len(self.image_analyses),
             "image_review_status": self.image_review_stats(),
