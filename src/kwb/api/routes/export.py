@@ -21,6 +21,16 @@ from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
 router = APIRouter()
 
 
+def _ensure_ai_review_completed(ws):
+    if ws.has_pending_ai_suggestions():
+        return JSONResponse({
+            "error": "Es gibt noch ungeprüfte KI-Vorschläge. Bitte im Bild-Tab freigeben/ablehnen.",
+            "review": ws.image_review_stats(),
+        }, 409)
+    return None
+
+
+
 @router.post("/api/export/goobi-preview")
 async def export_preview(request: dict):
     """
@@ -32,6 +42,9 @@ async def export_preview(request: dict):
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     rid = request.get("record_id", "")
 
     if rid:
@@ -67,6 +80,9 @@ async def export_batch(request: dict):
         return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
     df, profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     limit = min(request.get("limit", 500), 5000)
     try:
         xml = export_goobi_batch(df.head(limit), ws)
@@ -101,6 +117,9 @@ async def export_csv(request: dict):
 
     df, profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     limit = min(request.get("limit", 10_000), 100_000)
 
     try:
@@ -145,6 +164,9 @@ async def export_jsonld_route(request: dict):
 
     df, _profile = ds
     ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
     limit = min(request.get("limit", 1000), 50_000)
     base_url = request.get("base_url", "https://example.org/collection/")
 
