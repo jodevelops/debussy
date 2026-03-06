@@ -1,5 +1,5 @@
 """
-Debussy v0.5 — KI-gestützte Kuratierungswerkbank.
+Debussy v0.6 — KI-gestützte Kuratierungswerkbank.
 
 PYTHONPATH=src python -m kwb.api.app → http://localhost:8765
 
@@ -50,7 +50,7 @@ from kwb.api.routes.ai import router as ai_router
 # ---------------------------------------------------------------------------
 app = FastAPI(
     title="Debussy",
-    version="0.5.2",
+    version="0.6.0",
     description="KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen",
 )
 
@@ -168,7 +168,7 @@ CATALOG = [
     # Geplant
     {"id": "R-01", "name": "Wikidata",            "module": "Enrich",    "status": "planned", "note": "SPARQL"},
     {"id": "R-02", "name": "OCR/HTR",             "module": "Analyse",   "status": "planned", "note": ""},
-    {"id": "R-03", "name": "Goobi Viewer API",    "module": "Export",    "status": "planned", "note": "REST Push"},
+    {"id": "R-03", "name": "Goobi Viewer API",    "module": "Export",    "status": "done",    "note": "REST Push via /api/goobi/*"},
     {"id": "R-04", "name": "METS/MODS Export",    "module": "Export",    "status": "planned", "note": ""},
     {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "planned", "note": ""},
     {"id": "R-06", "name": "XML/PDF Ingest",      "module": "Ingest",    "status": "planned", "note": ""},
@@ -202,6 +202,6 @@ if __name__ == "__main__":
     if host != "127.0.0.1":
         print(f"⚠️  Binding to {host} — no auth configured!")
     print("=" * 50)
-    print(f"  Debussy v0.5.2  —  http://{host}:{port}")
+    print(f"  Debussy v0.6.0  —  http://{host}:{port}")
     print("=" * 50)
     uvicorn.run(app, host=host, port=port)

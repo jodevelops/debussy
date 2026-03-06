@@ -32,6 +32,9 @@ class KWBConfig:
     gpustack_key: str = ""
     gpustack_model_text: str = ""
     gpustack_model_vision: str = ""
+    goobi_api_url: str = ""
+    goobi_api_key: str = ""
+    goobi_project: str = ""
     batch_size: int = 50
     batch_delay_seconds: float = 0.1
     max_retries: int = 3
@@ -55,6 +58,9 @@ class KWBConfig:
             "gpustack_key": mask_secret(self.gpustack_key),
             "gpustack_model_text": self.gpustack_model_text or "(nicht gesetzt)",
             "gpustack_model_vision": self.gpustack_model_vision or "(nicht gesetzt)",
+            "goobi_api_url": self.goobi_api_url or "(nicht gesetzt)",
+            "goobi_api_key": mask_secret(self.goobi_api_key),
+            "goobi_project": self.goobi_project or "(nicht gesetzt)",
             "batch_size": str(self.batch_size), "language": self.language,
         }
 
@@ -65,6 +71,9 @@ def load_config(dotenv_path=None):
         gpustack_key=_get("KWB_GPUSTACK_KEY", dotenv),
         gpustack_model_text=_get("KWB_GPUSTACK_MODEL_TEXT", dotenv),
         gpustack_model_vision=_get("KWB_GPUSTACK_MODEL_VISION", dotenv),
+        goobi_api_url=_get("KWB_GOOBI_API_URL", dotenv),
+        goobi_api_key=_get("KWB_GOOBI_API_KEY", dotenv),
+        goobi_project=_get("KWB_GOOBI_PROJECT", dotenv),
         batch_size=int(_get("KWB_BATCH_SIZE", dotenv, "50")),
         batch_delay_seconds=float(_get("KWB_BATCH_DELAY", dotenv, "0.1")),
         max_retries=int(_get("KWB_MAX_RETRIES", dotenv, "3")),
