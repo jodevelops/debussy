@@ -426,6 +426,26 @@ class TestImageWorkflow(unittest.TestCase):
         r = self.client.get(f"/api/images/{img_id}/data")
         self.assertEqual(r.status_code, 404)
 
+    def test_analyze_auto_saves_workspace_to_disk(self):
+        """ARCH-03: After analysis, workspace JSON is written to disk automatically."""
+        import json
+        from kwb.api.deps import get_workspace, workspace_dir, safe_filename
+
+        img_id = self._upload(_JPEG, "persist_test.jpg")
+        r = self.client.post("/api/images/analyze", json={"image_ids": [img_id]})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["analyzed"], 1)
+
+        ws = get_workspace()
+        ws_path = workspace_dir() / safe_filename(ws.name)
+        self.assertTrue(ws_path.exists(), f"Workspace-Datei fehlt: {ws_path}")
+
+        data = json.loads(ws_path.read_text(encoding="utf-8"))
+        analyses = data.get("image_analyses", [])
+        self.assertGreater(len(analyses), 0, "Keine image_analyses in der gespeicherten Datei")
+        ids = [a["image_id"] for a in analyses]
+        self.assertIn(img_id, ids)
+
 
 if __name__ == "__main__":
     unittest.main()

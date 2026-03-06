@@ -23,6 +23,7 @@ except ImportError:
 from kwb.api.deps import (
     ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES,
     get_config, get_datasets, get_provider, get_workspace,
+    workspace_dir, safe_filename,
 )
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
@@ -306,7 +307,7 @@ async def images_analyze(request: dict):
             img["result"] = parsed
             results.append({"id": img_id, "filename": img["filename"], "result": parsed})
 
-            # Persist to workspace
+            # Persist to workspace and auto-save to disk (ARCH-03)
             from datetime import datetime
             ws = get_workspace()
             ws.save_image_analysis(ImageAnalysisResult(
@@ -318,6 +319,7 @@ async def images_analyze(request: dict):
                 model=mod or "default",
                 analyzed_at=datetime.utcnow().isoformat(),
             ))
+            ws.save(workspace_dir() / safe_filename(ws.name))
 
         except Exception as e:
             results.append({"id": img_id, "error": str(e)})
