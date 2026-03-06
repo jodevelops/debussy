@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 433/449 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
+**Gesamtstatus:** 442/458 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
 
 ---
 
@@ -169,7 +169,7 @@
 | ID | Funktion | Status | Tests | Modul | Hinweis |
 |----|----------|--------|-------|-------|---------|
 | F19 | Markdown-Report | ✅ Umgesetzt | 2/2 | `report/markdown.py` | Vollständiger Qualitätsbericht |
-| F26 | Goobi XML Preview | 🟡 Teilweise | 0/1 | `api/app.py` | Vorschau, Record-basiert |
+| F26 | Goobi XML Preview | ✅ Umgesetzt | 4/4 | `api/routes/export.py` | Vorschau, Record-basiert |
 | F34 | CSV-Export bereinigt | ✅ Umgesetzt | 10/10 | `export/csv_export.py`, `/api/export/csv` | NER + EDTF + GND Anreicherungen, BOM für Excel |
 | F35 | JSON-LD Export | ✅ Umgesetzt | 10/10 | `export/jsonld.py`, `/api/export/jsonld` | Schema.org, GND + Wikidata sameAs, EDTF Dates |
 
@@ -226,11 +226,11 @@
 | NER | 4 | 1 | 0 | 5 |
 | Datierung | 2 | 0 | 0 | 2 |
 | KI-Integration | 6 | 0 | 0 | 6 |
-| Export | 4 | 0 | 1 | 5 |
+| Export | 5 | 0 | 0 | 5 |
 | Enrichment | 2 | 0 | 1 | 3 |
 | Dashboard | 3 | 0 | 0 | 3 |
 | Infrastruktur | 5 | 0 | 1 | 6 |
-| **Gesamt** | **37** | **0** | **4** | **41** |
+| **Gesamt** | **38** | **0** | **3** | **41** |
 
 ### Automatische Tests
 
@@ -246,15 +246,16 @@
 | test_gnd_enrich.py | 24/40 | 0 | 16 | ✅ |
 | test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
-| test_image_upload.py | 30/30 | 0 | 0 | ✅ |
+| test_image_upload.py | 31/31 | 0 | 0 | ✅ |
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
 | test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
 | test_new_features.py | 39/39 | 0 | 0 | ✅ |
 | test_roadmap.py | 5/5 | 0 | 0 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
+| test_cli.py | 8/8 | 0 | 0 | ✅ |
 | test_workspace_export.py | 24/24 | 0 | 0 | ✅ |
-| **Gesamt** | **433/449** | **0** | **16** | **✅** |
+| **Gesamt** | **442/458** | **0** | **16** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

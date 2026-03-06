@@ -62,10 +62,10 @@ Alle Module, Tests, API-Endpunkte, das Dashboard und die Entwicklungsplanung wur
 ### ARCH-05: Unnoetige Imports in `image_data()` [BEHOBEN]
 - Doppelte lokale Imports entfernt, ungenutzter `tempfile`-Import bereinigt.
 
-### ARCH-03: Bild-Analyse ohne Workspace-Persistenz [OFFEN]
-- Bildanalyse-Ergebnisse werden nur In-Memory gespeichert.
-- Bei Server-Neustart gehen alle Ergebnisse verloren.
-- **Empfehlung:** `ImageAnalysis`-Datenklasse in `workspace.py` einfuehren.
+### ARCH-03: Bild-Analyse ohne Workspace-Persistenz [BEHOBEN]
+- `POST /api/images/analyze` schreibt den Workspace nach jeder Analyse automatisch auf Disk.
+- Datei: `src/kwb/api/routes/ai.py` — `ws.save(workspace_dir() / safe_filename(ws.name))`.
+- Ergebnisse ueberleben Server-Neustart ohne manuellen Save-Schritt.
 
 ### ARCH-04: Bilder in `/tmp` — Datenverlust bei Systemneustart [OFFEN]
 - `_IMAGE_DIR` zeigt auf `/tmp/debussy_uploads/` — OS kann `/tmp` leeren.
@@ -91,7 +91,7 @@ Alle Module, Tests, API-Endpunkte, das Dashboard und die Entwicklungsplanung wur
 - **TEST-05:** GPUStack-Provider wird nie (auch nicht gemockt) getestet
 - **TEST-06:** MockProvider maskiert Fehlerszenarien (ungueltige JSON, leere Antworten)
 - **TEST-07:** OCR-Test-Assertion prueft deutsch ("Transkription") statt englisch ("transcription")
-- **TEST-08:** Kein CLI-Test (`test_cli.py` fehlt)
+- **TEST-08:** ~~Kein CLI-Test~~ `test_cli.py` hinzugefuegt (8 Tests: analyze, plan, Fehlerfall, Output-Datei)
 
 ---
 
@@ -142,11 +142,11 @@ Alle Module, Tests, API-Endpunkte, das Dashboard und die Entwicklungsplanung wur
 | Kategorie | Gefunden | Behoben | Offen |
 |-----------|----------|---------|-------|
 | Kritische Bugs | 4 | 4 | 0 |
-| Architektur-Probleme | 5 | 3 | 2 |
-| Test-Schwaechenn | 8 | 3 | 5 |
+| Architektur-Probleme | 5 | 4 | 1 |
+| Test-Schwaechenn | 8 | 4 | 4 |
 | UX-Probleme | 5 | 0 | 5 |
 | Planungs-Inkonsistenzen | 3 | 1 | 2 |
-| **Gesamt** | **25** | **11** | **14** |
+| **Gesamt** | **25** | **13** | **12** |
 
 ### Ergebnis
 Alle 10 Testfehler (5 Failures + 5 Errors) wurden behoben.
