@@ -5,6 +5,9 @@ Router prefix: /api
 """
 from __future__ import annotations
 
+import csv
+import io
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -186,3 +189,34 @@ async def export_jsonld_route(request: dict):
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
 
+
+
+@router.get("/api/export/image-analyses")
+async def export_image_analyses(format: str = "json"):
+    """Export image analysis results incl. technical metadata as JSON or CSV."""
+    ws = get_workspace()
+    rows = [r.to_dict() for r in ws.image_analyses]
+
+    if format.lower() == "csv":
+        out = io.StringIO()
+        fieldnames = [
+            "image_id", "filename", "media_type", "size_bytes", "width", "height",
+            "hash_sha256", "exif_subset", "analyzed", "model", "analyzed_at", "result",
+        ]
+        w = csv.DictWriter(out, fieldnames=fieldnames)
+        w.writeheader()
+        for row in rows:
+            row = dict(row)
+            row["exif_subset"] = json.dumps(row.get("exif_subset", {}), ensure_ascii=False)
+            row["result"] = json.dumps(row.get("result", {}), ensure_ascii=False)
+            w.writerow({k: row.get(k, "") for k in fieldnames})
+        return Response(
+            content=out.getvalue().encode("utf-8-sig"),
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": 'attachment; filename="image_analyses.csv"'},
+        )
+
+    if format.lower() == "json":
+        return {"image_analyses": rows, "count": len(rows)}
+
+    return JSONResponse({"error": "format muss 'json' oder 'csv' sein"}, 400)

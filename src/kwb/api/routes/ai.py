@@ -35,6 +35,7 @@ from kwb.ai.prompts import (
     prompt_ocr_transcription_quality,
 )
 from kwb.core.workspace import ImageAnalysisResult
+from kwb.ingest.image_loader import ingest_image
 
 router = APIRouter()
 
@@ -156,6 +157,14 @@ _IMAGE_DIR.mkdir(exist_ok=True)
 _uploaded_images: dict[str, dict] = {}
 
 
+def _image_exif_subset(exif: dict | None) -> dict:
+    """Return a compact EXIF subset useful for review/export."""
+    if not exif:
+        return {}
+    keys = ("DateTime", "DateTimeOriginal", "Make", "Model", "Orientation", "Artist")
+    return {k: exif[k] for k in keys if k in exif and exif[k] not in (None, "")}
+
+
 def _sync_index() -> None:
     """Re-populate the metadata index from files on disk, restoring workspace results."""
     ext_to_mime = {
@@ -175,8 +184,12 @@ def _sync_index() -> None:
                 _uploaded_images[img_id] = {
                     "id": img_id,
                     "filename": ws_result.filename if ws_result else p.name,
-                    "media_type": ext_to_mime[p.suffix.lower()],
-                    "size_bytes": p.stat().st_size,
+                    "media_type": ws_result.media_type if ws_result and ws_result.media_type else ext_to_mime[p.suffix.lower()],
+                    "size_bytes": ws_result.size_bytes if ws_result and ws_result.size_bytes else p.stat().st_size,
+                    "width": ws_result.width if ws_result else None,
+                    "height": ws_result.height if ws_result else None,
+                    "hash_sha256": ws_result.hash_sha256 if ws_result else "",
+                    "exif_subset": ws_result.exif_subset if ws_result else {},
                     "path": str(p),
                     "analyzed": ws_result.analyzed if ws_result else False,
                     "result": ws_result.result if ws_result else None,
@@ -217,21 +230,27 @@ async def images_upload(files: list[UploadFile] = File(...)):
         if len(content) > MAX_FILE_BYTES:
             return JSONResponse({"error": f"'{u.filename}': Max 50 MB"}, 400)
 
-        # Detect media type
-        media_type = {
+        img_id = f"img_{len(_uploaded_images) + 1:04d}_{Path(u.filename).stem}"
+        img_path = _IMAGE_DIR / f"{img_id}{suffix}"
+        img_path.write_bytes(content)
+
+        profile = ingest_image(img_path, load_base64=False)
+        exif_subset = _image_exif_subset(profile.exif)
+        media_type = profile.mime_type or {
             ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
             ".png": "image/png", ".tif": "image/tiff",
             ".tiff": "image/tiff", ".webp": "image/webp",
         }.get(suffix, "image/jpeg")
 
-        img_id = f"img_{len(_uploaded_images) + 1:04d}_{Path(u.filename).stem}"
-        img_path = _IMAGE_DIR / f"{img_id}{suffix}"
-        img_path.write_bytes(content)
         _uploaded_images[img_id] = {
             "id": img_id,
             "filename": u.filename,
             "media_type": media_type,
-            "size_bytes": len(content),
+            "size_bytes": profile.file_size_bytes,
+            "width": profile.width,
+            "height": profile.height,
+            "hash_sha256": profile.hash_sha256,
+            "exif_subset": exif_subset,
             "path": str(img_path),
             "analyzed": False,
             "result": None,
@@ -239,8 +258,12 @@ async def images_upload(files: list[UploadFile] = File(...)):
         accepted.append({
             "id": img_id,
             "filename": u.filename,
-            "size_bytes": len(content),
+            "size_bytes": profile.file_size_bytes,
             "media_type": media_type,
+            "width": profile.width,
+            "height": profile.height,
+            "hash_sha256": profile.hash_sha256,
+            "exif_subset": exif_subset,
         })
 
     return {"uploaded": len(accepted), "images": accepted}
@@ -265,7 +288,12 @@ async def images_list():
         "images": [
             {
                 "id": img["id"], "filename": img["filename"],
-                "size_bytes": img["size_bytes"], "analyzed": img["analyzed"],
+                "media_type": img["media_type"],
+                "size_bytes": img["size_bytes"],
+                "width": img.get("width"), "height": img.get("height"),
+                "hash_sha256": img.get("hash_sha256", ""),
+                "exif_subset": img.get("exif_subset", {}),
+                "analyzed": img["analyzed"],
                 "result": img["result"],
             }
             for img in _uploaded_images.values()
@@ -328,6 +356,11 @@ async def images_analyze(request: dict):
                 image_id=img_id,
                 filename=img["filename"],
                 media_type=img["media_type"],
+                size_bytes=img.get("size_bytes", 0),
+                width=img.get("width"),
+                height=img.get("height"),
+                hash_sha256=img.get("hash_sha256", ""),
+                exif_subset=img.get("exif_subset", {}),
                 analyzed=True,
                 result=parsed,
                 model=mod or "default",

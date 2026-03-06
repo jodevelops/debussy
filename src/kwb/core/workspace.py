@@ -263,6 +263,11 @@ class ImageAnalysisResult:
     image_id: str
     filename: str = ""
     media_type: str = ""
+    size_bytes: int = 0
+    width: int | None = None
+    height: int | None = None
+    hash_sha256: str = ""
+    exif_subset: dict = field(default_factory=dict)
     analyzed: bool = False
     result: dict = field(default_factory=dict)
     model: str = ""
@@ -278,6 +283,11 @@ class ImageAnalysisResult:
             "image_id": self.image_id,
             "filename": self.filename,
             "media_type": self.media_type,
+            "size_bytes": self.size_bytes,
+            "width": self.width,
+            "height": self.height,
+            "hash_sha256": self.hash_sha256,
+            "exif_subset": self.exif_subset,
             "analyzed": self.analyzed,
             "result": self.result,
             "model": self.model,
@@ -295,6 +305,11 @@ class ImageAnalysisResult:
             image_id=d.get("image_id", ""),
             filename=d.get("filename", ""),
             media_type=d.get("media_type", ""),
+            size_bytes=int(d.get("size_bytes", 0) or 0),
+            width=d.get("width"),
+            height=d.get("height"),
+            hash_sha256=d.get("hash_sha256", ""),
+            exif_subset=d.get("exif_subset", {}) or {},
             analyzed=d.get("analyzed", False),
             result=d.get("result", {}),
             model=d.get("model", ""),
