@@ -565,10 +565,8 @@ async function runNER(isPilot=false){
       sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
       stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
       model:$('cfg-mt').value||'',
-      system_prompt:$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
       system_prompt:$('ner-sp').value||$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);updWS()
+    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
 
@@ -678,11 +676,10 @@ async function runScan(isPilot=false){const ds=$('scan-ds').value;if(!ds){alert(
       sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
       stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
       model:$('cfg-mt').value||'',
-      system_prompt:$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
       system_prompt:$('scan-sp').value||$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);renderScan(r)
+    if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
   }catch(e){alert(e.message)}finally{hp()}}
+
 
 function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||[];
   if(!issues.length){$('scan-body').innerHTML='<p style="color:var(--ok)">Keine problematischen Begriffe gefunden.</p>';return}
@@ -704,11 +701,10 @@ async function runEDTF(isPilot=false){const ds=$('edtf-ds').value,col=$('edtf-co
       stratified:isPilot,chunk_size:parseInt($('edtf-chunk').value)||200,
       use_llm:$('edtf-llm').value==='1',
       model:$('cfg-mt').value||'',
-      system_prompt:$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);renderRunMetrics('edtf-metrics',r.run_metrics);updWS()
       system_prompt:$('edtf-sp').value||$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);updWS()
+    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);renderRunMetrics('edtf-metrics',r.run_metrics);updWS()
   }catch(e){alert(e.message)}finally{hp()}}
+
 
 function renderEDTF(r){
   $('edtf-e').style.display='none';$('edtf-r').style.display='block';

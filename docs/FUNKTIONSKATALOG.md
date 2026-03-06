@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 418/527 Tests bestanden, 0 fehlgeschlagen, 109 übersprungen
+**Gesamtstatus:** 419/528 Tests bestanden, 0 fehlgeschlagen, 109 übersprungen
 
 ---
 
@@ -255,8 +255,8 @@
 | test_roadmap.py | 8/8 | 0 | 0 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
-| test_workspace_export.py | 25/25 | 0 | 0 | ✅ |
-| **Gesamt** | **418/527** | **0** | **109** | **✅** |
+| test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
+| **Gesamt** | **419/528** | **0** | **109** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
