@@ -234,6 +234,12 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div>
 <h3>Hochgeladene Bilder</h3>
 <div id="img-mock-hint" class="em" style="font-size:.73rem;color:#996600;display:none;margin-bottom:.4rem">Hinweis: Im Testdaten-Modus liefert die Analyse nur Beispieldaten. F&uuml;r echte Bilderkennung ein Vision-Modell in &#9881;&#65039; KI konfigurieren.</div>
+<div id="img-filters" style="display:flex;gap:.35rem;flex-wrap:wrap;margin:.4rem 0 .5rem 0">
+  <div class="fb2 a" data-img-filter="all" onclick="setImgFilter('all',this)">Alle</div>
+  <div class="fb2" data-img-filter="tiny" onclick="setImgFilter('tiny',this)">Sehr kleine Bilder</div>
+  <div class="fb2" data-img-filter="dup" onclick="setImgFilter('dup',this)">Duplikat-Verdacht (Hash)</div>
+  <div class="fb2" data-img-filter="no_analysis" onclick="setImgFilter('no_analysis',this)">Ohne Analyse</div>
+</div>
 <div id="img-list-empty" class="em" style="font-size:.78rem">Noch keine Bilder hochgeladen.</div>
 <div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.4rem"></div>
 
@@ -694,6 +700,7 @@ function nerSelectAll(checked){
 
 // === IMAGES ===
 let uploadedImages = [];
+let imgFilter = 'all';
 
 function applyImgPreset(){
   const key = $('img-preset').value;
@@ -720,12 +727,46 @@ async function uploadImages(){
   }catch(e){$('img-upload-status').textContent='Fehler: '+e;hp();}
 }
 
+function _imgHashCounts(){
+  const m = {};
+  uploadedImages.forEach(img=>{
+    const h = img.hash_sha256 || '';
+    if(!h) return;
+    m[h] = (m[h] || 0) + 1;
+  });
+  return m;
+}
+
+function setImgFilter(filter, btn){
+  imgFilter = filter || 'all';
+  document.querySelectorAll('#img-filters .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn) btn.classList.add('a');
+  renderImgGrid();
+}
+
+function _filteredImages(){
+  const hc = _imgHashCounts();
+  if(imgFilter === 'tiny') return uploadedImages.filter(img=>{
+    const w = Number(img.width || 0), h = Number(img.height || 0);
+    return !!(w && h) && (w <= 256 || h <= 256);
+  });
+  if(imgFilter === 'dup') return uploadedImages.filter(img=>{
+    const h = img.hash_sha256 || '';
+    return !!h && (hc[h] || 0) > 1;
+  });
+  if(imgFilter === 'no_analysis') return uploadedImages.filter(img=>!img.analyzed);
+  return uploadedImages;
+}
+
 function renderImgGrid(){
   const grid = $('img-grid');
   const empty = $('img-list-empty');
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
+  const shown = _filteredImages();
+  if(!shown.length){empty.style.display='block';empty.textContent='Keine Bilder für den gewählten Filter.';grid.innerHTML='';return}
   empty.style.display='none';
-  grid.innerHTML = uploadedImages.map(function(img){
+  empty.textContent='Noch keine Bilder hochgeladen.';
+  grid.innerHTML = shown.map(function(img){
     return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
       +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
       +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'

@@ -111,6 +111,9 @@ class TestImageUpload(unittest.TestCase):
         data = r.json()
         self.assertEqual(data["uploaded"], 1)
         self.assertEqual(data["images"][0]["media_type"], "image/png")
+        self.assertEqual(data["images"][0]["width"], 1)
+        self.assertEqual(data["images"][0]["height"], 1)
+        self.assertTrue(data["images"][0]["hash_sha256"])
 
     def test_upload_tiff(self):
         r = self.client.post("/api/images/upload", files=[_img_file(_TIFF, "scan.tif")])
@@ -195,6 +198,10 @@ class TestImageList(unittest.TestCase):
             self.assertIn("id", img)
             self.assertIn("filename", img)
             self.assertIn("analyzed", img)
+            self.assertIn("width", img)
+            self.assertIn("height", img)
+            self.assertIn("hash_sha256", img)
+            self.assertIn("exif_subset", img)
             self.assertFalse(img["analyzed"])  # not yet analyzed
 
 
@@ -379,6 +386,8 @@ class TestImageWorkflow(unittest.TestCase):
         self.assertEqual(ia.image_id, img_id)
         self.assertTrue(ia.analyzed)
         self.assertIn("description", ia.result)
+        self.assertTrue(ia.hash_sha256)
+        self.assertGreater(ia.size_bytes, 0)
 
         # 5. List should show analyzed=True
         r = self.client.get("/api/images")
@@ -394,6 +403,11 @@ class TestImageWorkflow(unittest.TestCase):
             image_id="img_0001_test",
             filename="test.jpg",
             media_type="image/jpeg",
+            size_bytes=1234,
+            width=640,
+            height=480,
+            hash_sha256="abc123",
+            exif_subset={"Model": "TestCam"},
             analyzed=True,
             result={"description": "Ein Testbild"},
             model="mock-model",
@@ -408,6 +422,8 @@ class TestImageWorkflow(unittest.TestCase):
         self.assertEqual(ia.image_id, "img_0001_test")
         self.assertTrue(ia.analyzed)
         self.assertEqual(ia.result["description"], "Ein Testbild")
+        self.assertEqual(ia.width, 640)
+        self.assertEqual(ia.hash_sha256, "abc123")
 
     def test_clear_removes_from_disk(self):
         """DELETE /api/images also removes files from disk."""
