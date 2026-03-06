@@ -282,6 +282,9 @@ class ImageAnalysisResult:
     review_status: ImageReviewStatus = ImageReviewStatus.PENDING
     review_comment: str = ""
     reviewer: str = ""
+    prompt_name: str = ""
+    prompt_version: str = ""
+    review_note: str = ""
     reviewed_at: str = ""
 
     @property
@@ -323,12 +326,6 @@ class ImageAnalysisResult:
                 self.result = {}
             self.result.update(result_updates)
         self.reviewed_at = datetime.utcnow().isoformat()
-    prompt_name: str = ""
-    prompt_version: str = ""
-    review_status: str = "pending"
-    review_note: str = ""
-    reviewed_at: str = ""
-
     def to_dict(self) -> dict:
         return {
             "image_id": self.image_id,
@@ -344,12 +341,11 @@ class ImageAnalysisResult:
             "model": self.model,
             "analyzed_at": self.analyzed_at,
             "record_id": self.record_id,
-            "review_status": self.review_status.value,
             "review_comment": self.review_comment,
             "reviewer": self.reviewer,
             "prompt_name": self.prompt_name,
             "prompt_version": self.prompt_version,
-            "review_status": self.review_status,
+            "review_status": self.review_status.value,
             "review_note": self.review_note,
             "reviewed_at": self.reviewed_at,
         }
@@ -375,7 +371,6 @@ class ImageAnalysisResult:
             reviewer=d.get("reviewer", ""),
             prompt_name=d.get("prompt_name", ""),
             prompt_version=d.get("prompt_version", ""),
-            review_status=d.get("review_status", "pending"),
             review_note=d.get("review_note", ""),
             reviewed_at=d.get("reviewed_at", ""),
         )
