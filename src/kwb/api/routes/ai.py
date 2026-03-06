@@ -404,7 +404,6 @@ async def images_analyze(request: dict):
                 reviewed_at=img.get("reviewed_at", ""),
                 prompt_name=prompt_name,
                 prompt_version=prompt_version,
-                review_status="pending",
             ))
             ws.save(workspace_dir() / safe_filename(ws.name))
 
