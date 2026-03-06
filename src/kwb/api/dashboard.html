@@ -188,6 +188,9 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <button class="btn" onclick="runPilot('edtf')">🧪 Pilotlauf auf 2%</button>
 <button class="btn f" onclick="runEDTF()">▶️ Gesamtlauf fortsetzen</button>
 </div>
+<label>EDTF Prompt-Preset</label><select id="edtf-preset" onchange="applyActionPreset('edtf')"><option value="edtf_de">EDTF</option><option value="custom">Eigen</option></select>
+<textarea id="edtf-sp" rows="3" style="margin-top:.3rem"></textarea>
+<button class="btn f" onclick="runEDTF()">📅 Konvertieren</button>
 </div>
 <div class="c"><h2>EDTF-Regeln (LOC Standard)</h2>
 <div style="font-size:.7rem;font-family:monospace;line-height:1.8">
@@ -239,19 +242,29 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
   </select>
   <textarea id="img-sp" class="ta" style="height:4rem;margin-top:.3rem"></textarea>
 </div>
+<label class="lbl" style="margin-top:.3rem">Analyseaufgabe</label><select id="img-task" class="sel" style="width:100%"><option value="image_description">Bildbeschreibung/Alt-Text</option><option value="person_face_visibility">Personen-/Gesichtssichtbarkeit</option></select>
 <button class="btn f" onclick="analyzeImages()">🔍 Analysieren</button>
+<label class="lbl" style="margin-top:.5rem">OCR Prompt-Preset</label><select id="ocr-preset" class="sel" style="width:100%" onchange="applyActionPreset('ocr')"><option value="vision_de">Vision/OCR</option><option value="custom">Eigen</option></select>
+<textarea id="ocr-sp" class="ta" style="height:3.5rem;margin-top:.3rem"></textarea>
 <button class="btn f" style="margin-top:.3rem;background:var(--info)" onclick="runOCR()">📖 Text erkennen (OCR)</button>
 </div>
 
 <div>
 <h3>Hochgeladene Bilder</h3>
 <div id="img-mock-hint" class="em" style="font-size:.73rem;color:#996600;display:none;margin-bottom:.4rem">Hinweis: Im Testdaten-Modus liefert die Analyse nur Beispieldaten. F&uuml;r echte Bilderkennung ein Vision-Modell in &#9881;&#65039; KI konfigurieren.</div>
+<div id="img-filters" style="display:flex;gap:.35rem;flex-wrap:wrap;margin:.4rem 0 .5rem 0">
+  <div class="fb2 a" data-img-filter="all" onclick="setImgFilter('all',this)">Alle</div>
+  <div class="fb2" data-img-filter="tiny" onclick="setImgFilter('tiny',this)">Sehr kleine Bilder</div>
+  <div class="fb2" data-img-filter="dup" onclick="setImgFilter('dup',this)">Duplikat-Verdacht (Hash)</div>
+  <div class="fb2" data-img-filter="no_analysis" onclick="setImgFilter('no_analysis',this)">Ohne Analyse</div>
+</div>
 <div id="img-list-empty" class="em" style="font-size:.78rem">Noch keine Bilder hochgeladen.</div>
 <div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.4rem"></div>
 
 <h3 style="margin-top:1rem">Analyseergebnisse</h3>
 <div id="img-results-empty" class="em" style="font-size:.78rem">Noch keine Ergebnisse.</div>
 <div id="img-results"></div>
+<div class="c" style="margin-top:1rem"><h2>Experten-Review (KI-Vorschläge)</h2><div id="img-review-stats" style="font-size:.72rem;color:#666;margin-bottom:.4rem"></div><div id="img-review-list"></div></div>
 </div></div>
 </div></div>
 
@@ -525,6 +538,8 @@ async function runNER(isPilot=false){
       model:$('cfg-mt').value||'',
       system_prompt:$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
+      system_prompt:$('ner-sp').value||$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
 
@@ -636,6 +651,8 @@ async function runScan(isPilot=false){const ds=$('scan-ds').value;if(!ds){alert(
       model:$('cfg-mt').value||'',
       system_prompt:$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
+      system_prompt:$('scan-sp').value||$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);renderScan(r)
   }catch(e){alert(e.message)}finally{hp()}}
 
 function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||[];
@@ -660,6 +677,8 @@ async function runEDTF(isPilot=false){const ds=$('edtf-ds').value,col=$('edtf-co
       model:$('cfg-mt').value||'',
       system_prompt:$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);renderRunMetrics('edtf-metrics',r.run_metrics);updWS()
+      system_prompt:$('edtf-sp').value||$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}}
 
 function renderEDTF(r){
@@ -696,6 +715,7 @@ async function loadWS(file){if(!file)return;const fd=new FormData();fd.append('f
 
 // === CONFIG ===
 function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
+function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const k=$(m[0]).value;if(k!=='custom')$(m[1]).value=PRESETS[k]||'';}
 async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
   try{const r=await(await fetch('/api/gpu/test',{method:'POST'})).json();
     $('cfg-test').style.display='block';$('cfg-test').textContent=JSON.stringify(r,null,2)
@@ -761,6 +781,7 @@ async function runPilot(task){
 
 // === IMAGES ===
 let uploadedImages = [];
+let imgFilter = 'all';
 
 function applyImgPreset(){
   const key = $('img-preset').value;
@@ -787,12 +808,46 @@ async function uploadImages(){
   }catch(e){$('img-upload-status').textContent='Fehler: '+e;hp();}
 }
 
+function _imgHashCounts(){
+  const m = {};
+  uploadedImages.forEach(img=>{
+    const h = img.hash_sha256 || '';
+    if(!h) return;
+    m[h] = (m[h] || 0) + 1;
+  });
+  return m;
+}
+
+function setImgFilter(filter, btn){
+  imgFilter = filter || 'all';
+  document.querySelectorAll('#img-filters .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn) btn.classList.add('a');
+  renderImgGrid();
+}
+
+function _filteredImages(){
+  const hc = _imgHashCounts();
+  if(imgFilter === 'tiny') return uploadedImages.filter(img=>{
+    const w = Number(img.width || 0), h = Number(img.height || 0);
+    return !!(w && h) && (w <= 256 || h <= 256);
+  });
+  if(imgFilter === 'dup') return uploadedImages.filter(img=>{
+    const h = img.hash_sha256 || '';
+    return !!h && (hc[h] || 0) > 1;
+  });
+  if(imgFilter === 'no_analysis') return uploadedImages.filter(img=>!img.analyzed);
+  return uploadedImages;
+}
+
 function renderImgGrid(){
   const grid = $('img-grid');
   const empty = $('img-list-empty');
   if(!uploadedImages.length){empty.style.display='block';grid.innerHTML='';return}
+  const shown = _filteredImages();
+  if(!shown.length){empty.style.display='block';empty.textContent='Keine Bilder für den gewählten Filter.';grid.innerHTML='';return}
   empty.style.display='none';
-  grid.innerHTML = uploadedImages.map(function(img){
+  empty.textContent='Noch keine Bilder hochgeladen.';
+  grid.innerHTML = shown.map(function(img){
     return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
       +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
       +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'
@@ -814,7 +869,7 @@ async function analyzeImages(){
     const r = await fetch('/api/images/analyze',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text})
+      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value})
     });
     const data = await r.json();
     if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
@@ -844,9 +899,29 @@ function renderImgResults(results){
       +'<p style="font-size:.78rem;margin:.3rem 0">'+esc(r.description||'')+'</p>'
       +(r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':'')
       +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
-      +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +(r.confidence?'<div style=\"font-size:.65rem;color:#888\">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +'<div style="margin-top:.35rem"><button class="btn sm" onclick="reviewImage(\''+esc(res.id)+'\',\'approved\')">Freigeben</button> <button class="btn sm s" onclick="reviewImage(\''+esc(res.id)+'\',\'rejected\')">Ablehnen</button></div>'
       +'</div>';
   }).join('');
+}
+
+async function reviewImage(imageId,status){
+  try{
+    const r=await fetch('/api/images/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image_id:imageId,status})});
+    const d=await r.json();
+    if(d.error){alert(d.error);return}
+    await refreshReviewStats();
+  }catch(e){alert('Review-Fehler: '+e.message)}
+}
+
+async function refreshReviewStats(){
+  try{
+    const ws=await (await fetch('/api/workspace')).json();
+    const rs=ws.image_review||{};
+    if($('img-review-stats'))$('img-review-stats').textContent='Pending: '+(rs.pending||0)+' · Freigegeben: '+(rs.approved||0)+' · Abgelehnt: '+(rs.rejected||0);
+    const list=(uploadedImages||[]).map(img=>'<div class="rev-pending" style="font-size:.74rem;margin:.2rem 0">'+esc(img.filename||img.id)+' <button class="btn sm" onclick="reviewImage(\''+esc(img.id)+'\',\'approved\')">✓</button> <button class="btn sm s" onclick="reviewImage(\''+esc(img.id)+'\',\'rejected\')">✗</button></div>').join('');
+    if($('img-review-list'))$('img-review-list').innerHTML=list||'<span style="font-size:.72rem;color:#888">Keine Vorschläge.</span>';
+  }catch(e){}
 }
 
 
@@ -871,7 +946,7 @@ async function runOCR(){
   try{
     const r=await fetch('/api/images/ocr',{
       method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids,model:mod})
+      body:JSON.stringify({image_ids:ids,model:mod,system_prompt:$('ocr-sp').value||''})
     });
     const data=await r.json();
     if(data.error){$('img-results-empty').textContent='OCR-Fehler: '+data.error;hp();return;}
@@ -933,7 +1008,7 @@ function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classLi
 function hp(){$('po').classList.remove('a')}
 
 // === INIT ===
-(function(){loadPreset(); applyImgPreset();
+(function(){loadPreset(); applyImgPreset(); applyActionPreset('ner'); applyActionPreset('scan'); applyActionPreset('edtf'); applyActionPreset('ocr'); refreshReviewStats();
   $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
   renderCatalog();chkGPU();updWS()})();
 </script>

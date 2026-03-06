@@ -32,6 +32,10 @@ from kwb.enrich.edtf import SYSTEM_EDTF
 from kwb.ai.prompts import (
     SYSTEM_METADATA_EXPERT_DE, SYSTEM_METADATA_EXPERT_EN,
     SYSTEM_VISION_EXPERT_DE,
+    prompt_image_description,
+    prompt_person_face_visibility,
+    prompt_ocr_transcription_quality,
+    prompt_entity_extraction_normdata,
 )
 
 # Route modules
@@ -65,6 +69,10 @@ PRESETS = {
     "meta_de": SYSTEM_METADATA_EXPERT_DE,
     "meta_en": SYSTEM_METADATA_EXPERT_EN,
     "vision_de": SYSTEM_VISION_EXPERT_DE,
+    "img_desc_de": prompt_image_description()[1].content,
+    "img_faces_de": prompt_person_face_visibility()[1].content,
+    "ocr_de": prompt_ocr_transcription_quality()[1].content,
+    "entity_norm_de": prompt_entity_extraction_normdata("Beispiel")[1].content,
     "ner_de": SYSTEM_NER,
     "edtf_de": SYSTEM_EDTF,
     "scan_de": (
