@@ -438,6 +438,53 @@ async def image_review_update(img_id: str, request: dict):
     }
 
 
+
+
+@router.post("/api/images/review/batch")
+async def image_review_batch(request: dict):
+    """Batch-update review decisions for multiple image analyses."""
+    image_ids = request.get("image_ids", [])
+    if not image_ids:
+        return JSONResponse({"error": "Keine Bilder ausgewählt"}, 400)
+
+    status_raw = request.get("status", "pending")
+    try:
+        status = ImageReviewStatus(status_raw)
+    except ValueError:
+        return JSONResponse({"error": "Ungültiger Review-Status"}, 400)
+
+    comment = request.get("comment", "")
+    reviewer = request.get("reviewer", "")
+
+    ws = get_workspace()
+    updated = 0
+    from datetime import datetime
+
+    for img_id in image_ids:
+        img = _uploaded_images.get(img_id)
+        if not img:
+            continue
+
+        img["review_status"] = status.value
+        if comment:
+            img["review_comment"] = comment
+        if reviewer:
+            img["reviewer"] = reviewer
+        img["reviewed_at"] = datetime.utcnow().isoformat()
+
+        existing = ws.get_image_analysis(img_id)
+        if existing:
+            existing.update_review(
+                status=status,
+                comment=img.get("review_comment", ""),
+                reviewer=img.get("reviewer", ""),
+            )
+            ws.save_image_analysis(existing)
+            updated += 1
+
+    ws.save(workspace_dir() / safe_filename(ws.name))
+    return {"updated": updated, "status": status.value}
+
 @router.delete("/api/images")
 async def images_clear():
     """Clear all uploaded images from memory and disk."""

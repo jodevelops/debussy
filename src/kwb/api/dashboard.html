@@ -238,6 +238,18 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div id="img-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.6rem;margin-top:.4rem"></div>
 
 <h3 style="margin-top:1rem">Analyseergebnisse</h3>
+<div style="display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;margin:.35rem 0">
+<select id="img-review-filter" style="width:170px" onchange="applyImageFilter()">
+  <option value="all">Alle Status</option>
+  <option value="pending">pending</option>
+  <option value="accepted">accepted</option>
+  <option value="rejected">rejected</option>
+</select>
+<input type="text" id="img-bulk-reviewer" placeholder="Reviewer (Bulk)" style="width:180px">
+<input type="text" id="img-bulk-comment" placeholder="Kommentar (Bulk)">
+<button class="btn sm" onclick="bulkReviewVisible('accepted')">Alle sichtbaren bestätigen</button>
+<button class="btn sm" style="background:var(--crit)" onclick="bulkReviewVisible('rejected')">Alle sichtbaren verwerfen</button>
+</div>
 <div id="img-results-empty" class="em" style="font-size:.78rem">Noch keine Ergebnisse.</div>
 <div id="img-results"></div>
 </div></div>
@@ -364,6 +376,7 @@ let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
 let nerStatusFilter='all', nerTypeFilter='all';
 let fmMapping={}; // current field mapping state
 let latestImageResults=[];
+let filteredImageResults=[];
 
 // === SECURITY ===
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
@@ -778,11 +791,20 @@ async function analyzeImages(){
 
 function renderImgResults(results){
   latestImageResults = results || [];
+  applyImageFilter();
+}
+
+function applyImageFilter(){
   const el=$('img-results');
   const empty=$('img-results-empty');
-  if(!latestImageResults.length){empty.style.display='block';el.innerHTML='';return}
+  const filter=($('img-review-filter')&&$('img-review-filter').value)||'all';
+  filteredImageResults = latestImageResults.filter(function(res){
+    return filter==='all' || (res.review_status||'pending')===filter;
+  });
+  if(!filteredImageResults.length){empty.style.display='block';el.innerHTML='';return}
   empty.style.display='none';
-  el.innerHTML = latestImageResults.map(function(res, idx){
+  el.innerHTML = filteredImageResults.map(function(res, idx){
+    const originalIdx = latestImageResults.indexOf(res);
     if(res.error) return '<div class="card" style="border-color:#e55"><strong>'+esc(res.id||res.filename||'')+'</strong><br><span style="color:#c00">'+esc(res.error)+'</span></div>';
     var r = res.result || {};
     var status = res.review_status || 'pending';
@@ -803,12 +825,13 @@ function renderImgResults(results){
       +'<button class="btn sm" style="background:var(--ok)" onclick="saveImageReview('+idx+',\'accepted\')">✅ bestätigen</button>'
       +'<button class="btn sm" style="background:var(--crit)" onclick="saveImageReview('+idx+',\'rejected\')">🗑 verwerfen</button>'
       +'</div>'
+      +'<div style="font-size:.65rem;color:#777;margin-top:.2rem">ID: '+esc(res.id)+' • #'+(originalIdx+1)+'</div>'
       +'</div>';
   }).join('');
 }
 
 async function saveImageReview(idx, forceStatus){
-  const item = latestImageResults[idx];
+  const item = filteredImageResults[idx];
   if(!item)return;
   const payload={
     status:forceStatus || $('img-status-'+idx).value,
@@ -826,7 +849,7 @@ async function saveImageReview(idx, forceStatus){
     item.reviewer=d.image.reviewer;
     item.record_id=d.image.record_id;
     item.result=d.image.result;
-    renderImgResults(latestImageResults);
+    applyImageFilter();
   }catch(e){alert('Review-Fehler: '+e.message);}
 }
 
@@ -842,6 +865,30 @@ async function runWikidataLookup(){
   }catch(e){alert('Fehler: '+e.message);}finally{hp();}
 }
 
+
+
+async function bulkReviewVisible(status){
+  const ids=filteredImageResults.filter(x=>!x.error).map(x=>x.id);
+  if(!ids.length){alert('Keine sichtbaren Ergebnisse.');return;}
+  try{
+    const r=await fetch('/api/images/review/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+      image_ids:ids,
+      status:status,
+      reviewer:$('img-bulk-reviewer')?$('img-bulk-reviewer').value:'',
+      comment:$('img-bulk-comment')?$('img-bulk-comment').value:''
+    })});
+    const d=await r.json();
+    if(d.error){alert('Bulk-Review-Fehler: '+d.error);return;}
+    latestImageResults.forEach(function(item){
+      if(ids.includes(item.id)){
+        item.review_status=status;
+        if($('img-bulk-reviewer') && $('img-bulk-reviewer').value) item.reviewer=$('img-bulk-reviewer').value;
+        if($('img-bulk-comment') && $('img-bulk-comment').value) item.review_comment=$('img-bulk-comment').value;
+      }
+    });
+    applyImageFilter();
+  }catch(e){alert('Bulk-Review-Fehler: '+e.message);}
+}
 
 async function loadImages(){
   try{
