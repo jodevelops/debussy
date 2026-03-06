@@ -5,6 +5,9 @@ Router prefix: /api
 """
 from __future__ import annotations
 
+import csv
+import io
+import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,6 +22,57 @@ from kwb.api.deps import get_datasets, get_workspace
 from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
 
 router = APIRouter()
+
+
+def _build_image_result_rows(ws):
+    rows = []
+    for r in ws.image_analyses:
+        payload = r.result if isinstance(r.result, dict) else {}
+        rows.append({
+            "image_id": r.image_id,
+            "record_id": r.record_id,
+            "filename": r.filename,
+            "review_status": r.review_status.value,
+            "review_comment": r.review_comment,
+            "reviewer": r.reviewer,
+            "confidence": r.confidence,
+            "description": payload.get("description", ""),
+            "objects": "; ".join(payload.get("objects", []) or []),
+            "persons": "; ".join(payload.get("persons", []) or []),
+            "places": "; ".join(payload.get("places", []) or []),
+            "style": payload.get("style", ""),
+            "period": payload.get("period", ""),
+            "provenance": json.dumps(r.provenance, ensure_ascii=False),
+        })
+    return rows
+
+
+def _image_rows_as_jsonld(rows, base_url: str = "https://example.org/images/") -> dict:
+    context = {
+        "@vocab": "https://schema.org/",
+        "prov": "http://www.w3.org/ns/prov#",
+        "reviewStatus": "prov:wasInvalidatedBy",
+        "confidence": "http://example.org/vocab/confidence",
+    }
+    graph = []
+    for row in rows:
+        graph.append({
+            "@id": f"{base_url}{row['image_id']}",
+            "@type": "ImageObject",
+            "identifier": row["image_id"],
+            "name": row["filename"],
+            "isPartOf": row.get("record_id") or None,
+            "description": row.get("description", ""),
+            "keywords": [x for x in row.get("objects", "").split("; ") if x],
+            "contentLocation": [x for x in row.get("places", "").split("; ") if x],
+            "about": [x for x in row.get("persons", "").split("; ") if x],
+            "confidence": row.get("confidence", 0),
+            "reviewStatus": row.get("review_status", "pending"),
+            "comment": row.get("review_comment", ""),
+            "creator": row.get("reviewer", ""),
+            "prov:wasGeneratedBy": row.get("provenance", ""),
+        })
+    return {"@context": context, "@graph": graph}
 
 
 @router.post("/api/export/goobi-preview")
@@ -164,3 +218,44 @@ async def export_jsonld_route(request: dict):
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
 
+
+
+@router.post("/api/export/image-results")
+async def export_image_results(request: dict):
+    """Export image analysis results including review status and provenance."""
+    ws = get_workspace()
+    rows = _build_image_result_rows(ws)
+    review_status = request.get("review_status", "")
+    if review_status:
+        rows = [r for r in rows if r["review_status"] == review_status]
+
+    fmt = (request.get("format", "csv") or "csv").lower()
+    if fmt == "csv":
+        fieldnames = [
+            "image_id", "record_id", "filename", "review_status", "review_comment",
+            "reviewer", "confidence", "description", "objects", "persons", "places",
+            "style", "period", "provenance",
+        ]
+        buf = io.StringIO()
+        w = csv.DictWriter(buf, fieldnames=fieldnames)
+        w.writeheader()
+        w.writerows(rows)
+        return Response(
+            content=("\ufeff" + buf.getvalue()).encode("utf-8"),
+            media_type="text/csv; charset=utf-8-sig",
+            headers={"Content-Disposition": 'attachment; filename="image_results.csv"'},
+        )
+
+    if fmt == "jsonld":
+        base_url = request.get("base_url", "https://example.org/images/")
+        doc = _image_rows_as_jsonld(rows, base_url=base_url)
+        payload = json.dumps(doc, ensure_ascii=False, indent=2).encode("utf-8")
+        if request.get("as_file", True):
+            return Response(
+                content=payload,
+                media_type="application/ld+json",
+                headers={"Content-Disposition": 'attachment; filename="image_results.jsonld"'},
+            )
+        return {"jsonld": doc, "count": len(rows)}
+
+    return JSONResponse({"error": "format must be csv or jsonld"}, 400)

@@ -144,6 +144,12 @@ class ReviewStatus(str, Enum):
     MERGED   = "merged"
 
 
+class ImageReviewStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+
+
 @dataclass
 class EntityReview:
     """Review decision for one named entity candidate."""
@@ -267,6 +273,47 @@ class ImageAnalysisResult:
     result: dict = field(default_factory=dict)
     model: str = ""
     analyzed_at: str = ""
+    record_id: str = ""
+    review_status: ImageReviewStatus = ImageReviewStatus.PENDING
+    review_comment: str = ""
+    reviewer: str = ""
+    reviewed_at: str = ""
+
+    @property
+    def confidence(self) -> float:
+        if isinstance(self.result, dict):
+            try:
+                return float(self.result.get("confidence", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                return 0.0
+        return 0.0
+
+    @property
+    def provenance(self) -> dict:
+        return {
+            "source": "vision_ai",
+            "model": self.model,
+            "analyzed_at": self.analyzed_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+        }
+
+    def update_review(
+        self,
+        *,
+        status: ImageReviewStatus | str,
+        comment: str = "",
+        reviewer: str = "",
+        result_updates: dict | None = None,
+    ) -> None:
+        self.review_status = ImageReviewStatus(status) if isinstance(status, str) else status
+        self.review_comment = comment
+        self.reviewer = reviewer
+        if result_updates:
+            if not isinstance(self.result, dict):
+                self.result = {}
+            self.result.update(result_updates)
+        self.reviewed_at = datetime.utcnow().isoformat()
 
     def to_dict(self) -> dict:
         return {
@@ -277,6 +324,11 @@ class ImageAnalysisResult:
             "result": self.result,
             "model": self.model,
             "analyzed_at": self.analyzed_at,
+            "record_id": self.record_id,
+            "review_status": self.review_status.value,
+            "review_comment": self.review_comment,
+            "reviewer": self.reviewer,
+            "reviewed_at": self.reviewed_at,
         }
 
     @staticmethod
@@ -289,6 +341,11 @@ class ImageAnalysisResult:
             result=d.get("result", {}),
             model=d.get("model", ""),
             analyzed_at=d.get("analyzed_at", ""),
+            record_id=d.get("record_id", ""),
+            review_status=ImageReviewStatus(d.get("review_status", "pending")),
+            review_comment=d.get("review_comment", ""),
+            reviewer=d.get("reviewer", ""),
+            reviewed_at=d.get("reviewed_at", ""),
         )
 
 
@@ -573,6 +630,18 @@ class Workspace:
                 return r
         return None
 
+    def image_review_stats(self) -> dict[str, int]:
+        stats: dict[str, int] = {s.value: 0 for s in ImageReviewStatus}
+        for r in self.image_analyses:
+            stats[r.review_status.value] += 1
+        stats["total"] = len(self.image_analyses)
+        return stats
+
+    def reviewed_image_analyses(self, status: ImageReviewStatus | None = None) -> list[ImageAnalysisResult]:
+        if status is None:
+            return list(self.image_analyses)
+        return [r for r in self.image_analyses if r.review_status == status]
+
     # ------------------------------------------------------------------
     # AI run logging
     # ------------------------------------------------------------------
@@ -603,6 +672,8 @@ class Workspace:
             "entity_status": self.entities_by_status(),
             "ai_runs": len(self.ai_runs),
             "source_files": self.source_files,
+            "image_analysis_count": len(self.image_analyses),
+            "image_review_status": self.image_review_stats(),
         }
 
     # ------------------------------------------------------------------

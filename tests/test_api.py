@@ -425,6 +425,31 @@ class TestExportEndpoints(unittest.TestCase):
         self.assertEqual(body["record_count"], 5)
         self.assertIn("goobi-import-batch", body["xml"])
 
+    def test_image_results_export_csv(self):
+        img = ("files", ("test.jpg", io.BytesIO(_SAMPLE_IMAGE_BYTES), "image/jpeg"))
+        up = self.client.post("/api/images/upload", files=[img])
+        self.assertEqual(up.status_code, 200)
+        image_id = up.json()["images"][0]["id"]
+
+        self.client.post("/api/images/analyze", json={"image_ids": [image_id]})
+        rv = self.client.post(f"/api/images/{image_id}/review", json={
+            "status": "accepted", "comment": "ok", "reviewer": "fachperson", "record_id": "obj_001"
+        })
+        self.assertEqual(rv.status_code, 200)
+
+        ex = self.client.post("/api/export/image-results", json={"format": "csv"})
+        self.assertEqual(ex.status_code, 200)
+        self.assertIn("text/csv", ex.headers.get("content-type", ""))
+        self.assertIn("review_status", ex.text)
+        self.assertIn("accepted", ex.text)
+
+    def test_image_results_export_jsonld(self):
+        ex = self.client.post("/api/export/image-results", json={"format": "jsonld", "as_file": False})
+        self.assertEqual(ex.status_code, 200)
+        body = ex.json()
+        self.assertIn("jsonld", body)
+        self.assertIn("@graph", body["jsonld"])
+
 
 # ---------------------------------------------------------------------------
 # Tests: Workspace endpoints

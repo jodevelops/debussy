@@ -112,6 +112,44 @@ def _parse_name(full_name: str) -> tuple[str, str]:
     return "", full_name.strip()
 
 
+
+
+def _iter_accepted_image_metadata(workspace: Workspace, record_id: str):
+    """Yield tuples of (key, value) for accepted image analyses mapped to a record."""
+    for analysis in workspace.image_analyses:
+        if analysis.record_id != record_id:
+            continue
+        if analysis.review_status.value != "accepted":
+            continue
+        payload = analysis.result if isinstance(analysis.result, dict) else {}
+        for k, v in payload.items():
+            if isinstance(v, list):
+                value = "; ".join(str(x) for x in v if str(x).strip())
+            else:
+                value = str(v)
+            if value.strip():
+                yield f"image.{k}", value
+
+
+def _apply_image_mappings_to_xml(data_elem: Element, workspace: Workspace, record_id: str):
+    """Append mapped accepted image metadata as <metadata> elements."""
+    image_values = dict(_iter_accepted_image_metadata(workspace, record_id))
+    if not image_values:
+        return
+    for m in workspace.active_mappings():
+        if not m.csv_column.startswith("image."):
+            continue
+        value = image_values.get(m.csv_column, "")
+        if not value:
+            continue
+        if m.repeatable and ";" in value:
+            for part in _split_repeatable(value):
+                me = SubElement(data_elem, "metadata", label=m.label or m.goobi_type, type=m.goobi_type)
+                me.text = part
+        else:
+            me = SubElement(data_elem, "metadata", label=m.label or m.goobi_type, type=m.goobi_type)
+            me.text = value
+
 # ---------------------------------------------------------------------------
 # Single-record export
 # ---------------------------------------------------------------------------
@@ -278,7 +316,7 @@ def export_goobi_xml(
         dict_lookup.setdefault(d.term.lower(), d)
 
     for ent in workspace.entities:
-        if ent.status != "rejected" and ent.gnd_id:
+        if getattr(ent.status, "value", ent.status) != "rejected" and ent.gnd_id:
             key = ent.text.lower()
             if key not in dict_lookup:
                 dict_lookup[key] = DictionaryEntry(
@@ -316,11 +354,10 @@ def export_goobi_xml(
 
         record_entities = [
             e for e in workspace.entities
-            if e.record_id == record_id and e.status != "rejected"
+            if e.record_id == record_id and getattr(e.status, "value", e.status) != "rejected"
         ]
-        if record_entities:
-            data_elem = elem.find("data")
-            if data_elem is not None:
+        data_elem = elem.find("data")
+        if record_entities and data_elem is not None:
                 for ent in record_entities:
                     gnd_attrs: dict[str, str] = {}
                     ent_entry = dict_lookup.get(ent.text.lower())
@@ -352,6 +389,9 @@ def export_goobi_xml(
                         attrs.update(gnd_attrs)
                         se = SubElement(data_elem, "metadata", **attrs)
                         se.text = ent.text
+
+        if data_elem is not None:
+            _apply_image_mappings_to_xml(data_elem, workspace, record_id)
 
         _et_indent(elem, space="  ")
         xml_str = tostring(elem, encoding="unicode")

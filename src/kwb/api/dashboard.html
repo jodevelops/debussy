@@ -292,6 +292,17 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <button class="btn" style="margin-top:.5rem" onclick="exportJSONLD()">⬇️ JSON-LD herunterladen</button>
 </div>
 
+
+<div class="c" style="margin-top:1rem"><h2>Bildresultate-Export</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.5rem">Exportiert Vision-Ergebnisse inkl. Review-Status, Konfidenz und Provenienz (CSV/JSON-LD).</p>
+<div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap">
+<label style="font-size:.75rem">Filter</label>
+<select id="exp-img-status" style="width:180px"><option value="">Alle</option><option value="pending">pending</option><option value="accepted">accepted</option><option value="rejected">rejected</option></select>
+<button class="btn" onclick="exportImageResults('csv')">⬇️ Bildresultate CSV</button>
+<button class="btn s" onclick="exportImageResults('jsonld')">⬇️ Bildresultate JSON-LD</button>
+</div>
+</div>
+
 <div class="c" style="margin-top:1rem"><h2>Workspace-Export</h2>
 <div style="display:flex;gap:.5rem">
 <button class="btn" onclick="saveWS()">💾 Workspace speichern</button>
@@ -352,6 +363,7 @@ const GOOBI_TYPES=[
 let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
 let nerStatusFilter='all', nerTypeFilter='all';
 let fmMapping={}; // current field mapping state
+let latestImageResults=[];
 
 // === SECURITY ===
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
@@ -765,23 +777,58 @@ async function analyzeImages(){
 }
 
 function renderImgResults(results){
+  latestImageResults = results || [];
   const el=$('img-results');
   const empty=$('img-results-empty');
-  if(!results.length){empty.style.display='block';el.innerHTML='';return}
+  if(!latestImageResults.length){empty.style.display='block';el.innerHTML='';return}
   empty.style.display='none';
-  el.innerHTML = results.map(res=>{
+  el.innerHTML = latestImageResults.map(function(res, idx){
     if(res.error) return '<div class="card" style="border-color:#e55"><strong>'+esc(res.id||res.filename||'')+'</strong><br><span style="color:#c00">'+esc(res.error)+'</span></div>';
     var r = res.result || {};
+    var status = res.review_status || 'pending';
     return '<div class="card" style="margin-bottom:.5rem">'
       +'<strong style="font-size:.8rem">'+esc(res.filename||res.id)+'</strong>'
-      +'<p style="font-size:.78rem;margin:.3rem 0">'+esc(r.description||'')+'</p>'
-      +(r.objects&&r.objects.length?'<div style="font-size:.72rem;color:#555">Objekte: '+r.objects.map(esc).join(', ')+'</div>':'')
+      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin:.35rem 0">'
+      +'<input type="text" id="img-record-'+idx+'" placeholder="record_id (optional)" value="'+esc(res.record_id||'')+'">'
+      +'<select id="img-status-'+idx+'"><option value="pending"'+(status==='pending'?' selected':'')+'>pending</option><option value="accepted"'+(status==='accepted'?' selected':'')+'>accepted</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>rejected</option></select>'
+      +'</div>'
+      +'<textarea id="img-desc-'+idx+'" style="height:4rem">'+esc(r.description||'')+'</textarea>'
+      +'<p style="font-size:.78rem;margin:.3rem 0">Objekte: '+esc((r.objects||[]).join(', '))+'</p>'
       +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
       +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
+      +'<input type="text" id="img-comment-'+idx+'" placeholder="Kommentar" value="'+esc(res.review_comment||'')+'" style="margin-top:.25rem">'
+      +'<input type="text" id="img-reviewer-'+idx+'" placeholder="Reviewer" value="'+esc(res.reviewer||'')+'" style="margin-top:.25rem">'
+      +'<div style="display:flex;gap:.3rem;margin-top:.35rem">'
+      +'<button class="btn sm" onclick="saveImageReview('+idx+',\'pending\')">💾 anpassen</button>'
+      +'<button class="btn sm" style="background:var(--ok)" onclick="saveImageReview('+idx+',\'accepted\')">✅ bestätigen</button>'
+      +'<button class="btn sm" style="background:var(--crit)" onclick="saveImageReview('+idx+',\'rejected\')">🗑 verwerfen</button>'
+      +'</div>'
       +'</div>';
   }).join('');
 }
 
+async function saveImageReview(idx, forceStatus){
+  const item = latestImageResults[idx];
+  if(!item)return;
+  const payload={
+    status:forceStatus || $('img-status-'+idx).value,
+    record_id:$('img-record-'+idx).value,
+    comment:$('img-comment-'+idx).value,
+    reviewer:$('img-reviewer-'+idx).value,
+    result_updates:{description:$('img-desc-'+idx).value}
+  };
+  try{
+    const r=await fetch('/api/images/'+encodeURIComponent(item.id)+'/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    const d=await r.json();
+    if(d.error){alert('Review-Fehler: '+d.error);return;}
+    item.review_status=d.image.review_status;
+    item.review_comment=d.image.review_comment;
+    item.reviewer=d.image.reviewer;
+    item.record_id=d.image.record_id;
+    item.result=d.image.result;
+    renderImgResults(latestImageResults);
+  }catch(e){alert('Review-Fehler: '+e.message);}
+}
 
 // === WIKIDATA ===
 async function runWikidataLookup(){
@@ -793,6 +840,22 @@ async function runWikidataLookup(){
     alert('Wikidata: '+(r.matched||0)+' von '+(r.total||0)+' Entitäten gefunden und im Wörterbuch gespeichert.');
     updWS();
   }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
+
+async function loadImages(){
+  try{
+    const r=await fetch('/api/images');
+    const d=await r.json();
+    uploadedImages=d.images||[];
+    renderImgGrid();
+    const reviewed=uploadedImages.filter(i=>i.result).map(i=>({
+      id:i.id,filename:i.filename,result:i.result,record_id:i.record_id||'',
+      review_status:i.review_status||'pending',review_comment:i.review_comment||'',
+      reviewer:i.reviewer||''
+    }));
+    if(reviewed.length) renderImgResults(reviewed);
+  }catch(e){}
 }
 
 // === OCR ===
@@ -844,6 +907,19 @@ async function exportCSV(){
 }
 
 // === JSON-LD EXPORT ===
+async function exportImageResults(format){
+  sp('Bildresultate Export …','');
+  try{
+    const st=($('exp-img-status')&&$('exp-img-status').value)||'';
+    const r=await fetch('/api/export/image-results',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({format:format,review_status:st,as_file:true})});
+    if(!r.ok){var e=await r.json();alert('Fehler: '+(e.error||r.statusText));hp();return;}
+    var blob=await r.blob();
+    if(format==='jsonld') dl('image_results.jsonld',await blob.text(),'application/ld+json');
+    else dl('image_results.csv',await blob.text(),'text/csv;charset=utf-8-sig');
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
 async function exportJSONLD(){
   const ds=($('exp-ld-ds')&&$('exp-ld-ds').value)||($('exp-ds')&&$('exp-ds').value)||'';
   if(!ds){alert('Datensatz wählen');return;}
@@ -868,7 +944,7 @@ function hp(){$('po').classList.remove('a')}
 // === INIT ===
 (function(){loadPreset(); applyImgPreset();
   $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
-  renderCatalog();chkGPU();updWS()})();
+  renderCatalog();chkGPU();updWS();loadImages()})();
 </script>
 </body>
 </html>
