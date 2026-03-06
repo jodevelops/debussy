@@ -32,6 +32,13 @@ from kwb.core.workspace import ImageAnalysisResult, ImageReviewStatus
 
 router = APIRouter()
 
+
+def _parse_image_review_status(status_raw: str) -> ImageReviewStatus | None:
+    try:
+        return ImageReviewStatus(status_raw)
+    except ValueError:
+        return None
+
 # ---------------------------------------------------------------------------
 # GPU / Provider status
 # ---------------------------------------------------------------------------
@@ -372,9 +379,8 @@ async def image_review_update(img_id: str, request: dict):
         return JSONResponse({"error": "Nicht gefunden"}, 404)
 
     status_raw = request.get("status", "pending")
-    try:
-        status = ImageReviewStatus(status_raw)
-    except ValueError:
+    status = _parse_image_review_status(status_raw)
+    if status is None:
         return JSONResponse({"error": "Ungültiger Review-Status"}, 400)
 
     comment = request.get("comment", "")
@@ -448,9 +454,8 @@ async def image_review_batch(request: dict):
         return JSONResponse({"error": "Keine Bilder ausgewählt"}, 400)
 
     status_raw = request.get("status", "pending")
-    try:
-        status = ImageReviewStatus(status_raw)
-    except ValueError:
+    status = _parse_image_review_status(status_raw)
+    if status is None:
         return JSONResponse({"error": "Ungültiger Review-Status"}, 400)
 
     comment = request.get("comment", "")

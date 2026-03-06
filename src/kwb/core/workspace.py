@@ -289,6 +289,10 @@ class ImageAnalysisResult:
         return 0.0
 
     @property
+    def is_reviewed(self) -> bool:
+        return bool(self.reviewed_at and self.review_status != ImageReviewStatus.PENDING)
+
+    @property
     def provenance(self) -> dict:
         return {
             "source": "vision_ai",

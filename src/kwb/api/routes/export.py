@@ -47,6 +47,16 @@ def _build_image_result_rows(ws):
     return rows
 
 
+
+
+def _validate_review_status(review_status: str, rows: list[dict]) -> list[dict]:
+    if not review_status:
+        return rows
+    allowed = {"pending", "accepted", "rejected"}
+    if review_status not in allowed:
+        return []
+    return [r for r in rows if r["review_status"] == review_status]
+
 def _image_rows_as_jsonld(rows, base_url: str = "https://example.org/images/") -> dict:
     context = {
         "@vocab": "https://schema.org/",
@@ -226,8 +236,9 @@ async def export_image_results(request: dict):
     ws = get_workspace()
     rows = _build_image_result_rows(ws)
     review_status = request.get("review_status", "")
-    if review_status:
-        rows = [r for r in rows if r["review_status"] == review_status]
+    rows = _validate_review_status(review_status, rows)
+    if review_status and not rows:
+        return JSONResponse({"error": "Ungültiger oder leerer review_status-Filter"}, 400)
 
     fmt = (request.get("format", "csv") or "csv").lower()
     if fmt == "csv":

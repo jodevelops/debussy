@@ -869,6 +869,7 @@ async function runWikidataLookup(){
 
 async function bulkReviewVisible(status){
   const ids=filteredImageResults.filter(x=>!x.error).map(x=>x.id);
+  if(!confirm('Bulk-Review für '+ids.length+' sichtbare Ergebnisse ausführen?')) return;
   if(!ids.length){alert('Keine sichtbaren Ergebnisse.');return;}
   try{
     const r=await fetch('/api/images/review/batch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
