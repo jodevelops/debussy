@@ -118,17 +118,21 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div>
 <div id="ner-cols" class="cl"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
 <label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy+LLM)</option></select>
-<label>Samples</label><input type="number" id="ner-n" value="10" min="1" max="500">
-<label>NER Prompt-Preset</label><select id="ner-preset" onchange="applyActionPreset('ner')"><option value="ner_de">NER (DE)</option><option value="custom">Eigen</option></select>
-<textarea id="ner-sp" rows="4" style="margin-top:.3rem"></textarea>
-<button class="btn f" onclick="runNER()">🔍 NER starten</button>
+<label>Samples</label><input type="number" id="ner-n" value="10000" min="1" max="500000">
+<label>Chunk-Größe</label><input type="number" id="ner-chunk" value="200" min="10" max="2000">
+<div style="display:flex;gap:.4rem;flex-wrap:wrap">
+<button class="btn" onclick="runPilot('ner')">🧪 Pilotlauf auf 2%</button>
+<button class="btn s" onclick="runNER()">▶️ Gesamtlauf fortsetzen</button>
+</div>
 </div>
 <div class="c"><h2>Problematische Begriffe</h2>
 <label>Datensatz</label><select id="scan-ds"><option value="">—</option></select>
-<label>Samples</label><input type="number" id="scan-n" value="20" min="1" max="500">
-<label>Scan Prompt-Preset</label><select id="scan-preset" onchange="applyActionPreset('scan')"><option value="scan_de">Scan</option><option value="custom">Eigen</option></select>
-<textarea id="scan-sp" rows="3" style="margin-top:.3rem"></textarea>
-<button class="btn f s" onclick="runScan()">🔎 Scan starten</button>
+<label>Samples</label><input type="number" id="scan-n" value="10000" min="1" max="500000">
+<label>Chunk-Größe</label><input type="number" id="scan-chunk" value="200" min="10" max="2000">
+<div style="display:flex;gap:.4rem;flex-wrap:wrap">
+<button class="btn" onclick="runPilot('scan')">🧪 Pilotlauf auf 2%</button>
+<button class="btn f s" onclick="runScan()">▶️ Gesamtlauf fortsetzen</button>
+</div>
 </div>
 </div><div>
 <div id="ner-e" class="em"><h3>Named Entity Recognition</h3>
@@ -141,7 +145,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div>
 <div id="ner-r" style="display:none">
 <div class="c">
-<h2>Erkannte Entities <span id="ner-count" style="font-size:.7rem;color:#888"></span></h2>
+<h2>Erkannte Entities <span id="ner-count" style="font-size:.7rem;color:#888"></span></h2><div id="ner-metrics" style="font-size:.72rem;color:#555;margin-bottom:.4rem"></div>
 <!-- Status filter -->
 <div class="fl" id="ner-status-bar" style="margin-bottom:.3rem">
 <strong style="font-size:.7rem;align-self:center">Status:</strong>
@@ -167,7 +171,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="scroll-box"><table class="gndtbl" id="gnd-tbl"><thead><tr><th>Term</th><th>Typ</th><th>GND-ID</th><th>Vorzugsname</th><th>Typ (GND)</th><th>Alternativen</th></tr></thead><tbody id="gnd-body"></tbody></table></div>
 </div></div>
 <!-- Scan results -->
-<div id="scan-r" style="display:none"><div class="c" style="margin-top:1rem"><h2>Problematische Begriffe</h2><div id="scan-body"></div></div></div>
+<div id="scan-r" style="display:none"><div class="c" style="margin-top:1rem"><h2>Problematische Begriffe</h2><div id="scan-metrics" style="font-size:.72rem;color:#555;margin-bottom:.5rem"></div><div id="scan-body"></div></div></div>
 </div>
 </div></div></div>
 
@@ -177,8 +181,13 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <div class="hint" id="edtf-hint">Erst im Daten-Tab CSV laden.</div>
 <label>Datensatz</label><select id="edtf-ds" onchange="loadDateCols()"><option value="">— Erst Daten laden —</option></select>
 <label>Datums-Spalte</label><select id="edtf-col"><option value="">—</option></select>
-<label>Samples (0 = alle)</label><input type="number" id="edtf-n" value="0" min="0" max="10000">
+<label>Samples (0 = alle)</label><input type="number" id="edtf-n" value="10000" min="0" max="500000">
+<label>Chunk-Größe</label><input type="number" id="edtf-chunk" value="200" min="10" max="2000">
 <label>LLM-Fallback?</label><select id="edtf-llm"><option value="0">Nein (nur Regeln)</option><option value="1">Ja (LLM-Fallback)</option></select>
+<div style="display:flex;gap:.4rem;flex-wrap:wrap">
+<button class="btn" onclick="runPilot('edtf')">🧪 Pilotlauf auf 2%</button>
+<button class="btn f" onclick="runEDTF()">▶️ Gesamtlauf fortsetzen</button>
+</div>
 <label>EDTF Prompt-Preset</label><select id="edtf-preset" onchange="applyActionPreset('edtf')"><option value="edtf_de">EDTF</option><option value="custom">Eigen</option></select>
 <textarea id="edtf-sp" rows="3" style="margin-top:.3rem"></textarea>
 <button class="btn f" onclick="runEDTF()">📅 Konvertieren</button>
@@ -194,7 +203,7 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 </div></div>
 </div><div>
 <div id="edtf-e" class="em"><h3>Datierungen → EDTF</h3><p>Konvertiert Datumsangaben in LOC Extended Date/Time Format.</p></div>
-<div id="edtf-r" style="display:none"><div class="c"><h2>Konvertierung</h2>
+<div id="edtf-r" style="display:none"><div class="c"><h2>Konvertierung</h2><div id="edtf-metrics" style="font-size:.72rem;color:#555;margin-bottom:.5rem"></div>
 <div class="sg" id="edtf-sg"></div>
 <div class="scroll-box"><table class="etbl" id="edtf-tbl"><thead><tr><th>Original</th><th>→ EDTF</th><th>Konfidenz</th><th>Methode</th><th>Hinweis</th></tr></thead><tbody id="edtf-body"></tbody></table></div>
 </div></div>
@@ -282,7 +291,17 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 <!-- Goobi Export Panel -->
 <div class="c"><h2>Goobi-Import XML</h2>
 <label>Datensatz</label><select id="exp-ds"><option value="">— Erst Daten laden —</option></select>
-<label>Record-ID (Vorschau)</label><select id="exp-rec"><option value="">—</option></select>
+<label>Record-ID (Vorschau)</label>
+<div style="display:flex;gap:.4rem;align-items:center">
+<input type="text" id="exp-rec-q" placeholder="Filter ID…" oninput="loadRecords(true)">
+<button class="btn sm" onclick="loadRecords(true)">Suchen</button>
+</div>
+<select id="exp-rec"><option value="">—</option></select>
+<div style="display:flex;gap:.4rem;align-items:center;margin-top:.3rem">
+<button class="btn sm" id="exp-rec-prev" onclick="pageRecords(-1)">← Zurück</button>
+<button class="btn sm" id="exp-rec-next" onclick="pageRecords(1)">Weiter →</button>
+<span id="exp-rec-info" style="font-size:.72rem;color:#666"></span>
+</div>
 <div style="display:flex;gap:.5rem;margin-top:.5rem">
 <button class="btn" onclick="previewXML()">XML-Vorschau</button>
 <button class="btn s" onclick="batchXML()">Alle Records exportieren</button>
@@ -366,6 +385,7 @@ const GOOBI_TYPES=[
 ];
 
 let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
+let recordOffset=0,recordLimit=50,recordTotal=0;
 let nerStatusFilter='all', nerTypeFilter='all';
 let fmMapping={}; // current field mapping state
 
@@ -414,14 +434,23 @@ async function loadDateCols(){
     if(d.error)return;s.innerHTML=d.columns.map(c=>safeOpt(c.name,c.name+' ('+Math.round(c.fill_rate*100)+'%)')).join('')
   }catch(e){}
 }
-async function loadRecords(){
+async function loadRecords(reset=false){
   const ds=$('exp-ds').value;const s=$('exp-rec');
+  if(reset)recordOffset=0;
   if(!ds){s.innerHTML='<option value="">—</option>';return}
-  try{const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/records')).json();
-    if(d.record_ids)s.innerHTML=d.record_ids.slice(0,50).map(r=>safeOpt(r,r)).join('')
+  const q=encodeURIComponent(($('exp-rec-q')?.value||'').trim());
+  try{const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/records?offset='+recordOffset+'&limit='+recordLimit+'&q='+q)).json();
+    if(d.record_ids){
+      s.innerHTML=d.record_ids.map(r=>safeOpt(r,r)).join('')||'<option value="">—</option>';
+      recordTotal=d.total||0;
+      $('exp-rec-info').textContent=(recordTotal?((recordOffset+1)+'–'+Math.min(recordOffset+recordLimit,recordTotal)+' / '+recordTotal):'0 / 0');
+      $('exp-rec-prev').disabled=recordOffset<=0;
+      $('exp-rec-next').disabled=!d.has_more;
+    }
   }catch(e){}
 }
-$('exp-ds').onchange=loadRecords;
+function pageRecords(dir){recordOffset=Math.max(0,recordOffset+(dir*recordLimit));loadRecords(false)}
+$('exp-ds').onchange=()=>loadRecords(true);
 
 // === FIELD MAPPING ===
 let fmCols=[];
@@ -494,15 +523,21 @@ async function runStruct(){
 }
 
 // === NER ===
-async function runNER(){
+async function runNER(isPilot=false){
   const ds=$('ner-ds').value;if(!ds){alert('Datensatz wählen');return}
   const cols=[...document.querySelectorAll('#ner-cols .ci input:checked')].map(c=>c.value);
   if(!cols.length){alert('Mindestens eine Spalte wählen');return}
-  const method=$('ner-method').value,n=parseInt($('ner-n').value)||10;
-  sp('NER läuft …',method+', '+n+' Samples');
+  const method=$('ner-method').value;
+  const baseN=parseInt($('ner-n').value)||10000;
+  const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
+  sp(isPilot?'NER Pilotlauf …':'NER läuft …',method+', '+n+' Samples');
   try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,
+      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+      stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
       model:$('cfg-mt').value||'',
+      system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
       system_prompt:$('ner-sp').value||$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}
@@ -605,11 +640,17 @@ function exportNER(){if(!nerData.length)return;
   dl('debussy_ner.csv',hdr+rows,'text/csv')}
 
 // === SCAN ===
-async function runScan(){const ds=$('scan-ds').value;if(!ds){alert('Datensatz wählen');return}
-  sp('Scan …','');
+async function runScan(isPilot=false){const ds=$('scan-ds').value;if(!ds){alert('Datensatz wählen');return}
+  const baseN=parseInt($('scan-n').value)||10000;
+  const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
+  sp(isPilot?'Scan Pilotlauf …':'Scan …','');
   try{const r=await(await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,sample_size:parseInt($('scan-n').value)||20,
+    body:JSON.stringify({dataset:ds,sample_size:n,
+      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+      stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
       model:$('cfg-mt').value||'',
+      system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
       system_prompt:$('scan-sp').value||$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);renderScan(r)
   }catch(e){alert(e.message)}finally{hp()}}
@@ -623,13 +664,19 @@ function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||
   '</div>').join('')}
 
 // === EDTF ===
-async function runEDTF(){const ds=$('edtf-ds').value,col=$('edtf-col').value;
+async function runEDTF(isPilot=false){const ds=$('edtf-ds').value,col=$('edtf-col').value;
   if(!ds||!col){alert('Datensatz und Spalte wählen');return}
-  sp('EDTF …',esc(col));
+  const baseN=parseInt($('edtf-n').value)||0;
+  const n=isPilot?Math.max(1,Math.round((baseN||10000)*0.02)):baseN;
+  sp(isPilot?'EDTF Pilotlauf …':'EDTF …',esc(col));
   try{const r=await(await fetch('/api/edtf',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,column:col,sample_size:parseInt($('edtf-n').value)||0,
+    body:JSON.stringify({dataset:ds,column:col,sample_size:n,
+      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+      stratified:isPilot,chunk_size:parseInt($('edtf-chunk').value)||200,
       use_llm:$('edtf-llm').value==='1',
       model:$('cfg-mt').value||'',
+      system_prompt:$('cfg-sys').value})})).json();
+    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);renderRunMetrics('edtf-metrics',r.run_metrics);updWS()
       system_prompt:$('edtf-sp').value||$('cfg-sys').value})})).json();
     if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);updWS()
   }catch(e){alert(e.message)}finally{hp()}}
@@ -707,6 +754,29 @@ async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json()
 // === NER helpers ===
 function nerSelectAll(checked){
   document.querySelectorAll('#ner-cols .ci input[type=checkbox]').forEach(cb=>cb.checked=checked);
+}
+
+function fmtMetrics(m){
+  if(!m)return '';
+  const done=m.processed_rows||0,total=m.total_rows||0,err=(m.error_rate||0)*100;
+  return 'Abarbeitung: '+done+'/'+total+' Zeilen · Fehlerquote: '+err.toFixed(2)+'% · ETA ~ '+(m.eta_seconds||0)+'s · Chunks: '+(m.chunk_count||0);
+}
+function renderRunMetrics(target,m){const el=$(target);if(el)el.textContent=fmtMetrics(m)}
+
+async function runPilot(task){
+  if(task==='ner'){
+    const ds=$('ner-ds').value;if(!ds)return alert('Datensatz wählen');
+    const cols=[...document.querySelectorAll('#ner-cols .ci input:checked')].map(c=>c.value);if(!cols.length)return alert('Mindestens eine Spalte wählen');
+    await runNER(true);
+  }
+  if(task==='scan'){
+    const ds=$('scan-ds').value;if(!ds)return alert('Datensatz wählen');
+    await runScan(true);
+  }
+  if(task==='edtf'){
+    const ds=$('edtf-ds').value,col=$('edtf-col').value;if(!ds||!col)return alert('Datensatz und Spalte wählen');
+    await runEDTF(true);
+  }
 }
 
 // === IMAGES ===
