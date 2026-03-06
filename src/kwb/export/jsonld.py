@@ -77,6 +77,7 @@ def _make_record_node(
     field_mapping: list,
     entities_by_record: dict[str, list],
     dates_by_record: dict[str, list],
+    image_by_record: dict[str, dict[str, str]],
 ) -> dict[str, Any]:
     """Convert a single DataFrame row to a JSON-LD CreativeWork node."""
     record_id = str(row.get(id_column, ""))
@@ -138,6 +139,20 @@ def _make_record_node(
     if dates:
         node["temporal"] = [{"@type": "edtf", "@value": d} for d in dates if d]
 
+    # Add accepted image analysis values via field mapping (csv_column = image.*)
+    img_vals = image_by_record.get(record_id, {})
+    for fm in field_mapping:
+        if fm.is_ignored or not fm.csv_column.startswith("image."):
+            continue
+        val = img_vals.get(fm.csv_column, "")
+        if not val:
+            continue
+        schema_key = type_to_schema.get(fm.goobi_type, fm.goobi_type)
+        if fm.repeatable and ";" in val:
+            node[schema_key] = [v.strip() for v in val.split(";") if v.strip()]
+        else:
+            node[schema_key] = val
+
     return node
 
 
@@ -183,13 +198,28 @@ def export_jsonld(
             dates_by_record.setdefault(rid, [])
             dates_by_record[rid].append(cd.edtf)
 
+    # Build accepted image-analysis lookup per record
+    image_by_record: dict[str, dict[str, str]] = {}
+    for img in workspace.image_analyses:
+        if img.review_status.value != "accepted" or not img.record_id:
+            continue
+        payload = img.result if isinstance(img.result, dict) else {}
+        image_by_record.setdefault(img.record_id, {})
+        for key, value in payload.items():
+            if isinstance(value, list):
+                rendered = "; ".join(str(x) for x in value if str(x).strip())
+            else:
+                rendered = str(value)
+            if rendered.strip():
+                image_by_record[img.record_id][f"image.{key}"] = rendered
+
     # Build record nodes
     rows = df.head(limit) if limit else df
     items = []
     for _, row in rows.iterrows():
         node = _make_record_node(
             row, id_col, active_mappings,
-            entities_by_record, dates_by_record,
+            entities_by_record, dates_by_record, image_by_record,
         )
         record_id = str(row.get(id_col, ""))
         if "@id" not in node:

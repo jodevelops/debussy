@@ -42,6 +42,7 @@ def export_enriched_csv(
     include_ner: bool = True,
     include_edtf: bool = True,
     include_gnd: bool = True,
+    include_image_review: bool = True,
     id_column: str = "record_id",
     separator: str = "; ",
 ) -> str:
@@ -124,6 +125,38 @@ def export_enriched_csv(
                 )
             else:
                 out[new_col] = ""
+
+    # ------------------------------------------------------------------
+    # Accepted image analysis columns (mapped via field_mapping image.*)
+    # ------------------------------------------------------------------
+    if include_image_review and workspace.image_analyses:
+        image_rows: dict[str, dict[str, str]] = {}
+        for img in workspace.image_analyses:
+            if img.review_status.value != "accepted":
+                continue
+            rid = img.record_id
+            if not rid:
+                continue
+            payload = img.result if isinstance(img.result, dict) else {}
+            image_rows.setdefault(rid, {})
+            image_rows[rid]["image_review_status"] = img.review_status.value
+            image_rows[rid]["image_review_comment"] = img.review_comment
+            image_rows[rid]["image_reviewer"] = img.reviewer
+            for k, v in payload.items():
+                col_name = f"image_{k}"
+                if isinstance(v, list):
+                    rendered = separator.join(str(x) for x in v if str(x).strip())
+                else:
+                    rendered = str(v)
+                if rendered.strip():
+                    image_rows[rid][col_name] = rendered
+
+        image_cols = sorted({k for row in image_rows.values() for k in row.keys()})
+        for col in image_cols:
+            if id_column in out.columns:
+                out[col] = out[id_column].astype(str).map(lambda rid: image_rows.get(rid, {}).get(col, ""))
+            else:
+                out[col] = ""
 
     # ------------------------------------------------------------------
     # GND columns — add gnd_id / gnd_preferred for known terms

@@ -27,6 +27,8 @@ from kwb.api.deps import (
 )
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
+from kwb.ai.prompts import SYSTEM_VISION_EXPERT_DE, SYSTEM_METADATA_EXPERT_DE
+from kwb.core.workspace import ImageAnalysisResult, ImageReviewStatus
 from kwb.ai.prompts import (
     SYSTEM_VISION_EXPERT_DE, SYSTEM_METADATA_EXPERT_DE,
     PROMPT_VERSIONS,
@@ -38,6 +40,13 @@ from kwb.core.workspace import ImageAnalysisResult
 from kwb.ingest.image_loader import ingest_image
 
 router = APIRouter()
+
+
+def _parse_image_review_status(status_raw: str) -> ImageReviewStatus | None:
+    try:
+        return ImageReviewStatus(status_raw)
+    except ValueError:
+        return None
 
 # ---------------------------------------------------------------------------
 # GPU / Provider status
@@ -193,6 +202,11 @@ def _sync_index() -> None:
                     "path": str(p),
                     "analyzed": ws_result.analyzed if ws_result else False,
                     "result": ws_result.result if ws_result else None,
+                    "record_id": ws_result.record_id if ws_result else "",
+                    "review_status": ws_result.review_status.value if ws_result else "pending",
+                    "review_comment": ws_result.review_comment if ws_result else "",
+                    "reviewer": ws_result.reviewer if ws_result else "",
+                    "reviewed_at": ws_result.reviewed_at if ws_result else "",
                 }
 
 
@@ -254,6 +268,11 @@ async def images_upload(files: list[UploadFile] = File(...)):
             "path": str(img_path),
             "analyzed": False,
             "result": None,
+            "record_id": "",
+            "review_status": "pending",
+            "review_comment": "",
+            "reviewer": "",
+            "reviewed_at": "",
         }
         accepted.append({
             "id": img_id,
@@ -295,6 +314,11 @@ async def images_list():
                 "exif_subset": img.get("exif_subset", {}),
                 "analyzed": img["analyzed"],
                 "result": img["result"],
+                "record_id": img.get("record_id", ""),
+                "review_status": img.get("review_status", "pending"),
+                "review_comment": img.get("review_comment", ""),
+                "reviewer": img.get("reviewer", ""),
+                "reviewed_at": img.get("reviewed_at", ""),
             }
             for img in _uploaded_images.values()
         ]
@@ -316,6 +340,7 @@ async def images_analyze(request: dict):
     from kwb.core.utils import try_parse_json
 
     image_ids = request.get("image_ids", list(_uploaded_images.keys()))
+    image_record_map = request.get("image_record_map", {})
     mod = request.get("model", "")
     task = request.get("prompt_task", "image_description")
     syp = request.get("system_prompt", "")
@@ -349,7 +374,14 @@ async def images_analyze(request: dict):
             parsed = try_parse_json(resp.content) or {"description": resp.content, "uncertain": True}
             img["analyzed"] = True
             img["result"] = parsed
-            results.append({"id": img_id, "filename": img["filename"], "result": parsed})
+            img["record_id"] = image_record_map.get(img_id, img.get("record_id", ""))
+            results.append({
+                "id": img_id,
+                "filename": img["filename"],
+                "record_id": img.get("record_id", ""),
+                "review_status": img.get("review_status", "pending"),
+                "result": parsed,
+            })
 
             ws = get_workspace()
             ws.save_image_analysis(ImageAnalysisResult(
@@ -365,6 +397,11 @@ async def images_analyze(request: dict):
                 result=parsed,
                 model=mod or "default",
                 analyzed_at=datetime.utcnow().isoformat(),
+                record_id=img.get("record_id", ""),
+                review_status=ImageReviewStatus(img.get("review_status", "pending")),
+                review_comment=img.get("review_comment", ""),
+                reviewer=img.get("reviewer", ""),
+                reviewed_at=img.get("reviewed_at", ""),
                 prompt_name=prompt_name,
                 prompt_version=prompt_version,
                 review_status="pending",
@@ -391,6 +428,125 @@ async def images_analyze(request: dict):
         "results": results,
     }
 
+
+@router.post("/api/images/{img_id}/review")
+async def image_review_update(img_id: str, request: dict):
+    """Update review decision and optional corrected result for one image analysis."""
+    img = _uploaded_images.get(img_id)
+    if not img:
+        return JSONResponse({"error": "Nicht gefunden"}, 404)
+
+    status_raw = request.get("status", "pending")
+    status = _parse_image_review_status(status_raw)
+    if status is None:
+        return JSONResponse({"error": "Ungültiger Review-Status"}, 400)
+
+    comment = request.get("comment", "")
+    reviewer = request.get("reviewer", "")
+    result_updates = request.get("result_updates") or {}
+    record_id = request.get("record_id", img.get("record_id", ""))
+
+    if result_updates:
+        if not isinstance(img.get("result"), dict):
+            img["result"] = {}
+        img["result"].update(result_updates)
+
+    img["record_id"] = record_id
+    img["review_status"] = status.value
+    img["review_comment"] = comment
+    img["reviewer"] = reviewer
+    from datetime import datetime
+    img["reviewed_at"] = datetime.utcnow().isoformat()
+
+    ws = get_workspace()
+    existing = ws.get_image_analysis(img_id)
+    if existing:
+        existing.result = img.get("result") or {}
+        existing.record_id = record_id
+        existing.update_review(
+            status=status,
+            comment=comment,
+            reviewer=reviewer,
+        )
+        ws.save_image_analysis(existing)
+    else:
+        ana = ImageAnalysisResult(
+            image_id=img_id,
+            filename=img.get("filename", ""),
+            media_type=img.get("media_type", ""),
+            analyzed=bool(img.get("analyzed")),
+            result=img.get("result") or {},
+            model="manual",
+            analyzed_at="",
+            record_id=record_id,
+            review_status=status,
+            review_comment=comment,
+            reviewer=reviewer,
+            reviewed_at=img["reviewed_at"],
+        )
+        ws.save_image_analysis(ana)
+
+    ws.save(workspace_dir() / safe_filename(ws.name))
+
+    return {
+        "ok": True,
+        "image": {
+            "id": img_id,
+            "record_id": img["record_id"],
+            "review_status": img["review_status"],
+            "review_comment": img["review_comment"],
+            "reviewer": img["reviewer"],
+            "reviewed_at": img["reviewed_at"],
+            "result": img.get("result") or {},
+        },
+    }
+
+
+
+
+@router.post("/api/images/review/batch")
+async def image_review_batch(request: dict):
+    """Batch-update review decisions for multiple image analyses."""
+    image_ids = request.get("image_ids", [])
+    if not image_ids:
+        return JSONResponse({"error": "Keine Bilder ausgewählt"}, 400)
+
+    status_raw = request.get("status", "pending")
+    status = _parse_image_review_status(status_raw)
+    if status is None:
+        return JSONResponse({"error": "Ungültiger Review-Status"}, 400)
+
+    comment = request.get("comment", "")
+    reviewer = request.get("reviewer", "")
+
+    ws = get_workspace()
+    updated = 0
+    from datetime import datetime
+
+    for img_id in image_ids:
+        img = _uploaded_images.get(img_id)
+        if not img:
+            continue
+
+        img["review_status"] = status.value
+        if comment:
+            img["review_comment"] = comment
+        if reviewer:
+            img["reviewer"] = reviewer
+        img["reviewed_at"] = datetime.utcnow().isoformat()
+
+        existing = ws.get_image_analysis(img_id)
+        if existing:
+            existing.update_review(
+                status=status,
+                comment=img.get("review_comment", ""),
+                reviewer=img.get("reviewer", ""),
+            )
+            ws.save_image_analysis(existing)
+            updated += 1
+
+    ws.save(workspace_dir() / safe_filename(ws.name))
+    return {"updated": updated, "status": status.value}
 
 @router.delete("/api/images")
 async def images_clear():
@@ -421,6 +577,7 @@ async def images_ocr(request: dict):
     from kwb.core.utils import try_parse_json
 
     image_ids = request.get("image_ids", list(_uploaded_images.keys()))
+    image_record_map = request.get("image_record_map", {})
     mod = request.get("model", "")
     ctx = request.get("additional_context", "")
     syp = request.get("system_prompt", "")

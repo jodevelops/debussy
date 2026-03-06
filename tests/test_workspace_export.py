@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from kwb.core.workspace import Workspace, CuratedEntity, CuratedDate, DictionaryEntry
+from kwb.core.workspace import Workspace, CuratedEntity, CuratedDate, DictionaryEntry, ImageAnalysisResult, ImageReviewStatus
 from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
 
 
@@ -191,6 +191,26 @@ class TestGoobiExport(unittest.TestCase):
         results = export_goobi_xml(df, ws)
         xml = results[0][1]
         self.assertEqual(xml.count("singleDigCollection"), 3)
+
+    def test_accepted_image_mapping_flows_into_goobi(self):
+        df = pd.DataFrame({"record_id": ["obj_1"], "title": ["Test"]})
+        ws = Workspace()
+        ws.field_mapping = {
+            "title": ("Titel", "TitleDocMain"),
+            "image.description": ("Bildbeschreibung", "Description"),
+            "image.objects": ("Bildobjekte", "SubjectTopic"),
+        }
+        ws.save_image_analysis(ImageAnalysisResult(
+            image_id="img_1",
+            filename="test.jpg",
+            analyzed=True,
+            result={"description": "Architekturansicht", "objects": ["Kirche", "Turm"]},
+            record_id="obj_1",
+            review_status=ImageReviewStatus.ACCEPTED,
+        ))
+        xml = export_goobi_xml(df, ws)[0][1]
+        self.assertIn("Architekturansicht", xml)
+        self.assertIn("Kirche", xml)
 
 
 # GND tests are network-dependent, so we test the module structure only
