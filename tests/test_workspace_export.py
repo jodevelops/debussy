@@ -311,3 +311,21 @@ class TestSecurityP0(unittest.TestCase):
         self.assertGreaterEqual(script.count('esc('), 40)
         # safeOpt used for options
         self.assertIn('safeOpt(', script)
+
+
+    def test_dashboard_js_core_actions_are_not_corrupted(self):
+        """Regression: NER/Scan/EDTF actions stay valid and use per-tab prompts."""
+        html = Path("src/kwb/api/dashboard.html").read_text()
+        self.assertIn("async function runNER", html)
+        self.assertIn("async function runScan", html)
+        self.assertIn("async function runEDTF", html)
+
+        # per-tab prompts are wired (not replaced by global cfg prompt only)
+        self.assertIn("system_prompt:$('ner-sp').value||$('cfg-sys').value", html)
+        self.assertIn("system_prompt:$('scan-sp').value||$('cfg-sys').value", html)
+        self.assertIn("system_prompt:$('edtf-sp').value||$('cfg-sys').value", html)
+
+        # broken duplicate fragments must not exist
+        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);nerData", html)
+        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);renderScan", html)
+        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);edtfData", html)

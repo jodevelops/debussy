@@ -123,6 +123,7 @@ def prompt_ocr_transcription_quality(additional_context="", language="de"):
         + '  "prompt_name": "ocr_transcription_quality",\n'
         + '  "prompt_version": "1.0.0",\n'
         + '  "text_found": false,\n'
+        + '  "text_type": "printed|handwritten|mixed|unknown",\n'
         + '  "script_type": "latin|kurrent|fraktur|mixed|unknown",\n'
         + '  "language": "de|en|fr|it|la|unknown",\n'
         + '  "transcription": "...",\n'

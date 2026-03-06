@@ -20,6 +20,7 @@ except ImportError:
 
 from kwb.api.deps import get_datasets, get_workspace
 from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
+from kwb.export.goobi_api import GoobiAPIClient, GoobiAPIConfig, GoobiAPIError
 
 router = APIRouter()
 
@@ -157,6 +158,92 @@ async def export_batch(request: dict):
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
 
+
+
+
+def _goobi_client() -> GoobiAPIClient:
+    from kwb.api.deps import get_config
+
+    cfg = get_config()
+    return GoobiAPIClient(
+        GoobiAPIConfig(
+            base_url=getattr(cfg, "goobi_api_url", ""),
+            api_key=getattr(cfg, "goobi_api_key", ""),
+            project=getattr(cfg, "goobi_project", ""),
+            timeout_seconds=getattr(cfg, "timeout_seconds", 30),
+        )
+    )
+
+
+@router.get("/api/goobi/status")
+async def goobi_status():
+    """Check whether Goobi API is configured and reachable (F32)."""
+    client = _goobi_client()
+    if not client.config.configured:
+        return {
+            "configured": False,
+            "reachable": False,
+            "message": "Goobi API nicht konfiguriert",
+        }
+    try:
+        payload = client.status()
+        return {
+            "configured": True,
+            "reachable": True,
+            "project": client.config.project,
+            "status": payload,
+        }
+    except GoobiAPIError as e:
+        return JSONResponse({
+            "configured": True,
+            "reachable": False,
+            "project": client.config.project,
+            "error": str(e),
+        }, 502)
+
+
+@router.post("/api/goobi/push-record")
+async def goobi_push_record(request: dict):
+    """Generate Goobi XML preview for one record and push via Goobi API."""
+    preview = await export_preview(request)
+    if isinstance(preview, JSONResponse):
+        return preview
+
+    client = _goobi_client()
+    if not client.config.configured:
+        return JSONResponse({"error": "Goobi API nicht konfiguriert"}, 400)
+
+    try:
+        result = client.push_record_xml(preview["xml"], record_id=preview.get("record_id", ""))
+        return {
+            "ok": True,
+            "record_id": preview.get("record_id", ""),
+            "remote": result,
+        }
+    except GoobiAPIError as e:
+        return JSONResponse({"error": str(e)}, 502)
+
+
+@router.post("/api/goobi/push-batch")
+async def goobi_push_batch(request: dict):
+    """Generate Goobi batch XML and push via Goobi API."""
+    batch = await export_batch(request)
+    if isinstance(batch, JSONResponse):
+        return batch
+
+    client = _goobi_client()
+    if not client.config.configured:
+        return JSONResponse({"error": "Goobi API nicht konfiguriert"}, 400)
+
+    try:
+        result = client.push_batch_xml(batch["xml"], dataset=request.get("dataset", ""))
+        return {
+            "ok": True,
+            "record_count": batch.get("record_count", 0),
+            "remote": result,
+        }
+    except GoobiAPIError as e:
+        return JSONResponse({"error": str(e)}, 502)
 
 @router.post("/api/export/csv")
 async def export_csv(request: dict):
