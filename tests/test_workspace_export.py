@@ -300,10 +300,9 @@ class TestSecurityP0(unittest.TestCase):
         self.assertIn("_WORKSPACE_DIR", deps_code)
 
     def test_xss_protection_in_html(self):
-        """P0-1: HTML has XSS protection."""
-        html = Path("src/kwb/api/dashboard.html").read_text()
+        """P0-1: JS has XSS protection (reads from modular parts/dashboard.js)."""
         import re
-        script = html[html.index('<script>'):html.index('</script>')]
+        script = Path("src/kwb/api/parts/dashboard.js").read_text()
         # No template literals with interpolation
         tpls = re.findall(r'`[^`]*\$\{[^}]*\}[^`]*`', script)
         self.assertEqual(len(tpls), 0, f"Unsafe template literals: {tpls[:3]}")
@@ -315,17 +314,18 @@ class TestSecurityP0(unittest.TestCase):
 
     def test_dashboard_js_core_actions_are_not_corrupted(self):
         """Regression: NER/Scan/EDTF actions stay valid and use per-tab prompts."""
-        html = Path("src/kwb/api/dashboard.html").read_text()
-        self.assertIn("async function runNER", html)
-        self.assertIn("async function runScan", html)
-        self.assertIn("async function runEDTF", html)
+        # JS was extracted to parts/dashboard.js during modularization
+        js = Path("src/kwb/api/parts/dashboard.js").read_text()
+        self.assertIn("async function runNER", js)
+        self.assertIn("async function runScan", js)
+        self.assertIn("async function runEDTF", js)
 
         # per-tab prompts are wired (not replaced by global cfg prompt only)
-        self.assertIn("system_prompt:$('ner-sp').value||$('cfg-sys').value", html)
-        self.assertIn("system_prompt:$('scan-sp').value||$('cfg-sys').value", html)
-        self.assertIn("system_prompt:$('edtf-sp').value||$('cfg-sys').value", html)
+        self.assertIn("system_prompt:$('ner-sp').value||$('cfg-sys').value", js)
+        self.assertIn("system_prompt:$('scan-sp').value||$('cfg-sys').value", js)
+        self.assertIn("system_prompt:$('edtf-sp').value||$('cfg-sys').value", js)
 
         # broken duplicate fragments must not exist
-        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);nerData", html)
-        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);renderScan", html)
-        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);edtfData", html)
+        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);nerData", js)
+        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);renderScan", js)
+        self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);edtfData", js)

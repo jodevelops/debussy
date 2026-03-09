@@ -179,9 +179,14 @@ CATALOG = [
 # HTML dashboard
 # ---------------------------------------------------------------------------
 def _build_html() -> str:
+    _parts = _HTML_DIR / "parts"
+    css = (_parts / "dashboard.css").read_text(encoding="utf-8")
+    js = (_parts / "dashboard.js").read_text(encoding="utf-8")
     tpl = (_HTML_DIR / "dashboard.html").read_text(encoding="utf-8")
     return (
         tpl
+        .replace("<!-- CSS_PLACEHOLDER -->", f"<style>{css}</style>")
+        .replace("<!-- JS_PLACEHOLDER -->", f"<script>{js}</script>")
         .replace("__PRESETS_JSON__", json.dumps(PRESETS, ensure_ascii=False))
         .replace("__TASKS_JSON__", json.dumps(TASKS_UI, ensure_ascii=False))
         .replace("__CATALOG_JSON__", json.dumps(CATALOG, ensure_ascii=False))

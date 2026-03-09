@@ -113,3 +113,19 @@ def get_provider(model: str = ""):
             pc.default_model = model
         return GPUStackProvider(pc)
     return MockProvider.with_defaults()
+
+
+# ---------------------------------------------------------------------------
+# Service factories (NerServiceProtocol / DateServiceProtocol)
+# ---------------------------------------------------------------------------
+
+def get_ner_service():
+    """Return a DefaultNerService (NerServiceProtocol-kompatibel)."""
+    from kwb.analyze.ner_service import DefaultNerService
+    return DefaultNerService()
+
+
+def get_date_service():
+    """Return a DefaultDateService (DateServiceProtocol-kompatibel)."""
+    from kwb.enrich.date_service import DefaultDateService
+    return DefaultDateService()
