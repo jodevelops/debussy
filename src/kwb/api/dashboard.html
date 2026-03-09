@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Debussy v0.5</title>
+<title>Debussy v__VERSION__beta</title>
 <!-- CSS_PLACEHOLDER -->
 </head>
 <body>
 <header>
-<h1>Debussy<em>v0.5 · Curation Workbench</em></h1>
+<h1>Debussy<em>v__VERSION__beta &mdash; GLAM Data AI Curation Workbench</em></h1>
 <div class="sbar"><span class="dot off" id="gd"></span><span id="gl">GPUStack …</span></div>
 </header>
 <div class="ws-bar" id="wsbar">
@@ -21,10 +21,11 @@
 <div class="nav">
 <div class="nt a" data-p="data">① Daten</div>
 <div class="nt" data-p="ner">② NER</div>
-<div class="nt" data-p="dates">③ Datierung</div>
-<div class="nt" data-p="images">④ Bilder</div>
-<div class="nt" data-p="mapping">⑤ Mapping</div>
-<div class="nt" data-p="export">⑥ Export</div>
+<div class="nt" data-p="terms">③ Begriffe</div>
+<div class="nt" data-p="dates">④ Datierung</div>
+<div class="nt" data-p="images">⑤ Bilder</div>
+<div class="nt" data-p="mapping">⑥ Mapping</div>
+<div class="nt" data-p="export">⑦ Export</div>
 <div class="nt" data-p="config">⚙️ KI</div>
 <div class="nt" data-p="catalog">📋 Katalog</div>
 </div>
@@ -36,12 +37,28 @@
 <div class="c" id="fc" style="display:none"><h2>Dateien</h2><div class="cl" id="fcl"></div><button class="btn f" onclick="runStruct()">🔬 Strukturelle Analyse starten</button></div>
 <div class="c"><h2>GPUStack</h2><div id="gi" style="font-size:.75rem">Prüfe …</div></div>
 </div><div>
-<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p><div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Empfohlener Workflow:</strong><br>① Daten &ndash; CSV laden &amp; Strukturanalyse starten<br>② NER &ndash; Entit&auml;ten erkennen (Personen, Orte, …)<br>③ Datierung &ndash; EDTF-Normalisierung<br>④ Bilder &ndash; Bild-Upload &amp; KI-Analyse<br>⑤ Mapping &ndash; CSV-Spalten &rarr; Goobi-Felder zuordnen<br>⑥ Export &ndash; Goobi-XML erzeugen (Mapping erforderlich!)</div></div>
+<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p><div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Empfohlener Workflow:</strong><br>① Daten &ndash; CSV laden, ID-Spalte festlegen &amp; Strukturanalyse<br>② NER &ndash; Entit&auml;ten erkennen (Personen, Orte, …)<br>③ Begriffe &ndash; Problematische Begriffe via W&ouml;rterbuch scannen<br>④ Datierung &ndash; EDTF-Normalisierung<br>⑤ Bilder &ndash; Bild-Upload &amp; KI-Analyse<br>⑥ Mapping &ndash; CSV-Spalten &rarr; Minimaldatensatz / Goobi<br>⑦ Export &ndash; Goobi-XML erzeugen (Mapping erforderlich!)</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
-<div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="prof">Profile</div><div class="tab" data-t="cold">Spalten</div><div class="tab" data-t="md">Markdown</div></div>
+<!-- ID column selection bar -->
+<div id="id-col-bar" class="c" style="display:none;margin-bottom:.6rem;background:#fffbeb;border-color:#f59e0b">
+<h2 style="color:#b45309">🔑 ID-Spalte festlegen</h2>
+<p style="font-size:.75rem;margin-bottom:.4rem">Wähle die Spalte, die jeden Datensatz eindeutig identifiziert (UUID, Signatur, o.ä.). Muss eindeutig sein und dient als Anker für alle Objekte.</p>
+<div id="id-col-datasets"></div>
+</div>
+<div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="cols">Spalten &amp; Profil</div><div class="tab" data-t="md">Markdown</div></div>
 <div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
-<div class="tp" data-t="prof"><div id="parea"></div></div>
-<div class="tp" data-t="cold"><div id="cdarea"></div></div>
+<div class="tp" data-t="cols">
+<div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;flex-wrap:wrap">
+<div class="fl" style="margin-bottom:0" id="col-sort-bar">
+<strong style="font-size:.7rem;align-self:center">Sortieren:</strong>
+<div class="fb2 a" onclick="sortCols('name',this)">Name</div>
+<div class="fb2" onclick="sortCols('fill',this)">Füllgrad ↓</div>
+<div class="fb2" onclick="sortCols('unique',this)">Unique ↓</div>
+</div>
+<button class="btn sm s" style="margin-left:auto" onclick="createArbeitspaket()">📦 Arbeitspaket erstellen</button>
+</div>
+<div id="colsarea"></div>
+</div>
 <div class="tp" data-t="md"><textarea id="mdx" readonly rows="18"></textarea><button class="btn sm s" style="margin-top:.3rem" onclick="navigator.clipboard.writeText($('mdx').value)">Kopieren</button></div>
 </div></div></div></div></div>
 
@@ -113,6 +130,74 @@
 <div id="scan-r" style="display:none"><div class="c" style="margin-top:1rem"><h2>Problematische Begriffe</h2><div id="scan-metrics" style="font-size:.72rem;color:#555;margin-bottom:.5rem"></div><div id="scan-body"></div></div></div>
 </div>
 </div></div></div>
+
+<!-- ===== PROBLEMATISCHE BEGRIFFE ===== -->
+<div class="pg" data-p="terms"><div class="g2"><div class="sb">
+<div class="c"><h2>📚 Wörterbuch</h2>
+<div class="hint" id="terms-hint">Lade ein Wörterbuch (CSV/JSON/TXT) oder füge Begriffe manuell hinzu. Dann Datensatz scannen.</div>
+<label>Wörterbuch hochladen</label>
+<div style="display:flex;gap:.4rem;align-items:center;margin-top:.3rem">
+<input type="file" id="terms-file" accept=".csv,.json,.txt" style="font-size:.73rem;flex:1">
+<button class="btn sm" onclick="uploadTermsDict()">⬆️ Laden</button>
+</div>
+<p style="font-size:.68rem;color:#888;margin-top:.3rem">CSV: Begriff[,Ersatz[,Kategorie[,Hinweis]]] | JSON: Liste oder Objekt</p>
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<label>Begriff manuell hinzufügen</label>
+<input type="text" id="terms-new-term" placeholder="Problematischer Begriff">
+<input type="text" id="terms-new-repl" placeholder="Empfohlener Ersatz (optional)">
+<select id="terms-new-cat" style="margin-top:.3rem">
+<option value="">Kategorie wählen …</option>
+<option value="kolonial">Kolonial</option>
+<option value="diskriminierend">Diskriminierend</option>
+<option value="veraltet">Veraltet</option>
+<option value="stigmatisierend">Stigmatisierend</option>
+<option value="historisch belastet">Historisch belastet</option>
+<option value="sonstig">Sonstig</option>
+</select>
+<input type="text" id="terms-new-note" placeholder="Hinweis (optional)">
+<button class="btn f" style="margin-top:.4rem" onclick="addTermManual()">＋ Begriff hinzufügen</button>
+<div id="terms-add-msg" style="font-size:.7rem;margin-top:.3rem;display:none"></div>
+</div>
+
+<div class="c"><h2>🔍 Scan-Optionen</h2>
+<label>Datensatz</label><select id="terms-ds"><option value="">— Erst Daten laden —</option></select>
+<label style="display:flex;align-items:center;gap:.4rem;margin-top:.5rem;font-size:.73rem"><input type="checkbox" id="terms-whole-word" checked> Nur ganze Wörter</label>
+<label style="display:flex;align-items:center;gap:.4rem;font-size:.73rem"><input type="checkbox" id="terms-case-sensitive"> Groß-/Kleinschreibung beachten</label>
+<label style="display:flex;align-items:center;gap:.4rem;font-size:.73rem"><input type="checkbox" id="terms-scan-ocr"> OCR-Text aus Bildern einschließen</label>
+<button class="btn f" onclick="runDictScan()">🔎 Datensatz scannen</button>
+</div>
+</div>
+
+<div>
+<!-- Dictionary list -->
+<div class="c" style="margin-bottom:1rem">
+<h2>Wörterbuch-Einträge <span id="terms-count" style="font-size:.7rem;color:#888"></span></h2>
+<div id="terms-list-empty" class="em" style="font-size:.75rem;padding:1rem">Noch keine Begriffe im Wörterbuch.</div>
+<div id="terms-dict-list" style="max-height:260px;overflow-y:auto"></div>
+<div style="margin-top:.4rem;display:flex;gap:.5rem">
+<button class="btn sm s" onclick="clearAllTerms()" title="Alle Begriffe löschen">🗑 Alle löschen</button>
+<button class="btn sm" onclick="exportTermsDict()">⬇️ Wörterbuch exportieren</button>
+</div>
+</div>
+
+<!-- Scan results -->
+<div id="terms-results-empty" class="em" style="font-size:.75rem"><h3>Problematische Begriffe</h3><p>Wörterbuch laden und Scan starten, um Ergebnisse zu sehen.</p></div>
+<div id="terms-results" style="display:none">
+<div class="c">
+<h2>Scan-Ergebnisse <span id="terms-match-count" style="font-size:.7rem;color:#888"></span></h2>
+<div id="terms-metrics" style="font-size:.72rem;color:#555;margin-bottom:.4rem"></div>
+<div class="fl" id="terms-cat-bar"></div>
+<div class="scroll-box"><table class="etbl" id="terms-tbl">
+<thead><tr><th>Begriff</th><th>Fundstelle</th><th>Spalte</th><th>Record-ID</th><th>Ersatz</th><th>Kategorie</th></tr></thead>
+<tbody id="terms-body"></tbody>
+</table></div>
+<div style="margin-top:.5rem">
+<button class="btn sm" onclick="exportTermsResults()">⬇️ Ergebnisse als CSV</button>
+</div>
+</div>
+</div>
+</div>
+</div></div>
 
 <!-- ===== DATIERUNG ===== -->
 <div class="pg" data-p="dates"><div class="g2"><div class="sb">
@@ -221,16 +306,24 @@
 
 <!-- ===== FELD-MAPPING ===== -->
 <div class="pg" data-p="mapping"><div style="max-width:1100px">
-<div class="c"><h2>🗺️ Feld-Mapping: CSV → Goobi</h2>
-<p style="font-size:.78rem;color:#666;margin-bottom:.6rem">Ordne CSV-Spalten den Goobi-Metadatenfeldern zu. Nur gemappte Spalten werden exportiert.</p>
-<label>Datensatz für Mapping</label><select id="fm-ds" onchange="loadFMCols()"><option value="">— Erst Daten laden —</option></select>
-<div id="fm-table-wrap" style="margin-top:.6rem;display:none">
+<div class="c"><h2>🗺️ Feld-Mapping: CSV → Minimaldatensatz / Goobi</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.4rem">Ordne CSV-Spalten manuell den Zielfeldern zu. Felder sind nicht verpflichtend — ordne nur zu, was relevant ist.</p>
+<div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">
+<label style="margin:0;color:#555">Vorlage:</label>
+<button class="btn sm" onclick="applyMDSTemplate()">📋 Minimaldatensatz 1.1</button>
+<button class="btn sm s" onclick="applyGoobiTemplate()">📋 Goobi-Standard</button>
+<label style="margin:0;color:#555;margin-left:.5rem">Datensatz:</label>
+<select id="fm-ds" onchange="loadFMCols()" style="width:auto;margin-top:0;flex:1;min-width:160px"><option value="">— Erst Daten laden —</option></select>
+</div>
+<div id="fm-table-wrap" style="display:none">
 <table class="fmtbl" id="fm-tbl">
-<thead><tr><th>CSV-Spalte</th><th>Goobi Label</th><th>Goobi Typ</th><th></th></tr></thead>
+<thead><tr><th>CSV-Spalte</th><th>Füllgrad</th><th>Ziel-Feld / Label</th><th>Typ</th><th></th></tr></thead>
 <tbody id="fm-body"></tbody>
 </table>
-<button class="btn sm" style="margin-top:.5rem" onclick="saveFM()">💾 Mapping speichern</button>
-<span id="fm-saved" style="font-size:.7rem;color:var(--ok);margin-left:.5rem;display:none">✓ Gespeichert</span>
+<div style="margin-top:.5rem;display:flex;gap:.5rem;align-items:center">
+<button class="btn sm" onclick="saveFM()">💾 Mapping speichern</button>
+<span id="fm-saved" style="font-size:.7rem;color:var(--ok);display:none">✓ Gespeichert</span>
+</div>
 </div>
 </div>
 </div></div>

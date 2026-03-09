@@ -137,7 +137,8 @@ CATALOG = [
     {"id": "N-01", "name": "NER (LLM)",           "module": "NER",       "status": "done",    "note": "10 Entity-Typen"},
     {"id": "N-02", "name": "NER (SpaCy)",         "module": "NER",       "status": "done",    "note": "Optional"},
     {"id": "N-03", "name": "NER Hybrid",          "module": "NER",       "status": "done",    "note": "SpaCy+LLM, dedupliziert, _merge_entity_lists"},
-    {"id": "N-04", "name": "Problematische Begriffe","module": "NER",    "status": "done",    "note": "Fullscan"},
+    {"id": "N-04", "name": "Problematische Begriffe","module": "NER",    "status": "done",    "note": "LLM-basiert (NER-Tab)"},
+    {"id": "N-06", "name": "Begriffe-Wörterbuch",   "module": "Begriffe","status": "done",    "note": "Dictionary-Scan, eigener Tab, CSV/JSON/TXT Upload"},
     {"id": "N-05", "name": "Entity-Editor",       "module": "NER",       "status": "done",    "note": "Accept/Reject/Status-Filter"},
     # EDTF
     {"id": "E-01", "name": "EDTF Regeln",         "module": "EDTF",      "status": "done",    "note": "normalize/edtf.py — Umlaut-Monate, Jahreszeiten, ISO"},
@@ -151,7 +152,8 @@ CATALOG = [
     {"id": "W-01", "name": "Workspace speichern", "module": "Workspace", "status": "done",    "note": ".debussy.json (inkl. Bildanalyse-Ergebnisse)"},
     {"id": "W-02", "name": "Workspace laden",     "module": "Workspace", "status": "done",    "note": ""},
     {"id": "W-03", "name": "Dictionary",          "module": "Workspace", "status": "done",    "note": ""},
-    {"id": "W-04", "name": "Field Mapping GUI",   "module": "Workspace", "status": "done",    "note": "CSV → Goobi-Typ"},
+    {"id": "W-04", "name": "Field Mapping GUI",   "module": "Workspace", "status": "done",    "note": "CSV → Minimaldatensatz 1.1 / Goobi-Typ"},
+    {"id": "W-05", "name": "ID-Spalten-Auswahl", "module": "Workspace", "status": "done",    "note": "Manuelle Auswahl nach CSV-Upload, Unique-Prüfung"},
     # Export
     {"id": "X-01", "name": "Goobi-XML-Export",    "module": "Export",    "status": "done",    "note": "goobi-import Format"},
     {"id": "X-02", "name": "Goobi Batch-Export",  "module": "Export",    "status": "done",    "note": ""},
@@ -183,6 +185,7 @@ def _build_html() -> str:
     css = (_parts / "dashboard.css").read_text(encoding="utf-8")
     js = (_parts / "dashboard.js").read_text(encoding="utf-8")
     tpl = (_HTML_DIR / "dashboard.html").read_text(encoding="utf-8")
+    version = app.version
     return (
         tpl
         .replace("<!-- CSS_PLACEHOLDER -->", f"<style>{css}</style>")
@@ -190,6 +193,7 @@ def _build_html() -> str:
         .replace("__PRESETS_JSON__", json.dumps(PRESETS, ensure_ascii=False))
         .replace("__TASKS_JSON__", json.dumps(TASKS_UI, ensure_ascii=False))
         .replace("__CATALOG_JSON__", json.dumps(CATALOG, ensure_ascii=False))
+        .replace("__VERSION__", version)
     )
 
 

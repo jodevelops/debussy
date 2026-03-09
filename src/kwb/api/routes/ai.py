@@ -283,6 +283,10 @@ async def images_upload(files: list[UploadFile] = File(...)):
             "height": profile.height,
             "hash_sha256": profile.hash_sha256,
             "exif_subset": exif_subset,
+            "analyzed": False,
+            "result": None,
+            "record_id": "",
+            "review_status": "pending",
         })
 
     return {"uploaded": len(accepted), "images": accepted}
