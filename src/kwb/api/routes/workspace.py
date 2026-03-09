@@ -26,6 +26,9 @@ router = APIRouter()
 
 @router.post("/api/workspace/field-mapping")
 async def set_field_mapping(request: dict):
+    # Expected payload: {"mappings": [{"csv_column": str, "goobi_type": str,
+    #   "label": str, "repeatable": bool, "authority": str, "enabled": bool}]}
+    # Response: {"saved": int, "mappings": [...]}  — always uses the list format.
     ws = get_workspace()
     mappings_raw = request.get("mappings", [])
     mappings = [
@@ -46,6 +49,7 @@ async def set_field_mapping(request: dict):
 
 @router.get("/api/workspace/field-mapping")
 async def get_field_mapping():
+    # Response: {"mappings": [{csv_column, goobi_type, label, repeatable, ...}]}
     ws = get_workspace()
     return {"mappings": [m.to_dict() for m in ws.active_mappings()]}
 

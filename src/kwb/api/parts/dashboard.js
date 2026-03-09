@@ -114,9 +114,11 @@ async function loadFMCols(){
     const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/columns')).json();
     if(d.error)return;
     fmCols=d.columns;
-    // Load existing mapping
+    // API payload (GET): {mappings: [{csv_column, goobi_type, label, ...}]}
+    // Convert to internal UI state: {col_name: [label, goobi_type]}
     const ex=await(await fetch('/api/workspace/field-mapping')).json();
-    fmMapping=ex.mapping||{};
+    fmMapping={};
+    (ex.mappings||[]).forEach(m=>{fmMapping[m.csv_column]=[m.label||m.goobi_type,m.goobi_type];});
     renderFMTable();
     $('fm-table-wrap').style.display='block';
   }catch(e){}
@@ -189,16 +191,19 @@ function clearFMRow(col){
   if(lbl)lbl.value='';if(typ)typ.value='';
 }
 async function saveFM(){
-  const mapping={};
+  // API payload (POST): {mappings: [{csv_column, goobi_type, label, ...}]}
+  const mappings=[];
   fmCols.forEach(c=>{
     const lbl=$('fm-lbl-'+c.name);const typ=$('fm-typ-'+c.name);
     if(lbl&&typ&&typ.value){
-      mapping[c.name]=[lbl.value||typ.value,typ.value];
+      mappings.push({csv_column:c.name,goobi_type:typ.value,label:lbl.value||typ.value});
     }
   });
   try{
-    await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mapping})});
-    fmMapping=mapping;
+    await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
+    // Update internal UI state: {col_name: [label, goobi_type]}
+    fmMapping={};
+    mappings.forEach(m=>{fmMapping[m.csv_column]=[m.label,m.goobi_type];});
     $('fm-saved').style.display='inline';
     setTimeout(()=>{$('fm-saved').style.display='none'},2000);
   }catch(e){alert('Fehler: '+e.message)}
