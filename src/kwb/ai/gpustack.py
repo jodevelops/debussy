@@ -1,10 +1,11 @@
 """GPUStack provider — OpenAI-compatible API."""
 from __future__ import annotations
-import json, logging, time
-from typing import Any
+import json
+import logging
+import time
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
-from kwb.ai.provider import AIMessage, AIProvider, AIResponse, ProviderConfig
+from kwb.ai.provider import AIProvider, AIResponse
 
 logger = logging.getLogger(__name__)
 

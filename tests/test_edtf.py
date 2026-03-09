@@ -24,7 +24,6 @@ from kwb.normalize.edtf import (
     normalize_edtf,
     normalize_edtf_batch,
     normalize_edtf_hybrid,
-    EDTFResult,
 )
 from kwb.enrich.edtf import normalize_date_rules, normalize_dates
 from kwb.ai.mock import MockProvider

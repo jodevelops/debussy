@@ -1,8 +1,7 @@
 """Structural analysis — rule-based quality checks."""
 from __future__ import annotations
-from collections import Counter
 import pandas as pd
-from kwb.core.models import AnalysisReport, DatasetProfile, Finding, FindingCategory, Severity
+from kwb.core.models import AnalysisReport, Finding, FindingCategory, Severity
 
 def _get_affected_ids(df, mask, id_col, limit=10):
     if not id_col or id_col not in df.columns: return []

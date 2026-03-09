@@ -20,7 +20,7 @@ from typing import Any
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from kwb.ai.provider import AIMessage, AIProvider, AIResponse, ProviderConfig
+from kwb.ai.provider import AIMessage, AIProvider, AIResponse
 
 logger = logging.getLogger(__name__)
 

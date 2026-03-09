@@ -13,7 +13,6 @@ Strategy:
 import sys
 import unittest
 from pathlib import Path
-from xml.etree.ElementTree import fromstring
 
 import pandas as pd
 

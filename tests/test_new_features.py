@@ -20,8 +20,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from kwb.core.workspace import (
-    Workspace, FieldMapping, EntityReview, CuratedDate, DictionaryEntry,
-    ImageAnalysisResult,
+    Workspace, FieldMapping, ImageAnalysisResult,
 )
 
 
@@ -571,7 +570,6 @@ class TestNewExportRoutes(unittest.TestCase):
     def test_image_analysis_export_json(self):
         """GET /api/export/image-analyses returns JSON including metadata fields."""
         from kwb.api import deps
-        from kwb.core.workspace import ImageAnalysisResult
         ws = deps._state["workspace"]
         ws.save_image_analysis(ImageAnalysisResult(
             image_id="img_0001_x",
@@ -610,7 +608,6 @@ class TestNewExportRoutes(unittest.TestCase):
             self.assertIn("results", r.json())
 
 
-import io  # noqa: E402 — needed for TestOCREndpoint
 
 if __name__ == "__main__":
     unittest.main()

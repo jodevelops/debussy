@@ -27,16 +27,14 @@ from kwb.api.deps import (
 )
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
-from kwb.ai.prompts import SYSTEM_VISION_EXPERT_DE, SYSTEM_METADATA_EXPERT_DE
+from kwb.ai.prompts import SYSTEM_METADATA_EXPERT_DE
 from kwb.core.workspace import ImageAnalysisResult, ImageReviewStatus
 from kwb.ai.prompts import (
-    SYSTEM_VISION_EXPERT_DE, SYSTEM_METADATA_EXPERT_DE,
     PROMPT_VERSIONS,
     prompt_image_description,
     prompt_person_face_visibility,
     prompt_ocr_transcription_quality,
 )
-from kwb.core.workspace import ImageAnalysisResult
 from kwb.ingest.image_loader import ingest_image
 
 router = APIRouter()

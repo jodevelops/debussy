@@ -1,9 +1,11 @@
 """Image ingestion — load images, extract metadata, prepare for AI vision."""
 from __future__ import annotations
-import base64, hashlib, mimetypes, struct
+import base64
+import hashlib
+import mimetypes
+import struct
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
 
 @dataclass
 class ImageProfile:
@@ -49,7 +51,7 @@ def ingest_image(path, load_base64=True):
     if not path.exists(): raise FileNotFoundError(path)
     mime=_detect_mime(path)
     w,h=(_jpeg_dims(path) if "jpeg" in mime else _png_dims(path) if "png" in mime else (None,None))
-    sha=hashlib.sha256(); 
+    sha=hashlib.sha256() 
     with open(path,"rb") as f:
         for chunk in iter(lambda:f.read(8192),b""): sha.update(chunk)
     p=ImageProfile(path=str(path),filename=path.name,file_size_bytes=path.stat().st_size,

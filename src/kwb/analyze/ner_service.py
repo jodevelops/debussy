@@ -19,7 +19,7 @@ from typing import Any
 
 import pandas as pd
 
-from kwb.analyze.ner import NERResult, Entity, EntityType, ner_hybrid
+from kwb.analyze.ner import NERResult, Entity, ner_hybrid
 from kwb.ai.provider import AIProvider
 
 

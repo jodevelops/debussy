@@ -7,21 +7,18 @@ All tests use MockProvider — no GPU required.
 import json
 import os
 import tempfile
-from pathlib import Path
 
-from kwb.ai.provider import AIMessage, ProviderConfig
+from kwb.ai.provider import AIMessage
 from kwb.ai.mock import MockProvider
-from kwb.ai.gpustack import GPUStackProvider
 from kwb.ai.prompts import (
     prompt_classify_subject,
     prompt_describe_image,
     prompt_normalize_term,
     prompt_ocr_analysis,
 )
-from kwb.ai.batch import process_batch, _try_parse_json, BatchReport
+from kwb.ai.batch import process_batch, _try_parse_json
 from kwb.analyze.semantic import classify_subjects, describe_images
 from kwb.ingest.image_loader import ImageProfile, ingest_image
-from kwb.ingest.csv_loader import ingest_csv
 from kwb.core.models import DatasetProfile, FindingCategory
 
 
@@ -189,7 +186,8 @@ class TestImageLoader:
 
     def test_ingest_png(self):
         """Create a minimal valid PNG and ingest it."""
-        import struct, zlib
+        import struct
+        import zlib
 
         def _make_chunk(chunk_type, data):
             chunk = chunk_type + data

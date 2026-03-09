@@ -1,12 +1,11 @@
 """Tests for Workspace, GND, and Goobi Export."""
-import json
 import tempfile
 import unittest
 from pathlib import Path
 
 import pandas as pd
 
-from kwb.core.workspace import Workspace, CuratedEntity, CuratedDate, DictionaryEntry, ImageAnalysisResult, ImageReviewStatus
+from kwb.core.workspace import Workspace, ImageAnalysisResult, ImageReviewStatus
 from kwb.export.goobi_xml import export_goobi_xml, export_goobi_batch
 
 
@@ -216,7 +215,7 @@ class TestGoobiExport(unittest.TestCase):
 # GND tests are network-dependent, so we test the module structure only
 class TestGNDModule(unittest.TestCase):
     def test_imports(self):
-        from kwb.enrich.gnd import gnd_search, gnd_lookup, gnd_batch_search, GNDResult
+        from kwb.enrich.gnd import GNDResult
         r = GNDResult(gnd_id="123", preferred_name="Test")
         self.assertEqual(r.uri, "https://d-nb.info/gnd/123")
         d = r.to_dict()

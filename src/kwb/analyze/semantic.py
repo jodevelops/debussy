@@ -1,13 +1,11 @@
 """Semantic analysis — AI-powered metadata classification and image description."""
 from __future__ import annotations
 import logging
-from typing import Any
 import pandas as pd
-from kwb.core.models import DatasetProfile, Finding, FindingCategory, Severity
-from kwb.ai.provider import AIMessage, AIProvider
+from kwb.core.models import Finding, FindingCategory, Severity
+from kwb.ai.provider import AIMessage
 from kwb.ai.prompts import prompt_classify_subject, prompt_describe_image
-from kwb.ai.batch import BatchReport, BatchResult, process_batch, _try_parse_json
-from kwb.ingest.image_loader import ImageProfile
+from kwb.ai.batch import BatchReport, process_batch
 
 logger = logging.getLogger(__name__)
 

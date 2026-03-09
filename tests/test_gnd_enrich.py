@@ -163,7 +163,6 @@ class TestBuildDictionaryReal(unittest.TestCase):
 
     def test_keeps_highest_confidence(self):
         """When same term appears at different confidence levels, highest wins."""
-        from kwb.core.workspace import DictionaryEntry
         rows = [
             {"record_id": "r1", "named_entity_1": "Berlin",
              "named_entity_1_gnd_id": "4005765-8",

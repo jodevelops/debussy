@@ -1,6 +1,7 @@
 """CLI entry point for the Kuratierwerkbank."""
 from __future__ import annotations
-import argparse, sys
+import argparse
+import sys
 from pathlib import Path
 
 from kwb.ingest.csv_loader import ingest_csv
