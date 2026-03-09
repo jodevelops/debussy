@@ -328,3 +328,22 @@ class TestSecurityP0(unittest.TestCase):
         self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);nerData", js)
         self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);renderScan", js)
         self.assertNotIn("system_prompt:$('cfg-sys').value})})).json();\n    if(r.error)throw Error(r.error);edtfData", js)
+
+    def test_dashboard_js_is_syntactically_valid(self):
+        """Regression: a ternary missing its else-branch broke all JS (tabs + upload)."""
+        import re
+        import subprocess
+        import tempfile
+        import os
+        from kwb.api.app import _build_html
+        html = _build_html()
+        js = re.findall(r'<script>(.*?)</script>', html, re.DOTALL)
+        self.assertEqual(len(js), 1, "Expected exactly one <script> block in dashboard HTML")
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.js', delete=False, encoding='utf-8') as f:
+            f.write(js[0])
+            fname = f.name
+        try:
+            result = subprocess.run(['node', '--check', fname], capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, f"JS syntax error: {result.stderr[:400]}")
+        finally:
+            os.unlink(fname)
