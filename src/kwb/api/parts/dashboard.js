@@ -49,11 +49,11 @@ function dl(name,content,type){const b=new Blob([content],{type});const a=docume
 
 // === NAV ===
 function bindTabs(id){const el=$(id);if(!el)return;el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;e.currentTarget.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));e.currentTarget.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))}}catch(err){console.error('[initNav]',err)}}
-function initTabs(){try{bindTabs('dt')}catch(err){console.error('[initTabs]',err)}}
+function initNav(){const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))}}
+function initTabs(){bindTabs('dt')}
 
 // === UPLOAD ===
-function initUpload(){try{const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.target.files);if(uz){uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)}}}catch(err){console.error('[initUpload]',err)}}
+function initUpload(){const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.target.files);if(uz){uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)}}}
 function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
 function rfl(){
   const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
@@ -102,7 +102,7 @@ async function loadRecords(reset=false){
   }catch(e){}
 }
 function pageRecords(dir){recordOffset=Math.max(0,recordOffset+(dir*recordLimit));loadRecords(false)}
-function initPanels(){try{const expDs=$('exp-ds');if(expDs)expDs.onchange=()=>loadRecords(true)}catch(err){console.error('[initPanels]',err)}}
+function initPanels(){const expDs=$('exp-ds');if(expDs)expDs.onchange=()=>loadRecords(true)}
 
 // === FIELD MAPPING ===
 let fmCols=[];
@@ -1091,15 +1091,15 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
 (function(){
   const failed=[];
   [initNav,initTabs,initUpload,initPanels].forEach(fn=>{try{fn()}catch(err){console.error('[init]',fn.name,err);failed.push(fn.name)}});
+  try{loadPreset()}catch(err){console.error('[init] loadPreset',err);failed.push('loadPreset')}
+  try{applyImgPreset()}catch(err){console.error('[init] applyImgPreset',err);failed.push('applyImgPreset')}
+  try{applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr')}catch(err){console.error('[init] applyActionPreset',err);failed.push('applyActionPreset')}
+  try{refreshReviewStats()}catch(err){console.error('[init] refreshReviewStats',err);failed.push('refreshReviewStats')}
+  try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('')}catch(err){console.error('[init] cfg-tasks',err);failed.push('cfg-tasks')}
+  try{renderCatalog()}catch(err){console.error('[init] renderCatalog',err);failed.push('renderCatalog')}
+  try{chkGPU()}catch(err){console.error('[init] chkGPU',err);failed.push('chkGPU')}
+  try{updWS()}catch(err){console.error('[init] updWS',err);failed.push('updWS')}
+  try{loadImages()}catch(err){console.error('[init] loadImages',err);failed.push('loadImages')}
+  try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err);failed.push('loadTermsDict')}
   if(failed.length)showInitError(failed.join(', '));
-  try{loadPreset()}catch(err){console.error('[init] loadPreset',err)}
-  try{applyImgPreset()}catch(err){console.error('[init] applyImgPreset',err)}
-  try{applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr')}catch(err){console.error('[init] applyActionPreset',err)}
-  try{refreshReviewStats()}catch(err){console.error('[init] refreshReviewStats',err)}
-  try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('')}catch(err){console.error('[init] cfg-tasks',err)}
-  try{renderCatalog()}catch(err){console.error('[init] renderCatalog',err)}
-  try{chkGPU()}catch(err){console.error('[init] chkGPU',err)}
-  try{updWS()}catch(err){console.error('[init] updWS',err)}
-  try{loadImages()}catch(err){console.error('[init] loadImages',err)}
-  try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err)}
 })();
