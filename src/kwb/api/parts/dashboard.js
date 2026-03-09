@@ -574,6 +574,29 @@ async function loadWS(file){if(!file)return;const fd=new FormData();fd.append('f
     if(r.error)throw Error(r.error);alert('Geladen: '+(r.entity_count||0)+' Entities');updWS()}catch(e){alert(e.message)}}
 
 // === CONFIG ===
+async function loadGPUConfig(){
+  try{const d=await(await fetch('/api/gpu/config')).json();
+    if($('cfg-url'))$('cfg-url').value=d.gpustack_url||'';
+    if($('cfg-key'))$('cfg-key').placeholder=d.gpustack_key_masked
+      ?'Aktuell: '+d.gpustack_key_masked+' (leer = unverändert)'
+      :'sk-… (leer lassen = unverändert)';
+  }catch(e){console.error('loadGPUConfig',e)}}
+
+function toggleKeyVis(){const inp=$('cfg-key');inp.type=inp.type==='password'?'text':'password';}
+
+async function saveGPUConfig(){
+  const url=($('cfg-url')?.value||'').trim();
+  const key=($('cfg-key')?.value||'').trim();
+  const mt=($('cfg-mt')?.value||'').trim();
+  const mv=($('cfg-mv')?.value||'').trim();
+  const st=$('cfg-save-status');
+  if(st)st.textContent='Speichern…';
+  try{const r=await(await fetch('/api/gpu/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gpustack_url:url,gpustack_key:key,gpustack_model_text:mt,gpustack_model_vision:mv})})).json();
+    if(st)st.textContent=r.status==='ok'?'✓ Gespeichert':'✗ '+(r.message||'Fehler');
+    if(r.status==='ok'){await chkGPU();await loadGPUConfig();}
+  }catch(e){if(st)st.textContent='✗ '+e.message}}
+
 function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
 function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const src=$(m[0]);const tgt=$(m[1]);if(!src||!tgt)return;const k=src.value;if(k!=='custom')tgt.value=PRESETS[k]||'';}
 async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
@@ -1099,6 +1122,7 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
   try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('')}catch(err){console.error('[init] cfg-tasks',err)}
   try{renderCatalog()}catch(err){console.error('[init] renderCatalog',err)}
   try{chkGPU()}catch(err){console.error('[init] chkGPU',err)}
+  try{loadGPUConfig()}catch(err){console.error('[init] loadGPUConfig',err)}
   try{updWS()}catch(err){console.error('[init] updWS',err)}
   try{loadImages()}catch(err){console.error('[init] loadImages',err)}
   try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err)}

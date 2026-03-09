@@ -396,6 +396,21 @@
 
 <!-- ===== CONFIG ===== -->
 <div class="pg" data-p="config"><div style="max-width:900px">
+<div class="c" style="margin-bottom:1rem"><h2>GPUStack-Verbindung</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.5rem">
+<div><label>Server-URL</label>
+<input id="cfg-url" type="text" placeholder="http://localhost:80" style="width:100%;box-sizing:border-box"></div>
+<div><label>API-Key</label>
+<div style="display:flex;gap:.3rem">
+<input id="cfg-key" type="password" placeholder="sk-… (leer lassen = unverändert)" style="flex:1;min-width:0">
+<button class="btn sm" onclick="toggleKeyVis()">👁</button>
+</div></div>
+</div>
+<div style="display:flex;gap:.5rem;align-items:center">
+<button class="btn" onclick="saveGPUConfig()">Verbindung speichern</button>
+<span id="cfg-save-status" style="font-size:.75rem"></span>
+</div>
+</div>
 <div class="c"><h2>Modelle</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
 <div><label>Text-Modell</label><select id="cfg-mt"></select></div>
