@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 532/548 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
+**Gesamtstatus:** 564/580 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
 
 ---
 
@@ -252,12 +252,13 @@
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
 | test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
 | test_new_features.py | 41/41 | 0 | 0 | ✅ |
+| test_open_issues.py | 32/32 | 0 | 0 | ✅ |
 | test_roadmap.py | 8/8 | 0 | 0 | ✅ |
 | test_services.py | 20/20 | 0 | 0 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
-| **Gesamt** | **532/548** | **0** | **16** | **✅** |
+| **Gesamt** | **564/580** | **0** | **16** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
