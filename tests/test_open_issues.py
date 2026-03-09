@@ -466,7 +466,7 @@ class TestMockProviderErrorScenarios(unittest.TestCase):
 
     def test_batch_counts_failed_when_provider_raises(self):
         """Batch zählt failed korrekt wenn Provider eine Exception wirft."""
-        from kwb.ai.provider import AIMessage, AIProvider, AIResponse, ProviderConfig
+        from kwb.ai.provider import AIMessage, AIProvider, ProviderConfig
         from kwb.ai.batch import process_batch
 
         class FailingProvider(AIProvider):
