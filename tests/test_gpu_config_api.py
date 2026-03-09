@@ -86,7 +86,7 @@ class TestGpuConfigPost(unittest.TestCase):
             "gpustack_url": "http://newhost:8080",
             "gpustack_key": "sk-newkey",
             "gpustack_model_text": "mistral",
-            "gpustack_model_vision": "",
+            "gpustack_model_vision": "llava",
         })
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.json()["status"], "ok")
@@ -97,12 +97,29 @@ class TestGpuConfigPost(unittest.TestCase):
         self.assertEqual(cfg.gpustack_url, "http://newhost:8080")
         self.assertEqual(cfg.gpustack_key, "sk-newkey")
         self.assertEqual(cfg.gpustack_model_text, "mistral")
+        self.assertEqual(cfg.gpustack_model_vision, "llava")
+
+    def test_post_empty_url_clears_it(self):
+        """URL and model fields can be cleared by submitting empty strings."""
+        client = _make_client(gpustack_url="http://old:80", model_text="llama3")
+        r = client.post("/api/gpu/config", json={
+            "gpustack_url": "",
+            "gpustack_key": "",
+            "gpustack_model_text": "",
+            "gpustack_model_vision": "",
+        })
+        self.assertEqual(r.json()["status"], "ok")
+        from kwb.api import deps
+        cfg = deps.get_config()
+        self.assertEqual(cfg.gpustack_url, "")
+        self.assertEqual(cfg.gpustack_model_text, "")
 
     def test_post_empty_key_keeps_existing(self):
+        """Only the API key uses 'empty = unchanged' semantics."""
         client = _make_client(gpustack_url="http://old:80", gpustack_key="sk-existing")
         r = client.post("/api/gpu/config", json={
             "gpustack_url": "http://old:80",
-            "gpustack_key": "",  # empty → keep existing
+            "gpustack_key": "",  # empty → keep existing key
             "gpustack_model_text": "",
             "gpustack_model_vision": "",
         })

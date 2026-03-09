@@ -111,19 +111,22 @@ async def gpu_config_set(request: dict):
     new_mt = (request.get("gpustack_model_text") or "").strip()
     new_mv = (request.get("gpustack_model_vision") or "").strip()
 
+    # Only the API key uses "empty = keep existing" semantics (it's a secret).
+    # URL and model fields can be explicitly cleared by submitting an empty string.
+    gpustack_key = new_key if new_key else c.gpustack_key
     updated = dc_replace(
         c,
-        gpustack_url=new_url if new_url else c.gpustack_url,
-        # Keep existing key when an empty string is submitted
-        gpustack_key=new_key if new_key else c.gpustack_key,
-        gpustack_model_text=new_mt if new_mt else c.gpustack_model_text,
-        gpustack_model_vision=new_mv if new_mv else c.gpustack_model_vision,
+        gpustack_url=new_url,
+        gpustack_key=gpustack_key,
+        gpustack_model_text=new_mt,
+        gpustack_model_vision=new_mv,
     )
-    set_config(updated)
+    # Persist to disk first — if writing fails, in-memory config stays unchanged.
     try:
         updated.save_to_dotenv()
     except Exception as e:
         return JSONResponse({"status": "error", "message": f".env speichern fehlgeschlagen: {e}"}, 500)
+    set_config(updated)
     return {"status": "ok"}
 
 
