@@ -48,7 +48,7 @@ function safeOpt(val,label){return '<option value="'+esc(val)+'">'+esc(label)+'<
 function dl(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
 
 // === NAV ===
-function bindTabs(el){el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));el.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
+function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
 function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
 initNav();initTabs();
