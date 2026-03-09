@@ -9,7 +9,12 @@
 <body>
 <header>
 <h1>Debussy<em>v__VERSION__beta &mdash; GLAM Data AI Curation Workbench</em></h1>
-<div class="sbar"><span class="dot off" id="gd"></span><span id="gl">GPUStack …</span></div>
+<div class="sbar">
+<span id="user-info" style="font-size:.72rem;margin-right:.5rem"></span>
+<button class="btn sm" id="login-btn" onclick="showLogin()" style="margin-top:0">🔑 Login</button>
+<button class="btn sm s" id="logout-btn" onclick="doLogout()" style="margin-top:0;display:none">Abmelden</button>
+<span class="dot off" id="gd"></span><span id="gl">GPUStack …</span>
+</div>
 </header>
 <div class="ws-bar" id="wsbar">
 <span class="wsi">Workspace: <strong id="ws-name">—</strong></span>
@@ -24,8 +29,10 @@
 <div class="nt" data-p="terms">③ Begriffe</div>
 <div class="nt" data-p="dates">④ Datierung</div>
 <div class="nt" data-p="images">⑤ Bilder</div>
-<div class="nt" data-p="mapping">⑥ Mapping</div>
-<div class="nt" data-p="export">⑦ Export</div>
+<div class="nt" data-p="dict">⑥ Wörterbücher</div>
+<div class="nt" data-p="mapping">⑦ Mapping</div>
+<div class="nt" data-p="mds">⑧ MDS</div>
+<div class="nt" data-p="export">⑨ Export</div>
 <div class="nt" data-p="config">⚙️ KI</div>
 <div class="nt" data-p="catalog">📋 Katalog</div>
 </div>
@@ -74,6 +81,19 @@
 </div>
 <div id="ner-cols" class="cl"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
 <label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy+LLM)</option></select>
+<label>Entity-Typen (leer = alle)</label>
+<div id="ner-type-config" class="cl" style="max-height:150px">
+<div class="ci"><input type="checkbox" value="PER" class="ner-type-cb" checked><span class="etype etype-PER">PER</span><span>Personen</span></div>
+<div class="ci"><input type="checkbox" value="ORG" class="ner-type-cb" checked><span class="etype etype-ORG">ORG</span><span>Organisationen</span></div>
+<div class="ci"><input type="checkbox" value="LOC" class="ner-type-cb" checked><span class="etype etype-LOC">LOC</span><span>Orte/Geografie</span></div>
+<div class="ci"><input type="checkbox" value="GPE" class="ner-type-cb" checked><span class="etype etype-GPE">GPE</span><span>Geo-politisch</span></div>
+<div class="ci"><input type="checkbox" value="FAC" class="ner-type-cb"><span class="etype etype-FAC">FAC</span><span>Bauwerke</span></div>
+<div class="ci"><input type="checkbox" value="EVT" class="ner-type-cb"><span class="etype etype-EVT">EVT</span><span>Ereignisse</span></div>
+<div class="ci"><input type="checkbox" value="WRK" class="ner-type-cb"><span class="etype etype-WRK">WRK</span><span>Werke</span></div>
+<div class="ci"><input type="checkbox" value="DAT" class="ner-type-cb"><span class="etype etype-DAT">DAT</span><span>Datierung</span></div>
+<div class="ci"><input type="checkbox" value="ETH" class="ner-type-cb"><span class="etype etype-ETH">ETH</span><span>Ethnien</span></div>
+<div class="ci"><input type="checkbox" value="CON" class="ner-type-cb"><span class="etype etype-CON">CON</span><span>Konzepte</span></div>
+</div>
 <label>Samples</label><input type="number" id="ner-n" value="10000" min="1" max="500000">
 <label>Chunk-Größe</label><input type="number" id="ner-chunk" value="200" min="10" max="2000">
 <div style="display:flex;gap:.4rem;flex-wrap:wrap">
@@ -304,6 +324,66 @@
 </div></div>
 </div></div>
 
+<!-- ===== WÖRTERBÜCHER (DICTIONARIES) ===== -->
+<div class="pg" data-p="dict"><div style="max-width:1200px">
+<div class="g2"><div class="sb">
+<div class="c"><h2>📖 Fach-Wörterbücher</h2>
+<p style="font-size:.75rem;color:#666;margin-bottom:.5rem">Typisierte Wörterbücher für Orte, Personen, Institutionen u.a. mit Normdaten-Anbindung.</p>
+
+<label>Wörterbuch-Typ</label>
+<select id="dict-type-filter" onchange="loadDictEntries()">
+<option value="">Alle Typen</option>
+<option value="place">Orte</option>
+<option value="person">Personen</option>
+<option value="institution">Institutionen</option>
+<option value="concept">Konzepte</option>
+<option value="event">Ereignisse</option>
+<option value="work">Werke</option>
+<option value="other">Sonstige</option>
+</select>
+
+<div id="dict-type-counts" style="font-size:.72rem;margin-top:.4rem"></div>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Neuer Eintrag</h3>
+<input type="text" id="dict-new-term" placeholder="Begriff">
+<select id="dict-new-type"><option value="">Typ wählen …</option><option value="place">Ort</option><option value="person">Person</option><option value="institution">Institution</option><option value="concept">Konzept</option><option value="event">Ereignis</option><option value="work">Werk</option></select>
+<input type="text" id="dict-new-preferred" placeholder="Vorzugsbenennung (optional)">
+<button class="btn f" onclick="addDictEntry()">＋ Eintrag hinzufügen</button>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Aus Datensatz aufbauen</h3>
+<select id="dict-build-ds"><option value="">— Datensatz wählen —</option></select>
+<div id="dict-build-cols" class="cl" style="max-height:130px"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
+<select id="dict-build-type"><option value="">Typ zuordnen …</option><option value="place">Ort</option><option value="person">Person</option><option value="institution">Institution</option></select>
+<button class="btn f s" onclick="buildDict()">📥 Dictionary aufbauen</button>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Aus NER übernehmen</h3>
+<button class="btn f" onclick="nerToDict()">🔗 Akzeptierte Entities → Wörterbuch</button>
+
+<h3 style="font-size:.82rem;margin-top:.5rem">Aus OCR → NER → Wörterbuch</h3>
+<button class="btn f s" onclick="ocrToDict()">📖 OCR-Texte → NER → Wörterbuch</button>
+</div>
+
+<div>
+<div class="c">
+<h2>Wörterbuch-Einträge <span id="dict-count" style="font-size:.7rem;color:#888"></span></h2>
+<div style="display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+<button class="btn sm" onclick="exportDict('')">⬇️ Alle exportieren (JSON)</button>
+<button class="btn sm s" onclick="exportDictTyped()">⬇️ Nach Typ exportieren</button>
+</div>
+<div id="dict-list-empty" class="em" style="font-size:.75rem;padding:1rem">Noch keine Einträge.</div>
+<div id="dict-list" class="scroll-box" style="max-height:500px"></div>
+</div>
+
+<div id="dict-detail" class="c" style="margin-top:1rem;display:none">
+<h2>Eintrag bearbeiten</h2>
+<div id="dict-detail-content"></div>
+</div>
+</div>
+</div></div></div>
+
 <!-- ===== FELD-MAPPING ===== -->
 <div class="pg" data-p="mapping"><div style="max-width:1100px">
 <div class="c"><h2>🗺️ Feld-Mapping: CSV → Minimaldatensatz / Goobi</h2>
@@ -327,6 +407,55 @@
 </div>
 </div>
 </div></div>
+
+<!-- ===== MDS VALIDATION & TASKS ===== -->
+<div class="pg" data-p="mds"><div style="max-width:1100px">
+<div class="g2"><div class="sb">
+<div class="c"><h2>📋 MDS-Prüfung</h2>
+<p style="font-size:.75rem;color:#666;margin-bottom:.4rem">Prüft, ob Mindestdatenstandard-Felder zugeordnet und befüllt sind.</p>
+<label>Datensatz</label><select id="mds-ds"><option value="">— Erst Daten laden —</option></select>
+<label style="display:flex;align-items:center;gap:.4rem;font-size:.73rem;margin-top:.4rem"><input type="checkbox" id="mds-custom" checked> Benutzerdefinierte Felder einbeziehen</label>
+<button class="btn f" onclick="runMdsValidation()">🔍 MDS validieren</button>
+<button class="btn f s" onclick="generateTasks()">📋 Tasks aus Lücken erzeugen</button>
+</div>
+
+<div class="c"><h2>Benutzerdefinierte MDS-Felder</h2>
+<input type="text" id="mds-cf-name" placeholder="Feldname">
+<input type="text" id="mds-cf-goobi" placeholder="Goobi-Typ">
+<select id="mds-cf-req"><option value="required">Pflicht</option><option value="recommended" selected>Empfohlen</option><option value="optional">Optional</option></select>
+<button class="btn f sm" onclick="addCustomMdsField()">＋ Feld hinzufügen</button>
+<div id="mds-custom-list" style="font-size:.73rem;margin-top:.4rem"></div>
+</div>
+</div>
+
+<div>
+<div id="mds-empty" class="em"><h3>Mindestdatenstandard</h3><p>Datensatz und Field-Mapping laden, dann MDS-Validierung starten.</p></div>
+<div id="mds-results" style="display:none">
+<div class="c">
+<h2>MDS-Validierung <span id="mds-schema" style="font-size:.7rem;color:#888"></span></h2>
+<div class="sg" id="mds-summary"></div>
+<div class="scroll-box"><table class="etbl" id="mds-tbl">
+<thead><tr><th>MDS-Feld</th><th>Goobi-Typ</th><th>Anforderung</th><th>Zugeordnet</th><th>Spalte</th><th>Füllgrad</th></tr></thead>
+<tbody id="mds-body"></tbody>
+</table></div>
+</div>
+</div>
+
+<div id="tasks-section" class="c" style="margin-top:1rem">
+<h2>Aufgaben <span id="tasks-count" style="font-size:.7rem;color:#888"></span></h2>
+<div class="fl" id="tasks-filter-bar" style="margin-bottom:.3rem">
+<div class="fb2 a" onclick="filterTasks('all',this)">Alle</div>
+<div class="fb2" onclick="filterTasks('open',this)">Offen</div>
+<div class="fb2" onclick="filterTasks('in_progress',this)">In Arbeit</div>
+<div class="fb2" onclick="filterTasks('done',this)">Erledigt</div>
+</div>
+<div id="tasks-list"></div>
+<div style="margin-top:.5rem">
+<button class="btn sm s" onclick="clearDoneTasks()">🗑 Erledigte entfernen</button>
+</div>
+</div>
+</div>
+</div></div></div>
 
 <!-- ===== EXPORT ===== -->
 <div class="pg" data-p="export"><div style="max-width:1100px">
@@ -441,6 +570,32 @@
 <div class="c"><h2>Funktionskatalog</h2>
 <div class="scroll-box"><table class="etbl" id="cat-tbl"><thead><tr><th>ID</th><th>Funktion</th><th>Modul</th><th>Status</th><th>Tests</th><th>Hinweis</th></tr></thead><tbody id="cat-body"></tbody></table></div>
 </div></div></div>
+
+<!-- Image Lightbox (Feature 8) -->
+<div class="lightbox" id="lightbox">
+<span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+<img class="lightbox-img" id="lightbox-img" alt="">
+<div class="lightbox-controls">
+<button class="lightbox-btn" onclick="rotateLightbox(-90)">↶ Links drehen</button>
+<button class="lightbox-btn" onclick="rotateLightbox(90)">↷ Rechts drehen</button>
+<button class="lightbox-btn" onclick="zoomLightbox(1.2)">🔍+ Zoom+</button>
+<button class="lightbox-btn" onclick="zoomLightbox(0.8)">🔍- Zoom-</button>
+<button class="lightbox-btn" onclick="resetLightbox()">↺ Reset</button>
+</div>
+<div class="lightbox-info" id="lightbox-info"></div>
+</div>
+
+<!-- Login overlay (Feature 6) -->
+<div class="login-overlay" id="login-overlay">
+<div class="login-card">
+<h2>Anmeldung</h2>
+<div id="login-err" class="err" style="display:none"></div>
+<label>Benutzername</label><input type="text" id="login-user" placeholder="admin">
+<label>Passwort</label><input type="password" id="login-pw" placeholder="••••" onkeydown="if(event.key==='Enter')doLogin()">
+<button class="btn f" onclick="doLogin()">Anmelden</button>
+<p style="font-size:.68rem;color:#888;margin-top:.6rem;text-align:center">Standard: admin / debussy</p>
+</div>
+</div>
 
 <!-- Progress overlay -->
 <div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="sp"></div><p id="pp" style="font-size:.8rem"></p></div></div>

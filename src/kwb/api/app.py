@@ -44,6 +44,9 @@ from kwb.api.routes.enrich import router as enrich_router
 from kwb.api.routes.export import router as export_router
 from kwb.api.routes.workspace import router as workspace_router
 from kwb.api.routes.ai import router as ai_router
+from kwb.api.routes.dictionary import router as dictionary_router
+from kwb.api.routes.mds_tasks import router as mds_tasks_router
+from kwb.api.routes.auth import router as auth_router
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -59,6 +62,9 @@ app.include_router(enrich_router)
 app.include_router(export_router)
 app.include_router(workspace_router)
 app.include_router(ai_router)
+app.include_router(dictionary_router)
+app.include_router(mds_tasks_router)
+app.include_router(auth_router)
 
 # ---------------------------------------------------------------------------
 # UI data injected into the dashboard HTML template

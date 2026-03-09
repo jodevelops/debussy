@@ -62,11 +62,11 @@ function rfl(){
 }
 function populateDS(){
   const n=Object.keys(ufiles);
-  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds']){
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds','dict-build-ds','mds-ds']){
     const s=$(id);if(!s)continue;
     s.innerHTML=n.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
   if(n.length>0){
-    loadCols('ner-ds','ner-cols');loadDateCols();loadRecords();loadFMCols();
+    loadCols('ner-ds','ner-cols');loadCols('dict-build-ds','dict-build-cols');loadDateCols();loadRecords();loadFMCols();
     ['ner-hint','edtf-hint','exp-hint'].forEach(id=>{const el=$(id);if(el)el.style.display='none'})
   }
 }
@@ -235,11 +235,13 @@ async function runNER(isPilot=false){
   const baseN=parseInt($('ner-n').value)||10000;
   const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
   sp(isPilot?'NER Pilotlauf …':'NER läuft …',method+', '+n+' Samples');
+  const entityTypes=[...document.querySelectorAll('.ner-type-cb:checked')].map(c=>c.value);
   try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,
       sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
       stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
       model:$('cfg-mt').value||'',
+      entity_types:entityTypes.length<10?entityTypes:[],
       system_prompt:($('ner-sp')?.value||$('cfg-sys').value)})})).json();
     if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
   }catch(e){alert(e.message)}finally{hp()}
@@ -855,7 +857,8 @@ function renderImgGrid(){
   grid.innerHTML = shown.map(function(img){
     return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
       +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
-      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'
+      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer"'
+      +' onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+' — '+(img.width||'?')+'x'+(img.height||'?')+'\')"'
       +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
       +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>'
       +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
@@ -1103,6 +1106,255 @@ async function exportJSONLD(){
   }catch(e){alert('Fehler: '+e.message);}finally{hp();}
 }
 
+// === LIGHTBOX (Feature 8) ===
+let lbRotation=0,lbZoom=1;
+function openLightbox(imgSrc,info){
+  const lb=$('lightbox'),img=$('lightbox-img');
+  img.src=imgSrc;lbRotation=0;lbZoom=1;
+  img.style.transform='';
+  $('lightbox-info').textContent=info||'';
+  lb.classList.add('a');
+  document.addEventListener('keydown',lbKeyHandler);
+}
+function closeLightbox(){$('lightbox').classList.remove('a');document.removeEventListener('keydown',lbKeyHandler)}
+function lbKeyHandler(e){if(e.key==='Escape')closeLightbox();if(e.key==='+')zoomLightbox(1.2);if(e.key==='-')zoomLightbox(0.8)}
+function rotateLightbox(deg){lbRotation=(lbRotation+deg)%360;applyLbTransform()}
+function zoomLightbox(factor){lbZoom=Math.max(0.1,Math.min(10,lbZoom*factor));applyLbTransform()}
+function resetLightbox(){lbRotation=0;lbZoom=1;applyLbTransform()}
+function applyLbTransform(){$('lightbox-img').style.transform='rotate('+lbRotation+'deg) scale('+lbZoom+')'}
+
+// === AUTH (Feature 6) ===
+let authToken='';
+function showLogin(){$('login-overlay').classList.add('a');$('login-user').focus()}
+async function doLogin(){
+  const u=$('login-user').value.trim(),p=$('login-pw').value;
+  if(!u||!p){$('login-err').textContent='Bitte ausfüllen';$('login-err').style.display='block';return}
+  try{const r=await(await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})})).json();
+    if(r.error){$('login-err').textContent=r.error;$('login-err').style.display='block';return}
+    authToken=r.token;$('login-overlay').classList.remove('a');
+    $('user-info').textContent='👤 '+esc(r.display_name||r.username);
+    $('login-btn').style.display='none';$('logout-btn').style.display='';
+  }catch(e){$('login-err').textContent=e.message;$('login-err').style.display='block';}
+}
+async function doLogout(){
+  try{await fetch('/api/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+authToken}})}catch(e){}
+  authToken='';$('user-info').textContent='';$('login-btn').style.display='';$('logout-btn').style.display='none';
+}
+async function checkAuth(){
+  try{const r=await(await fetch('/api/auth/me')).json();
+    if(r.username){$('user-info').textContent='👤 '+esc(r.display_name||r.username);$('login-btn').style.display='none';$('logout-btn').style.display='';}
+  }catch(e){}
+}
+
+// === DICTIONARY (Features 1-3, 10-11) ===
+let dictData=[];
+async function loadDictEntries(){
+  const t=$('dict-type-filter').value;
+  try{const r=await(await fetch('/api/dictionary'+(t?'?entity_type='+encodeURIComponent(t):''))).json();
+    dictData=r.entries||[];renderDictList();
+    $('dict-count').textContent='('+dictData.length+(t?' '+t:'')+')';
+  }catch(e){console.error(e)}
+}
+function renderDictList(){
+  if(!dictData.length){$('dict-list-empty').style.display='block';$('dict-list').innerHTML='';return}
+  $('dict-list-empty').style.display='none';
+  $('dict-list').innerHTML=dictData.map((e,i)=>{
+    const auth=e.gnd_id?'GND:'+esc(e.gnd_id):'';
+    const wk=e.wikidata_id?'WD:'+esc(e.wikidata_id):'';
+    const rids=e.record_ids?e.record_ids.slice(0,3).join(', ')+(e.record_ids.length>3?' +'+( e.record_ids.length-3):''):'';
+    return '<div class="dict-entry" onclick="showDictDetail(\''+esc(e.entry_id)+'\')">'
+      +'<span class="dict-type dict-type-'+(e.entity_type||'other')+'">'+esc(e.entity_type||'?')+'</span>'
+      +'<span class="dict-term">'+esc(e.term)+(e.preferred_name?' → <em>'+esc(e.preferred_name)+'</em>':'')+'</span>'
+      +(auth?'<span class="dict-auth">'+auth+'</span>':'')
+      +(wk?'<span class="dict-auth">'+wk+'</span>':'')
+      +(rids?'<span class="dict-rids">'+esc(rids)+'</span>':'')
+      +'</div>';
+  }).join('');
+}
+async function loadDictTypes(){
+  try{const r=await(await fetch('/api/dictionary/types')).json();
+    $('dict-type-counts').innerHTML=(r.types||[]).map(t=>'<span class="dict-type dict-type-'+esc(t.type)+'">'+esc(t.label)+': '+t.count+'</span> ').join('');
+  }catch(e){}
+}
+async function addDictEntry(){
+  const term=$('dict-new-term').value.trim();if(!term){alert('Begriff eingeben');return}
+  const body={term,entity_type:$('dict-new-type').value,preferred_name:$('dict-new-preferred').value.trim()};
+  try{const r=await(await fetch('/api/dictionary/entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    if(r.error){alert(r.error);return}$('dict-new-term').value='';loadDictEntries();loadDictTypes();updWS();
+  }catch(e){alert(e.message)}
+}
+async function buildDict(){
+  const ds=$('dict-build-ds').value;if(!ds){alert('Datensatz wählen');return}
+  const cols=[...document.querySelectorAll('#dict-build-cols .ci input:checked')].map(c=>c.value);
+  if(!cols.length){alert('Spalten wählen');return}
+  sp('Dictionary aufbauen …','');
+  try{const r=await(await fetch('/api/dictionary/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:ds,columns:cols,entity_type:$('dict-build-type').value})})).json();
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();alert(r.added+' neue Einträge hinzugefügt.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function nerToDict(){
+  sp('NER → Wörterbuch …','');
+  try{const r=await(await fetch('/api/dictionary/from-ner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'accepted'})})).json();
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();alert(r.added+' Einträge übernommen.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function ocrToDict(){
+  sp('OCR → NER → Wörterbuch …','');
+  try{const r=await(await fetch('/api/dictionary/from-ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('cfg-mt').value||''})})).json();
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();
+    alert('OCR: '+r.ocr_texts_processed+' Texte → '+r.entities_found+' Entities → '+r.dictionary_added+' neue Wörterbuch-Einträge');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function showDictDetail(entryId){
+  const entry=dictData.find(e=>e.entry_id===entryId);if(!entry)return;
+  $('dict-detail').style.display='block';
+  $('dict-detail-content').innerHTML=
+    '<div style="font-size:.78rem">'
+    +'<strong>'+esc(entry.term)+'</strong> <span class="dict-type dict-type-'+(entry.entity_type||'other')+'">'+esc(entry.entity_type||'?')+'</span>'
+    +'<br>ID: <code>'+esc(entry.entry_id)+'</code>'
+    +(entry.preferred_name?'<br>Vorzugsbenennung: <em>'+esc(entry.preferred_name)+'</em>':'')
+    +(entry.alternatives&&entry.alternatives.length?'<br>Schreibweisen: '+entry.alternatives.map(a=>esc(a)).join(', '):'')
+    +(entry.record_ids&&entry.record_ids.length?'<br>Records ('+entry.record_ids.length+'): '+entry.record_ids.slice(0,10).map(r=>esc(r)).join(', ')+(entry.record_ids.length>10?' …':''):'')
+    +'<br>Quelle: '+esc(entry.source||'—')
+    +'<hr style="border:none;border-top:1px solid var(--brd);margin:.4rem 0">'
+    +'<strong>Normdaten:</strong>'
+    +(entry.gnd_id?'<br>GND: <a href="https://d-nb.info/gnd/'+esc(entry.gnd_id)+'" target="_blank">'+esc(entry.gnd_id)+'</a> '+esc(entry.gnd_preferred||''):'<br>GND: —')
+    +(entry.wikidata_id?'<br>Wikidata: <a href="https://www.wikidata.org/wiki/'+esc(entry.wikidata_id)+'" target="_blank">'+esc(entry.wikidata_id)+'</a>':'')
+    +(entry.geonames_id?'<br>GeoNames: '+esc(entry.geonames_id):'')
+    +'<hr style="border:none;border-top:1px solid var(--brd);margin:.4rem 0">'
+    +'<div style="display:flex;gap:.3rem;flex-wrap:wrap">'
+    +'<button class="btn sm" onclick="enrichDictGND(\''+esc(entryId)+'\',\''+esc(entry.term)+'\')">🔍 GND suchen</button>'
+    +'<button class="btn sm" onclick="enrichDictWikidata(\''+esc(entryId)+'\',\''+esc(entry.term)+'\')">🌐 Wikidata suchen</button>'
+    +'<button class="btn sm s" style="background:var(--crit)" onclick="deleteDictEntry(\''+esc(entryId)+'\')">🗑 Löschen</button>'
+    +'</div><div id="dict-enrich-results" style="margin-top:.4rem;font-size:.73rem"></div></div>';
+}
+async function enrichDictGND(entryId,term){
+  try{const r=await(await fetch('/api/gnd/search?term='+encodeURIComponent(term))).json();
+    if(!r.results||!r.results.length){$('dict-enrich-results').innerHTML='<em>Keine GND-Treffer.</em>';return}
+    $('dict-enrich-results').innerHTML='<strong>GND-Treffer:</strong><br>'+r.results.slice(0,5).map(g=>
+      '<div style="padding:.2rem 0;cursor:pointer" onclick="applyGNDToDict(\''+esc(entryId)+'\',\''+esc(g.gnd_id)+'\',\''+esc(g.preferred_name||'')+'\',\''+esc(g.type||'')+'\',\''+esc(g.uri||'')+'\')">'
+      +'<span class="gnd-match">'+esc(g.gnd_id)+'</span> '+esc(g.preferred_name||g.label||'')+' <span style="color:#888;font-size:.68rem">('+esc(g.type||'')+')</span></div>'
+    ).join('');
+  }catch(e){$('dict-enrich-results').innerHTML='Fehler: '+esc(e.message)}
+}
+async function applyGNDToDict(entryId,gndId,preferred,gndType,uri){
+  try{await fetch('/api/dictionary/enrich/'+entryId,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gnd_id:gndId,gnd_preferred:preferred,gnd_type:gndType,gnd_uri:uri,source:'api'})});
+    loadDictEntries();showDictDetail(entryId);
+  }catch(e){alert(e.message)}
+}
+async function enrichDictWikidata(entryId,term){
+  try{const r=await(await fetch('/api/wikidata/search?term='+encodeURIComponent(term))).json();
+    if(!r.results||!r.results.length){$('dict-enrich-results').innerHTML='<em>Keine Wikidata-Treffer.</em>';return}
+    $('dict-enrich-results').innerHTML='<strong>Wikidata-Treffer:</strong><br>'+r.results.slice(0,5).map(w=>
+      '<div style="padding:.2rem 0;cursor:pointer" onclick="applyWDToDict(\''+esc(entryId)+'\',\''+esc(w.id||w.wikidata_id||'')+'\')">'
+      +esc(w.id||w.wikidata_id||'')+' — '+esc(w.label||w.name||'')+'</div>'
+    ).join('');
+  }catch(e){$('dict-enrich-results').innerHTML='Fehler: '+esc(e.message)}
+}
+async function applyWDToDict(entryId,wdId){
+  try{await fetch('/api/dictionary/enrich/'+entryId,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({wikidata_id:wdId,source:'api'})});
+    loadDictEntries();showDictDetail(entryId);
+  }catch(e){alert(e.message)}
+}
+async function deleteDictEntry(entryId){
+  if(!confirm('Eintrag wirklich löschen?'))return;
+  try{await fetch('/api/dictionary/entry/'+entryId,{method:'DELETE'});
+    $('dict-detail').style.display='none';loadDictEntries();loadDictTypes();updWS();
+  }catch(e){alert(e.message)}
+}
+function exportDict(entityType){
+  window.open('/api/dictionary/export'+(entityType?'?entity_type='+encodeURIComponent(entityType):''),'_blank');
+}
+function exportDictTyped(){window.open('/api/dictionary/export-typed','_blank')}
+
+// === MDS VALIDATION (Feature 4) ===
+async function runMdsValidation(){
+  const ds=$('mds-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('MDS validieren …','');
+  try{const r=await(await fetch('/api/mds/validate',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({dataset:ds,include_custom:$('mds-custom').checked})})).json();
+    if(r.error){alert(r.error);return}renderMdsResults(r);
+  }catch(e){alert(e.message)}finally{hp()}
+}
+function renderMdsResults(r){
+  $('mds-empty').style.display='none';$('mds-results').style.display='block';
+  $('mds-schema').textContent=r.schema_name||'MDS 1.1';
+  $('mds-summary').innerHTML=
+    '<div class="mt"><div class="v">'+r.required_mapped+'/'+r.required_total+'</div><div class="l">Pflichtfelder zugeordnet</div></div>'
+    +'<div class="mt"><div class="v">'+r.required_filled+'/'+r.required_total+'</div><div class="l">Pflichtfelder befüllt</div></div>'
+    +'<div class="mt su"><div class="v">'+(r.completeness_score*100).toFixed(0)+'%</div><div class="l">Vollständigkeit</div></div>';
+  $('mds-body').innerHTML=(r.fields||[]).map(f=>{
+    const st=f.mapped?(f.fill_rate>0.5?'mds-ok':'mds-partial'):'mds-missing';
+    return '<tr><td><span class="mds-status '+st+'"></span>'+esc(f.mds_name)+'</td>'
+      +'<td style="font-family:monospace;font-size:.68rem">'+esc(f.goobi_type)+'</td>'
+      +'<td><span class="bg '+(f.requirement==='required'?'no':'pl')+'">'+esc(f.requirement)+'</span></td>'
+      +'<td>'+(f.mapped?'✓':'✗')+'</td>'
+      +'<td style="font-size:.7rem">'+esc(f.csv_column||'—')+'</td>'
+      +'<td><div class="mds-bar"><div class="mds-fill" style="width:'+(f.fill_rate*100)+'%"></div></div> '+(f.fill_rate*100).toFixed(0)+'%</td></tr>';
+  }).join('');
+}
+
+// === TASKS (Feature 5) ===
+let tasksFilter='all';
+async function generateTasks(){
+  const ds=$('mds-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('Tasks generieren …','');
+  try{const r=await(await fetch('/api/tasks/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:ds})})).json();
+    if(r.error){alert(r.error);return}renderTasks(r.tasks||[]);alert(r.added+' neue Tasks erzeugt.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function loadTasks(){
+  try{const r=await(await fetch('/api/tasks')).json();renderTasks(r.tasks||[])}catch(e){}
+}
+function renderTasks(tasks){
+  const flt=tasksFilter==='all'?tasks:tasks.filter(t=>t.status===tasksFilter);
+  $('tasks-count').textContent='('+flt.length+'/'+tasks.length+')';
+  $('tasks-list').innerHTML=flt.length?flt.map(t=>
+    '<div class="task-item">'
+    +'<span class="task-prio task-prio-'+t.priority+'">P'+t.priority+'</span>'
+    +'<span class="task-status task-'+t.status+'">'+esc(t.status)+'</span>'
+    +'<div style="flex:1"><strong>'+esc(t.title)+'</strong><br><span style="font-size:.7rem;color:#666">'+esc(t.description||'')+'</span>'
+    +(t.suggestion?'<br><span style="font-size:.68rem;color:var(--ok)">💡 '+esc(t.suggestion)+'</span>':'')
+    +'</div>'
+    +'<div style="display:flex;gap:.2rem;flex-shrink:0">'
+    +(t.status==='open'?'<button class="btn sm" onclick="updateTask(\''+esc(t.task_id)+'\',\'in_progress\')">▶</button>':'')
+    +(t.status==='in_progress'?'<button class="btn sm" onclick="updateTask(\''+esc(t.task_id)+'\',\'done\')">✓</button>':'')
+    +(t.status!=='done'?'<button class="btn sm s" onclick="updateTask(\''+esc(t.task_id)+'\',\'skipped\')">⏭</button>':'')
+    +'</div></div>'
+  ).join(''):'<div class="em" style="font-size:.75rem">Keine Tasks vorhanden.</div>';
+}
+function filterTasks(f,btn){
+  tasksFilter=f;
+  document.querySelectorAll('#tasks-filter-bar .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn)btn.classList.add('a');
+  loadTasks();
+}
+async function updateTask(taskId,status){
+  try{await fetch('/api/tasks/'+taskId+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});loadTasks()}catch(e){alert(e.message)}
+}
+async function clearDoneTasks(){
+  try{await fetch('/api/tasks/clear-done',{method:'POST'});loadTasks()}catch(e){alert(e.message)}
+}
+async function addCustomMdsField(){
+  const name=$('mds-cf-name').value.trim(),goobi=$('mds-cf-goobi').value.trim();
+  if(!name||!goobi){alert('Feldname und Goobi-Typ erforderlich');return}
+  try{const r=await(await fetch('/api/mds/custom-field',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mds_name:name,goobi_type:goobi,requirement:$('mds-cf-req').value})})).json();
+    if(r.error){alert(r.error);return}$('mds-cf-name').value='';$('mds-cf-goobi').value='';loadCustomMdsFields();
+  }catch(e){alert(e.message)}
+}
+async function loadCustomMdsFields(){
+  try{const r=await(await fetch('/api/mds/fields')).json();
+    const custom=r.custom||[];
+    $('mds-custom-list').innerHTML=custom.length?custom.map((f,i)=>'<div style="display:flex;gap:.3rem;align-items:center;padding:.2rem 0"><span>'+esc(f.mds_name)+' → '+esc(f.goobi_type)+'</span><span class="bg '+(f.requirement==='required'?'no':'pl')+'">'+esc(f.requirement)+'</span><button class="btn sm s" onclick="delCustomMdsField('+i+')">✗</button></div>').join(''):'<em style="color:#888">Keine benutzerdefinierten Felder.</em>';
+  }catch(e){}
+}
+async function delCustomMdsField(idx){
+  try{await fetch('/api/mds/custom-field/'+idx,{method:'DELETE'});loadCustomMdsFields()}catch(e){alert(e.message)}
+}
+
 // === CATALOG ===
 function renderCatalog(){$('cat-body').innerHTML=CATALOG.map(c=>'<tr><td style="font-size:.62rem">'+esc(c.id)+'</td><td style="font-weight:600">'+esc(c.name)+'</td><td style="font-size:.68rem">'+esc(c.module)+'</td><td><span class="bg '+(c.status==='done'?'ac':c.status==='partial'?'pl':'no')+'">'+esc(c.status)+'</span></td><td style="font-size:.68rem">'+esc(c.tests||'—')+'</td><td style="font-size:.7rem;color:#666">'+esc(c.note||'')+'</td></tr>').join('')}
 
@@ -1126,5 +1378,9 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
   try{loadImages()}catch(err){console.error('[init] loadImages',err);failed.push('loadImages')}
   try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err);failed.push('loadTermsDict')}
   try{loadGPUConfig()}catch(err){console.error('[init] loadGPUConfig',err);failed.push('loadGPUConfig')}
+  try{checkAuth()}catch(err){console.error('[init] checkAuth',err);failed.push('checkAuth')}
+  try{loadDictEntries();loadDictTypes()}catch(err){console.error('[init] dict',err);failed.push('dict')}
+  try{loadTasks()}catch(err){console.error('[init] tasks',err);failed.push('tasks')}
+  try{loadCustomMdsFields()}catch(err){console.error('[init] mdsFields',err);failed.push('mdsFields')}
   if(failed.length)showInitError(failed.join(', '));
 })();
