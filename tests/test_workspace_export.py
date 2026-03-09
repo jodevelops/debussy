@@ -319,9 +319,9 @@ class TestSecurityP0(unittest.TestCase):
         self.assertIn("async function runScan", js)
         self.assertIn("async function runEDTF", js)
 
-        # per-tab prompts are wired (not replaced by global cfg prompt only)
-        self.assertIn("system_prompt:$('ner-sp').value||$('cfg-sys').value", js)
-        self.assertIn("system_prompt:$('scan-sp').value||$('cfg-sys').value", js)
+        # per-tab prompts are wired with null-safe fallback to global cfg prompt
+        self.assertIn("system_prompt:($('ner-sp')?.value||$('cfg-sys').value)", js)
+        self.assertIn("system_prompt:($('scan-sp')?.value||$('cfg-sys').value)", js)
         self.assertIn("system_prompt:$('edtf-sp').value||$('cfg-sys').value", js)
 
         # broken duplicate fragments must not exist

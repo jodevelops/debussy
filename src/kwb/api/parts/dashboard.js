@@ -229,7 +229,7 @@ async function runNER(isPilot=false){
       sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
       stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
       model:$('cfg-mt').value||'',
-      system_prompt:$('ner-sp').value||$('cfg-sys').value})})).json();
+      system_prompt:($('ner-sp')?.value||$('cfg-sys').value)})})).json();
     if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
   }catch(e){alert(e.message)}finally{hp()}
 }
@@ -340,7 +340,7 @@ async function runScan(isPilot=false){const ds=$('scan-ds').value;if(!ds){alert(
       sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
       stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
       model:$('cfg-mt').value||'',
-      system_prompt:$('scan-sp').value||$('cfg-sys').value})})).json();
+      system_prompt:($('scan-sp')?.value||$('cfg-sys').value)})})).json();
     if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
   }catch(e){alert(e.message)}finally{hp()}}
 
@@ -565,7 +565,7 @@ async function loadWS(file){if(!file)return;const fd=new FormData();fd.append('f
 
 // === CONFIG ===
 function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
-function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const k=$(m[0]).value;if(k!=='custom')$(m[1]).value=PRESETS[k]||'';}
+function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const src=$(m[0]);const tgt=$(m[1]);if(!src||!tgt)return;const k=src.value;if(k!=='custom')tgt.value=PRESETS[k]||'';}
 async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
   try{const r=await(await fetch('/api/gpu/test',{method:'POST'})).json();
     $('cfg-test').style.display='block';$('cfg-test').textContent=JSON.stringify(r,null,2)
@@ -1070,7 +1070,7 @@ async function exportJSONLD(){
 }
 
 // === CATALOG ===
-function renderCatalog(){$('cat-body').innerHTML=CATALOG.map(c=>'<tr><td style="font-size:.62rem">'+esc(c.id)+'</td><td style="font-weight:600">'+esc(c.name)+'</td><td style="font-size:.68rem">'+esc(c.module)+'</td><td><span class="bg '+(c.status==='done'?'ac':c.status==='partial'?'pl':'no')+'">'+esc(c.status_label)+'</span></td><td style="font-size:.68rem">'+esc(c.tests||'—')+'</td><td style="font-size:.7rem;color:#666">'+esc(c.note||'')+'</td></tr>').join('')}
+function renderCatalog(){$('cat-body').innerHTML=CATALOG.map(c=>'<tr><td style="font-size:.62rem">'+esc(c.id)+'</td><td style="font-weight:600">'+esc(c.name)+'</td><td style="font-size:.68rem">'+esc(c.module)+'</td><td><span class="bg '+(c.status==='done'?'ac':c.status==='partial'?'pl':'no')+'">'+esc(c.status)+'</span></td><td style="font-size:.68rem">'+esc(c.tests||'—')+'</td><td style="font-size:.7rem;color:#666">'+esc(c.note||'')+'</td></tr>').join('')}
 
 // === PROGRESS ===
 function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classList.add('a')}
