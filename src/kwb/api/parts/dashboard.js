@@ -48,13 +48,12 @@ function safeOpt(val,label){return '<option value="'+esc(val)+'">'+esc(label)+'<
 function dl(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
 
 // === NAV ===
-document.querySelector('.nav').onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))};
 function bindTabs(id){const el=$(id);if(!el)return;el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;e.currentTarget.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));e.currentTarget.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-bindTabs('dt');
+function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))}}catch(err){console.error('[initNav]',err)}}
+function initTabs(){try{bindTabs('dt')}catch(err){console.error('[initTabs]',err)}}
 
 // === UPLOAD ===
-const uz=$('uz'),fi=$('fi');
-fi.onchange=e=>hf(e.target.files);uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)};
+function initUpload(){try{const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.target.files);if(uz){uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)}}}catch(err){console.error('[initUpload]',err)}}
 function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
 function rfl(){
   const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
@@ -103,7 +102,7 @@ async function loadRecords(reset=false){
   }catch(e){}
 }
 function pageRecords(dir){recordOffset=Math.max(0,recordOffset+(dir*recordLimit));loadRecords(false)}
-$('exp-ds').onchange=()=>loadRecords(true);
+function initPanels(){try{const expDs=$('exp-ds');if(expDs)expDs.onchange=()=>loadRecords(true)}catch(err){console.error('[initPanels]',err)}}
 
 // === FIELD MAPPING ===
 let fmCols=[];
@@ -1088,6 +1087,19 @@ function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classLi
 function hp(){$('po').classList.remove('a')}
 
 // === INIT ===
-(function(){loadPreset(); applyImgPreset(); applyActionPreset('ner'); applyActionPreset('scan'); applyActionPreset('edtf'); applyActionPreset('ocr'); refreshReviewStats();
-  $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
-  renderCatalog();chkGPU();updWS();loadImages();loadTermsDict();})();
+function showInitError(label){const b=document.createElement('div');b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fee2e2;color:#991b1b;padding:.4rem 1rem;font-size:.78rem;border-top:2px solid #f87171';b.textContent='⚠ UI-Initialisierung fehlgeschlagen'+(label?': '+label:'')+' – bitte Konsole prüfen';document.body.appendChild(b)}
+(function(){
+  const failed=[];
+  [initNav,initTabs,initUpload,initPanels].forEach(fn=>{try{fn()}catch(err){console.error('[init]',fn.name,err);failed.push(fn.name)}});
+  if(failed.length)showInitError(failed.join(', '));
+  try{loadPreset()}catch(err){console.error('[init] loadPreset',err)}
+  try{applyImgPreset()}catch(err){console.error('[init] applyImgPreset',err)}
+  try{applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr')}catch(err){console.error('[init] applyActionPreset',err)}
+  try{refreshReviewStats()}catch(err){console.error('[init] refreshReviewStats',err)}
+  try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('')}catch(err){console.error('[init] cfg-tasks',err)}
+  try{renderCatalog()}catch(err){console.error('[init] renderCatalog',err)}
+  try{chkGPU()}catch(err){console.error('[init] chkGPU',err)}
+  try{updWS()}catch(err){console.error('[init] updWS',err)}
+  try{loadImages()}catch(err){console.error('[init] loadImages',err)}
+  try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err)}
+})();
