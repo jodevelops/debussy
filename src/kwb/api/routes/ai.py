@@ -23,7 +23,7 @@ except ImportError:
 from kwb.api.deps import (
     ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES,
     get_config, get_datasets, get_provider, get_workspace,
-    workspace_dir, safe_filename,
+    set_config, workspace_dir, safe_filename,
 )
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
@@ -81,6 +81,53 @@ async def gpu_test(request: dict | None = None):
         return {"status": "ok", "model": resp.model, "response": resp.content[:200]}
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, 500)
+
+
+# ---------------------------------------------------------------------------
+# GPU / Provider configuration (read + update)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/gpu/config")
+async def gpu_config_get():
+    """Return current GPUStack config (API key masked)."""
+    from kwb.core.utils import mask_secret
+    c = get_config()
+    return {
+        "gpustack_url": c.gpustack_url,
+        "gpustack_key_masked": mask_secret(c.gpustack_key) if c.gpustack_key else "",
+        "gpustack_model_text": c.gpustack_model_text,
+        "gpustack_model_vision": c.gpustack_model_vision,
+    }
+
+
+@router.post("/api/gpu/config")
+async def gpu_config_set(request: dict):
+    """Update GPUStack connection settings and persist to .env."""
+    from dataclasses import replace as dc_replace
+    c = get_config()
+
+    new_url = (request.get("gpustack_url") or "").strip()
+    new_key = (request.get("gpustack_key") or "").strip()
+    new_mt = (request.get("gpustack_model_text") or "").strip()
+    new_mv = (request.get("gpustack_model_vision") or "").strip()
+
+    # Only the API key uses "empty = keep existing" semantics (it's a secret).
+    # URL and model fields can be explicitly cleared by submitting an empty string.
+    gpustack_key = new_key if new_key else c.gpustack_key
+    updated = dc_replace(
+        c,
+        gpustack_url=new_url,
+        gpustack_key=gpustack_key,
+        gpustack_model_text=new_mt,
+        gpustack_model_vision=new_mv,
+    )
+    # Persist to disk first — if writing fails, in-memory config stays unchanged.
+    try:
+        updated.save_to_dotenv()
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f".env speichern fehlgeschlagen: {e}"}, 500)
+    set_config(updated)
+    return {"status": "ok"}
 
 
 # ---------------------------------------------------------------------------

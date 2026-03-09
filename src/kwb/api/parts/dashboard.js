@@ -49,7 +49,7 @@ function dl(name,content,type){const b=new Blob([content],{type});const a=docume
 
 // === NAV ===
 function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))}}catch(err){console.error('[initNav]',err)}}
+function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));if(p==='config')loadGPUConfig();}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
 initNav();initTabs();
 
@@ -575,6 +575,29 @@ async function loadWS(file){if(!file)return;const fd=new FormData();fd.append('f
     if(r.error)throw Error(r.error);alert('Geladen: '+(r.entity_count||0)+' Entities');updWS()}catch(e){alert(e.message)}}
 
 // === CONFIG ===
+async function loadGPUConfig(){
+  try{const d=await(await fetch('/api/gpu/config')).json();
+    if($('cfg-url'))$('cfg-url').value=d.gpustack_url||'';
+    if($('cfg-key'))$('cfg-key').placeholder=d.gpustack_key_masked
+      ?'Aktuell: '+d.gpustack_key_masked+' (leer = unverändert)'
+      :'sk-… (leer lassen = unverändert)';
+  }catch(e){console.error('loadGPUConfig',e)}}
+
+function toggleKeyVis(){const inp=$('cfg-key');inp.type=inp.type==='password'?'text':'password';}
+
+async function saveGPUConfig(){
+  const url=($('cfg-url')?.value||'').trim();
+  const key=($('cfg-key')?.value||'').trim();
+  const mt=($('cfg-mt')?.value||'').trim();
+  const mv=($('cfg-mv')?.value||'').trim();
+  const st=$('cfg-save-status');
+  if(st)st.textContent='Speichern…';
+  try{const r=await(await fetch('/api/gpu/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gpustack_url:url,gpustack_key:key,gpustack_model_text:mt,gpustack_model_vision:mv})})).json();
+    if(st)st.textContent=r.status==='ok'?'✓ Gespeichert':'✗ '+(r.message||'Fehler');
+    if(r.status==='ok'){await chkGPU();await loadGPUConfig();}
+  }catch(e){if(st)st.textContent='✗ '+e.message}}
+
 function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
 function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const src=$(m[0]);const tgt=$(m[1]);if(!src||!tgt)return;const k=src.value;if(k!=='custom')tgt.value=PRESETS[k]||'';}
 async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
@@ -1102,5 +1125,6 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
   try{updWS()}catch(err){console.error('[init] updWS',err);failed.push('updWS')}
   try{loadImages()}catch(err){console.error('[init] loadImages',err);failed.push('loadImages')}
   try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err);failed.push('loadTermsDict')}
+  try{loadGPUConfig()}catch(err){console.error('[init] loadGPUConfig',err);failed.push('loadGPUConfig')}
   if(failed.length)showInitError(failed.join(', '));
 })();

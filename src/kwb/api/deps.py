@@ -98,6 +98,12 @@ def get_config():
     return _config_cache
 
 
+def set_config(cfg) -> None:
+    """Override the cached config (e.g. after user saves connection settings)."""
+    global _config_cache
+    _config_cache = cfg
+
+
 # ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
