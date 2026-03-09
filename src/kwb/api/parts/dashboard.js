@@ -8,6 +8,27 @@ const GOOBI_TYPES=[
   "CatalogIDDigital","TitleDocMain","Description","PublicationYear",
   "DocLanguage","singleDigCollection","Author","SubjectTopic",
   "PlaceOfPublication","Publisher","Format","Source",
+  "Creator","Rights","Technique","MaterialDescription","Dimensions",
+  "InventoryNumber","DateCreated","DateIssued","SubjectGeographic",
+  "SubjectPerson","SubjectCorporation","Custom",
+];
+
+// Minimaldatensatz 1.1 fields (minimaldatensatz.de)
+const MDS_FIELDS=[
+  {mds:"Identifikator",goobi:"CatalogIDDigital",pflicht:true,note:"Eindeutige ID (UUID, Signatur …)"},
+  {mds:"Titel",goobi:"TitleDocMain",pflicht:true,note:"Haupttitel des Objekts"},
+  {mds:"Objekttyp",goobi:"DocStruct",pflicht:true,note:"Art des Objekts (Gemälde, Brief …)"},
+  {mds:"Aufbewahrungsort",goobi:"PlaceOfPublication",pflicht:true,note:"Institution / Standort"},
+  {mds:"Rechtliche Informationen",goobi:"Rights",pflicht:true,note:"Lizenz oder Rechtehinweis"},
+  {mds:"Beschreibung",goobi:"Description",pflicht:false,note:"Inhaltliche Beschreibung"},
+  {mds:"Datierung",goobi:"DateCreated",pflicht:false,note:"Entstehungsdatum (EDTF-Format empfohlen)"},
+  {mds:"Abmessungen/Umfang",goobi:"Dimensions",pflicht:false,note:"Maße oder Seitenumfang"},
+  {mds:"Material/Technik",goobi:"MaterialDescription",pflicht:false,note:"Material und Herstellungstechnik"},
+  {mds:"Hersteller/Urheber",goobi:"Creator",pflicht:false,note:"Person oder Körperschaft"},
+  {mds:"Abbildungsnachweis",goobi:"Source",pflicht:false,note:"Bildquelle oder Fotograf"},
+  {mds:"Schlagwörter",goobi:"SubjectTopic",pflicht:false,note:"Thematische Schlagwörter"},
+  {mds:"Herstellungsort",goobi:"SubjectGeographic",pflicht:false,note:"Entstehungsort des Objekts"},
+  {mds:"Sammlung",goobi:"singleDigCollection",pflicht:false,note:"Sammlung oder Bestand"},
 ];
 
 let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
@@ -16,6 +37,10 @@ let nerStatusFilter='all', nerTypeFilter='all';
 let fmMapping={}; // current field mapping state
 let latestImageResults=[];
 let filteredImageResults=[];
+let termsData=[]; // problematic terms dictionary
+let termsScanResults=[]; // last scan results
+let termsCatFilter='all';
+let colSortKey='name',colSortDir=1; // for combined columns table
 
 // === SECURITY ===
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
@@ -37,7 +62,7 @@ function rfl(){
 }
 function populateDS(){
   const n=Object.keys(ufiles);
-  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds']){
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds']){
     const s=$(id);if(!s)continue;
     s.innerHTML=n.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
   if(n.length>0){
@@ -96,26 +121,66 @@ async function loadFMCols(){
     $('fm-table-wrap').style.display='block';
   }catch(e){}
 }
+
+// Build type options: Minimaldatensatz 1.1 group + Goobi group
+function _fmTypeOpts(selectedType){
+  const mdsOpts=MDS_FIELDS.map(f=>'<option value="'+esc(f.goobi)+'"'+(f.goobi===selectedType?' selected':'')+(f.pflicht?'')+'>'+esc(f.mds+(f.pflicht?' ★':''))+' ('+esc(f.goobi)+')</option>').join('');
+  const goobiOpts=GOOBI_TYPES.filter(t=>!MDS_FIELDS.find(f=>f.goobi===t)).map(t=>'<option value="'+esc(t)+'"'+(t===selectedType?' selected':'')+'>'+esc(t)+'</option>').join('');
+  return '<option value="">— kein Export —</option>'+
+    '<optgroup label="Minimaldatensatz 1.1 (★ = Pflichtfeld)">'+mdsOpts+'</optgroup>'+
+    '<optgroup label="Goobi (weitere Typen)">'+goobiOpts+'</optgroup>';
+}
+
 function renderFMTable(){
-  const typeOpts=GOOBI_TYPES.map(t=>safeOpt(t,t)).join('');
   $('fm-body').innerHTML=fmCols.map(c=>{
     const mapped=fmMapping[c.name];
     const label=mapped?(Array.isArray(mapped)?mapped[0]:mapped):'';
     const type=mapped?(Array.isArray(mapped)?mapped[1]:''):'';
     return '<tr>'+
-      '<td><strong>'+esc(c.name)+'</strong><br><span style="font-size:.65rem;color:#888">'+Math.round(c.fill_rate*100)+'%</span></td>'+
-      '<td><input type="text" id="fm-lbl-'+esc(c.name)+'" value="'+esc(label)+'" placeholder="z.B. Titel" style="width:120px"></td>'+
-      '<td><select id="fm-typ-'+esc(c.name)+'" style="width:160px"><option value="">— kein Export —</option>'+typeOpts+'</select></td>'+
+      '<td><strong>'+esc(c.name)+'</strong></td>'+
+      '<td style="font-size:.68rem;color:#888">'+Math.round(c.fill_rate*100)+'%</td>'+
+      '<td><input type="text" id="fm-lbl-'+esc(c.name)+'" value="'+esc(label)+'" placeholder="Label (optional)" style="width:130px"></td>'+
+      '<td><select id="fm-typ-'+esc(c.name)+'" style="width:220px">'+_fmTypeOpts(type)+'</select></td>'+
       '<td><button class="btn sm" onclick="clearFMRow(\''+esc(c.name)+'\')">✕</button></td>'+
     '</tr>';
   }).join('');
-  // Set current type values
-  fmCols.forEach(c=>{
-    const mapped=fmMapping[c.name];
-    if(mapped){
-      const type=Array.isArray(mapped)?mapped[1]:mapped;
-      const sel=$('fm-typ-'+c.name);
-      if(sel)sel.value=type;
+}
+
+// Apply Minimaldatensatz 1.1 template — auto-map columns by heuristic
+function applyMDSTemplate(){
+  if(!fmCols.length){alert('Erst Datensatz im Mapping-Tab wählen.');return;}
+  const colNames=fmCols.map(c=>c.name.toLowerCase());
+  MDS_FIELDS.forEach(f=>{
+    // Try to find a matching column
+    const candidates=[
+      f.mds.toLowerCase(), f.goobi.toLowerCase(),
+      ...f.mds.toLowerCase().split('/'),
+    ];
+    let bestCol=null;
+    for(const cand of candidates){
+      const idx=colNames.findIndex(n=>n.includes(cand)||cand.includes(n));
+      if(idx>=0){bestCol=fmCols[idx].name;break;}
+    }
+    if(bestCol){
+      const lbl=$('fm-lbl-'+bestCol);
+      const typ=$('fm-typ-'+bestCol);
+      if(lbl&&!lbl.value)lbl.value=f.mds;
+      if(typ)typ.value=f.goobi;
+    }
+  });
+}
+
+function applyGoobiTemplate(){
+  if(!fmCols.length){alert('Erst Datensatz im Mapping-Tab wählen.');return;}
+  // Reset and auto-match Goobi types by column name
+  const colNames=fmCols.map(c=>c.name.toLowerCase());
+  GOOBI_TYPES.forEach(t=>{
+    const tl=t.toLowerCase();
+    const idx=colNames.findIndex(n=>n.includes(tl)||tl.includes(n));
+    if(idx>=0){
+      const col=fmCols[idx].name;
+      const typ=$('fm-typ-'+col);
+      if(typ&&!typ.value)typ.value=t;
     }
   });
 }
@@ -288,6 +353,141 @@ function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||
     (i.suggestion?'<div style="font-style:italic;color:var(--ac);font-size:.73rem">→ '+esc(i.suggestion)+'</div>':'')+
   '</div>').join('')}
 
+// === PROBLEMATISCHE BEGRIFFE (Dictionary-based) ===
+async function loadTermsDict(){
+  try{const r=await(await fetch('/api/problematic-terms')).json();
+    termsData=r.terms||[];renderTermsDict();}catch(e){}
+}
+function renderTermsDict(){
+  const listEl=$('terms-dict-list');const emptyEl=$('terms-list-empty');const countEl=$('terms-count');
+  if(!listEl)return;
+  if(countEl)countEl.textContent='('+termsData.length+' Einträge)';
+  if(!termsData.length){if(emptyEl)emptyEl.style.display='block';listEl.innerHTML='';return;}
+  if(emptyEl)emptyEl.style.display='none';
+  listEl.innerHTML=termsData.map((t,i)=>'<div class="terms-entry">'+
+    '<div class="terms-term">'+esc(t.term)+''+
+      (t.replacement?'<span class="terms-repl"> → '+esc(t.replacement)+'</span>':'')+
+    '</div>'+
+    (t.category?'<span class="terms-cat">'+esc(t.category)+'</span>':'')+
+    '<button class="btn sm s" style="padding:.1rem .35rem;margin:0" onclick="deleteTerm('+i+')">✕</button>'+
+  '</div>').join('');
+}
+async function addTermManual(){
+  const term=($('terms-new-term')?.value||'').trim();
+  if(!term){alert('Bitte Begriff eingeben.');return;}
+  const msg=$('terms-add-msg');
+  try{
+    const r=await fetch('/api/problematic-terms',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        term,
+        replacement:$('terms-new-repl')?.value||'',
+        category:$('terms-new-cat')?.value||'',
+        note:$('terms-new-note')?.value||'',
+      })});
+    const d=await r.json();
+    if(d.error){if(msg){msg.style.color='var(--crit)';msg.textContent=d.error;msg.style.display='block';}return;}
+    termsData=d.terms||[];renderTermsDict();
+    if($('terms-new-term'))$('terms-new-term').value='';
+    if($('terms-new-repl'))$('terms-new-repl').value='';
+    if($('terms-new-note'))$('terms-new-note').value='';
+    if(msg){msg.style.color='var(--ok)';msg.textContent='✓ Begriff hinzugefügt';msg.style.display='block';setTimeout(()=>{msg.style.display='none';},2000);}
+  }catch(e){if(msg){msg.style.color='var(--crit)';msg.textContent='Fehler: '+e.message;msg.style.display='block';}}
+}
+async function deleteTerm(idx){
+  try{
+    const r=await fetch('/api/problematic-terms/'+idx,{method:'DELETE'});
+    const d=await r.json();
+    if(d.error){alert(d.error);return;}
+    termsData.splice(idx,1);renderTermsDict();
+  }catch(e){alert('Fehler: '+e.message);}
+}
+async function clearAllTerms(){
+  if(!confirm('Alle Begriffe aus dem Wörterbuch löschen?'))return;
+  for(let i=termsData.length-1;i>=0;i--){
+    try{await fetch('/api/problematic-terms/'+i,{method:'DELETE'});}catch(e){}
+  }
+  termsData=[];renderTermsDict();
+}
+async function uploadTermsDict(){
+  const file=$('terms-file')?.files?.[0];
+  if(!file){alert('Bitte Datei auswählen.');return;}
+  const fd=new FormData();fd.append('file',file);
+  sp('Wörterbuch wird geladen…','');
+  try{
+    const r=await fetch('/api/dict-upload',{method:'POST',body:fd});
+    const d=await r.json();
+    if(d.error){alert('Fehler: '+d.error);hp();return;}
+    termsData=d.terms||[];renderTermsDict();
+    alert(d.added+' Begriffe hinzugefügt. Gesamt: '+d.total);
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+async function runDictScan(){
+  const ds=$('terms-ds')?.value;
+  if(!ds){alert('Datensatz wählen.');return;}
+  if(!termsData.length){alert('Wörterbuch ist leer. Bitte erst Begriffe hinzufügen.');return;}
+  sp('Dictionary-Scan läuft…',termsData.length+' Begriffe');
+  try{
+    const r=await fetch('/api/dict-scan',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        dataset:ds,
+        whole_word:$('terms-whole-word')?.checked!==false,
+        case_sensitive:$('terms-case-sensitive')?.checked||false,
+        scan_ocr:$('terms-scan-ocr')?.checked||false,
+      })});
+    const d=await r.json();
+    if(d.error){alert('Fehler: '+d.error);hp();return;}
+    termsScanResults=d.matches||[];
+    termsCatFilter='all';
+    renderDictScanResults(d);
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+function renderDictScanResults(d){
+  const resEl=$('terms-results');const emptyEl=$('terms-results-empty');
+  const countEl=$('terms-match-count');const metricsEl=$('terms-metrics');const bodyEl=$('terms-body');
+  const catBarEl=$('terms-cat-bar');
+  if(!resEl)return;
+  if(countEl)countEl.textContent='('+d.total_matches+' Treffer in '+(d.records_scanned||0)+' Datensätzen, '+d.terms_checked+' Begriffe geprüft)';
+  if(metricsEl)metricsEl.textContent='Datensatz: '+esc(d.dataset||'')+'  ·  Treffer: '+d.total_matches;
+  if(!d.total_matches){
+    resEl.style.display='none';if(emptyEl){emptyEl.style.display='block';emptyEl.innerHTML='<h3>Keine Treffer</h3><p style="font-size:.75rem;color:var(--ok)">Keine Begriffe aus dem Wörterbuch im Datensatz gefunden.</p>';}return;
+  }
+  resEl.style.display='block';if(emptyEl)emptyEl.style.display='none';
+  // Category filter
+  const cats=[...new Set((d.matches||[]).map(m=>m.category||''))].filter(Boolean);
+  if(catBarEl)catBarEl.innerHTML='<div class="fb2 a" onclick="setTermsCat(\'all\',this)">Alle ('+d.total_matches+')</div>'+cats.map(c=>'<div class="fb2" onclick="setTermsCat(\''+esc(c)+'\',this)">'+esc(c)+' ('+(d.matches||[]).filter(m=>m.category===c).length+')</div>').join('');
+  renderDictScanTable(d.matches||[]);
+}
+function setTermsCat(cat,btn){
+  termsCatFilter=cat;
+  document.querySelectorAll('#terms-cat-bar .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn)btn.classList.add('a');
+  const filtered=cat==='all'?termsScanResults:termsScanResults.filter(m=>m.category===cat);
+  renderDictScanTable(filtered);
+}
+function renderDictScanTable(matches){
+  const bodyEl=$('terms-body');if(!bodyEl)return;
+  bodyEl.innerHTML=matches.map(m=>'<tr>'+
+    '<td><strong>'+esc(m.term)+'</strong></td>'+
+    '<td style="max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.7rem" title="'+esc(m.cell_value)+'">'+esc((m.cell_value||'').substring(0,80))+'</td>'+
+    '<td style="font-size:.7rem">'+esc(m.column)+'</td>'+
+    '<td style="font-size:.7rem">'+esc(m.record_id)+'</td>'+
+    '<td style="font-size:.7rem;color:var(--ok);font-style:italic">'+esc(m.replacement||'—')+'</td>'+
+    '<td>'+(m.category?'<span class="terms-cat">'+esc(m.category)+'</span>':'—')+'</td>'+
+  '</tr>').join('');
+}
+function exportTermsResults(){
+  if(!termsScanResults.length){alert('Keine Ergebnisse zum Exportieren.');return;}
+  const hdr='term,cell_value,column,record_id,replacement,category,note\n';
+  const rows=termsScanResults.map(m=>[m.term,m.cell_value,m.column,m.record_id,m.replacement,m.category,m.note].map(v=>'"'+(v||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');
+  dl('debussy_begriffe_scan.csv',hdr+rows,'text/csv;charset=utf-8-sig');
+}
+function exportTermsDict(){
+  if(!termsData.length){alert('Wörterbuch ist leer.');return;}
+  const hdr='term,replacement,category,note\n';
+  const rows=termsData.map(t=>[t.term,t.replacement,t.category,t.note].map(v=>'"'+(v||'').toString().replace(/"/g,'""')+'"').join(',')).join('\n');
+  dl('debussy_woerterbuch.csv',hdr+rows,'text/csv;charset=utf-8-sig');
+}
+
 // === EDTF ===
 async function runEDTF(isPilot=false){const ds=$('edtf-ds').value,col=$('edtf-col').value;
   if(!ds||!col){alert('Datensatz und Spalte wählen');return}
@@ -372,16 +572,137 @@ async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
   }catch(e){$('cfg-test').style.display='block';$('cfg-test').textContent='Fehler: '+e.message}finally{hp()}}
 
 // === REPORT ===
-function rrep(d){$('de').style.display='none';$('dr').style.display='block';const s=d.summary||{};
+function rrep(d){
+  $('de').style.display='none';$('dr').style.display='block';
+  const s=d.summary||{};
   $('dsg').innerHTML='<div class="mt su"><div class="v">'+(s.total_records||0).toLocaleString()+'</div><div class="l">Records</div></div><div class="mt"><div class="v">'+(s.total_columns||0)+'</div><div class="l">Spalten</div></div><div class="mt cr"><div class="v">'+(s.critical||0)+'</div><div class="l">Kritisch</div></div><div class="mt wr"><div class="v">'+(s.warnings||0)+'</div><div class="l">Warnungen</div></div><div class="mt in"><div class="v">'+(s.info||0)+'</div><div class="l">Hinweise</div></div>';
   const fs=d.findings||[];
   $('fbar').innerHTML='<div class="fb2 a" onclick="ff(\'all\',this)">Alle ('+fs.length+')</div><div class="fb2" onclick="ff(\'critical\',this)">Kritisch ('+(s.critical||0)+')</div><div class="fb2" onclick="ff(\'warning\',this)">Warnungen ('+(s.warnings||0)+')</div><div class="fb2" onclick="ff(\'info\',this)">Hinweise ('+(s.info||0)+')</div>';
-  rfnd(fs);rprf(d.datasets||[]);rcd(d.datasets||[]);$('mdx').value=d.markdown||''}
+  rfnd(fs);
+  rCombinedCols(d.datasets||[]);
+  $('mdx').value=d.markdown||'';
+  // Show ID column selection bar
+  showIdColBar(d);
+}
 function ff(f,b){document.querySelectorAll('#fbar .fb2').forEach(x=>x.classList.remove('a'));if(b)b.classList.add('a');rfnd(f==='all'?(curRep?.findings||[]):(curRep?.findings||[]).filter(x=>x.severity===f))}
 function rfnd(fs){if(!fs.length){$('flist').textContent='Keine Findings.';return}
   $('flist').innerHTML=fs.map(f=>'<div class="fd '+esc(f.severity)+'"><span class="sv '+esc(f.severity)+'">'+esc(f.severity)+'</span> <span style="font-size:.62rem;color:#888">'+esc(f.category)+'</span><div style="margin-top:.1rem">'+esc(f.message)+'</div>'+(f.column?'<div style="font-size:.68rem;color:#666">Spalte: '+esc(f.column)+'</div>':'')+(f.suggestion?'<div style="font-style:italic;color:var(--ac);font-size:.73rem">→ '+esc(f.suggestion)+'</div>':'')+'</div>').join('')}
-function rprf(ds){$('parea').innerHTML=ds.map(d=>'<h3 style="margin:.5rem 0 .3rem">'+esc(d.source_name)+'</h3><p style="font-size:.73rem;color:#666">'+((d.row_count||0).toLocaleString())+' Zeilen, '+d.column_count+' Spalten, ID: <code>'+esc(d.id_column||'—')+'</code></p><table class="pt"><thead><tr><th>Spalte</th><th>Gefüllt</th><th>Unique</th><th>Beispiel</th></tr></thead><tbody>'+(d.columns||[]).map(c=>'<tr><td>'+esc(c.name)+'</td><td><span class="fb0" style="width:'+Math.round(c.fill_rate*50)+'px;background:'+(c.fill_rate>.8?'var(--ok)':c.fill_rate>.3?'var(--warn)':'var(--crit)')+'"></span>'+Math.round(c.fill_rate*100)+'%</td><td>'+(c.unique_count||0).toLocaleString()+'</td><td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc((c.sample_values?.[0]||'—').substring(0,40))+'</td></tr>').join('')+'</tbody></table>').join('')}
-function rcd(ds){$('cdarea').innerHTML=ds.map(d=>'<h3 style="margin:.5rem 0 .3rem">'+esc(d.source_name)+'</h3><table class="pt"><thead><tr><th>Spalte</th><th>Gefüllt</th><th>Unique</th><th>Beschreibung</th></tr></thead><tbody>'+(d.columns||[]).map(c=>{const sm=(c.sample_values||[]).slice(0,3).join(', ');return'<tr><td><strong>'+esc(c.name)+'</strong></td><td>'+Math.round(c.fill_rate*100)+'%</td><td>'+c.unique_count+'</td><td style="font-size:.73rem">'+(c.fill_rate<.01?'Fast leer':Math.round(c.fill_rate*100)+'% gefüllt. Bsp: '+esc(sm))+'</td></tr>'}).join('')+'</tbody></table>').join('')}
+
+// === COMBINED COLUMNS TABLE (merged Profile + Spalten with sort) ===
+let _colsData=[];
+function rCombinedCols(ds){
+  _colsData=ds;
+  renderCols();
+}
+function sortCols(key,btn){
+  if(colSortKey===key)colSortDir*=-1;
+  else{colSortKey=key;colSortDir=(key==='name'?1:-1);}
+  document.querySelectorAll('#col-sort-bar .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn)btn.classList.add('a');
+  renderCols();
+}
+function renderCols(){
+  const area=$('colsarea');if(!area)return;
+  area.innerHTML=_colsData.map(d=>{
+    let cols=[...(d.columns||[])];
+    if(colSortKey==='fill') cols.sort((a,b)=>colSortDir*(b.fill_rate-a.fill_rate));
+    else if(colSortKey==='unique') cols.sort((a,b)=>colSortDir*(b.unique_count-a.unique_count));
+    else cols.sort((a,b)=>colSortDir*a.name.localeCompare(b.name,'de'));
+    const idCol=d.id_column||'';
+    const info='<p style="font-size:.73rem;color:#666;margin:.3rem 0">'+((d.row_count||0).toLocaleString())+' Zeilen · '+d.column_count+' Spalten · ID-Spalte: <code>'+esc(idCol||'—')+'</code></p>';
+    const rows=cols.map(c=>{
+      const sm=(c.sample_values||[]).slice(0,2).join(' / ');
+      const fr=Math.round(c.fill_rate*100);
+      return '<tr><td><strong>'+esc(c.name)+'</strong>'+(c.name===idCol?' <span style="font-size:.6rem;background:#dcfce7;color:var(--ok);padding:.05rem .3rem;border-radius:3px">ID</span>':'')+'</td>'+
+        '<td><span class="fb0" style="width:'+Math.round(c.fill_rate*50)+'px;background:'+(c.fill_rate>.8?'var(--ok)':c.fill_rate>.3?'var(--warn)':'var(--crit)')+'"></span>'+fr+'%</td>'+
+        '<td>'+(c.unique_count||0).toLocaleString()+'</td>'+
+        '<td style="font-size:.7rem;color:#555">'+(fr<1?'Fast leer':fr+'% gefüllt')+'</td>'+
+        '<td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.68rem">'+esc(sm.substring(0,60)||'—')+'</td></tr>';
+    }).join('');
+    return '<h3 style="margin:.6rem 0 .2rem">'+esc(d.source_name)+'</h3>'+info+
+      '<table class="pt"><thead><tr><th>Spalte</th><th>Gefüllt</th><th>Unique</th><th>Beschreibung</th><th>Beispiel</th></tr></thead><tbody>'+rows+'</tbody></table>';
+  }).join('');
+}
+
+// === ARBEITSPAKET ERSTELLEN ===
+async function createArbeitspaket(){
+  if(!curRep){alert('Erst Daten laden und Analyse starten.');return;}
+  const ds=curRep.datasets||[];
+  if(!ds.length){alert('Keine Datensätze geladen.');return;}
+  // Use first dataset
+  const d=ds[0];
+  const dsName=d.source_name;
+  const idCol=d.id_column||d.columns?.[0]?.name||'';
+  const fullName=Object.keys(ufiles).find(n=>n.includes(dsName)||n.startsWith(dsName))||Object.keys(ufiles)[0]||'';
+  if(!fullName){alert('Datensatz nicht mehr verfügbar. Bitte Seite neu laden.');return;}
+  sp('Arbeitspaket wird erstellt…','CSV Export');
+  try{
+    const r=await fetch('/api/export/csv',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({dataset:fullName,include_ner:true,include_edtf:true,include_gnd:false})});
+    if(!r.ok){const e=await r.json();alert('Fehler: '+(e.error||r.statusText));hp();return;}
+    const blob=await r.blob();
+    const text=await blob.text();
+    // Ensure record_id is first column
+    const lines=text.split('\n');
+    if(lines.length>0){
+      const hdrs=lines[0].split(',');
+      const idIdx=hdrs.findIndex(h=>h.replace(/^"|"$/g,'')===idCol);
+      let out=text;
+      if(idIdx>0){
+        // Move id column to front
+        const reordered=lines.map(line=>{
+          const cols=line.match(/"(?:[^"]|"")*"|[^,]*/g)||line.split(',');
+          if(cols.length>idIdx){const id=cols.splice(idIdx,1);cols.unshift(id[0]);}
+          return cols.join(',');
+        });
+        out=reordered.join('\n');
+      }
+      dl(dsName+'_arbeitspaket.csv',out,'text/csv;charset=utf-8-sig');
+    }else{dl(dsName+'_arbeitspaket.csv',text,'text/csv;charset=utf-8-sig');}
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
+// === ID COLUMN SELECTION ===
+function showIdColBar(reportData){
+  const bar=$('id-col-bar');
+  const cont=$('id-col-datasets');
+  if(!bar||!cont)return;
+  const ds=reportData.datasets||[];
+  if(!ds.length){bar.style.display='none';return;}
+  bar.style.display='block';
+  cont.innerHTML=ds.map(d=>{
+    const cols=d.columns||[];
+    const detected=d.id_column||'';
+    const fname=Object.keys(ufiles).find(n=>n.includes(d.source_name)||n.startsWith(d.source_name))||'';
+    return '<div class="id-col-row">'+
+      '<strong style="min-width:140px;font-size:.75rem">'+esc(d.source_name)+':</strong>'+
+      '<select id="idcol-'+esc(d.source_name)+'" style="min-width:200px">'+
+        cols.map(c=>'<option value="'+esc(c.name)+'"'+(c.name===detected?' selected':'')+'>'+esc(c.name)+' ('+Math.round(c.fill_rate*100)+'%, '+c.unique_count+' unique)</option>').join('')+
+      '</select>'+
+      '<button class="btn sm" onclick="setIdCol(\''+esc(fname)+'\',\''+esc(d.source_name)+'\')">✓ Festlegen</button>'+
+      '<span id="idcol-msg-'+esc(d.source_name)+'" style="font-size:.7rem;margin-left:.3rem"></span>'+
+    '</div>';
+  }).join('');
+}
+async function setIdCol(filename,sourceName){
+  const sel=$('idcol-'+sourceName);
+  if(!sel)return;
+  const col=sel.value;
+  const msg=$('idcol-msg-'+sourceName);
+  try{
+    const r=await fetch('/api/dataset/'+encodeURIComponent(filename)+'/set-id-column',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id_column:col})});
+    const d=await r.json();
+    if(d.error){if(msg)msg.textContent='Fehler: '+d.error;return;}
+    if(msg){
+      if(d.unique===false){msg.style.color='var(--warn)';msg.textContent='⚠ Nicht eindeutig ('+d.unique_count+' von '+d.total+')';}
+      else{msg.style.color='var(--ok)';msg.textContent='✓ Festgelegt (eindeutig)';}
+    }
+    // Update report data
+    if(curRep){curRep.datasets.forEach(ds=>{if(ds.source_name===sourceName)ds.id_column=col;});renderCols();}
+  }catch(e){if(msg)msg.textContent='Fehler: '+e.message;}
+}
 
 // === GPU ===
 async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json();
@@ -758,4 +1079,4 @@ function hp(){$('po').classList.remove('a')}
 // === INIT ===
 (function(){loadPreset(); applyImgPreset(); applyActionPreset('ner'); applyActionPreset('scan'); applyActionPreset('edtf'); applyActionPreset('ocr'); refreshReviewStats();
   $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
-  renderCatalog();chkGPU();updWS();loadImages()})();
+  renderCatalog();chkGPU();updWS();loadImages();loadTermsDict();})();

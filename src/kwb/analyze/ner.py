@@ -27,7 +27,6 @@ import pandas as pd
 
 from kwb.ai.provider import AIMessage, AIProvider
 from kwb.ai.batch import process_batch, BatchReport
-from kwb.core.utils import try_parse_json as _try_parse_json
 
 logger = logging.getLogger(__name__)
 

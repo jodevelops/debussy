@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 419/528 Tests bestanden, 0 fehlgeschlagen, 109 übersprungen
+**Gesamtstatus:** 532/548 Tests bestanden, 0 fehlgeschlagen, 16 übersprungen
 
 ---
 
@@ -238,7 +238,7 @@
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
 | test_ai.py | 19/19 | 0 | 0 | ✅ |
-| test_api.py | 0/50 | 0 | 50 | ✅ |
+| test_api.py | 50/50 | 0 | 0 | ✅ |
 | test_cli.py | 8/8 | 0 | 0 | ✅ |
 | test_comprehensive.py | 22/22 | 0 | 0 | ✅ |
 | test_core.py | 18/18 | 0 | 0 | ✅ |
@@ -248,15 +248,16 @@
 | test_goobi_api.py | 4/4 | 0 | 0 | ✅ |
 | test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
-| test_image_upload.py | 0/31 | 0 | 31 | ✅ |
+| test_image_upload.py | 31/31 | 0 | 0 | ✅ |
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
 | test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
-| test_new_features.py | 29/41 | 0 | 12 | ✅ |
+| test_new_features.py | 41/41 | 0 | 0 | ✅ |
 | test_roadmap.py | 8/8 | 0 | 0 | ✅ |
+| test_services.py | 20/20 | 0 | 0 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
-| **Gesamt** | **419/528** | **0** | **109** | **✅** |
+| **Gesamt** | **532/548** | **0** | **16** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

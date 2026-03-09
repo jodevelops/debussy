@@ -1,10 +1,15 @@
 """
-Analysis routes: CSV ingest, dataset columns/records, NER, scan, EDTF.
+Analysis routes: CSV ingest, dataset columns/records, NER, scan, EDTF,
+and dictionary-based problematic-terms scan.
 
 Router prefix: /api
 """
 from __future__ import annotations
 
+import csv
+import io
+import json
+import re
 import time
 import uuid
 import tempfile
@@ -24,8 +29,8 @@ from kwb.api.deps import (
 )
 from kwb.ingest.csv_loader import ingest_csv
 from kwb.analyze.structural import analyze_datasets
-from kwb.analyze.ner import ner_hybrid, scan_problematic_terms, SYSTEM_NER
-from kwb.enrich.edtf import normalize_dates, SYSTEM_EDTF
+from kwb.analyze.ner import ner_hybrid, scan_problematic_terms
+from kwb.enrich.edtf import normalize_dates
 from kwb.report.markdown import render_report
 from kwb.ai.prompts import PROMPT_VERSIONS
 
@@ -224,7 +229,37 @@ async def analyze(files: list[UploadFile] = File(...)):
 
     report = analyze_datasets(datasets)
     state["report"] = report
-    return _report_json(report, render_report(report))
+    result = _report_json(report, render_report(report))
+    # Include auto-detected id_column candidates per dataset
+    id_cols = {}
+    for dp in report.datasets:
+        id_cols[dp.source_name] = dp.id_column or ""
+    result["id_columns"] = id_cols
+    return result
+
+
+@router.post("/api/dataset/{name}/set-id-column")
+async def set_id_column(name: str, request: dict):
+    """Set the ID column for a dataset after user selection."""
+    ds = get_datasets().get(name)
+    if not ds:
+        return JSONResponse({"error": f"'{name}' nicht geladen"}, 404)
+    df, pr = ds
+    col = request.get("id_column", "")
+    if col and col not in df.columns:
+        return JSONResponse({"error": f"Spalte '{col}' nicht vorhanden"}, 400)
+    pr.id_column = col or pr.id_column
+    ws = get_workspace()
+    ws.id_column = pr.id_column or ws.id_column
+    ws._touch()
+    # Validate uniqueness
+    if col and col in df.columns:
+        total = len(df)
+        unique = df[col].nunique()
+        is_unique = unique == total
+        return {"ok": True, "id_column": col, "unique": is_unique,
+                "unique_count": unique, "total": total}
+    return {"ok": True, "id_column": pr.id_column}
 
 
 @router.get("/api/dataset/{name}/columns")
@@ -498,4 +533,229 @@ async def api_edtf(request: dict):
              "confidence": round(r.confidence, 3), "method": r.method, "note": r.note}
             for r in results
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Problematische Begriffe — Dictionary-based (1:1 matching)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/problematic-terms")
+async def get_problematic_terms():
+    """Return the current problematic-terms dictionary."""
+    ws = get_workspace()
+    terms = ws.extras.get("problematic_terms", [])
+    return {"terms": terms, "count": len(terms)}
+
+
+@router.post("/api/problematic-terms")
+async def add_problematic_term(request: dict):
+    """Add a single term to the problematic-terms dictionary."""
+    ws = get_workspace()
+    terms_list = ws.extras.setdefault("problematic_terms", [])
+    new_term = (request.get("term") or "").strip()
+    if not new_term:
+        return JSONResponse({"error": "Kein Begriff angegeben"}, 400)
+    existing = {t["term"].lower() for t in terms_list}
+    if new_term.lower() in existing:
+        return JSONResponse({"error": "Begriff bereits vorhanden"}, 409)
+    terms_list.append({
+        "term": new_term,
+        "replacement": (request.get("replacement") or "").strip(),
+        "category": (request.get("category") or "").strip(),
+        "note": (request.get("note") or "").strip(),
+    })
+    ws._touch()
+    return {"terms": terms_list, "count": len(terms_list)}
+
+
+@router.delete("/api/problematic-terms/{term_idx}")
+async def delete_problematic_term(term_idx: int):
+    """Remove a term by index from the problematic-terms dictionary."""
+    ws = get_workspace()
+    terms_list = ws.extras.get("problematic_terms", [])
+    if term_idx < 0 or term_idx >= len(terms_list):
+        return JSONResponse({"error": "Index ungültig"}, 400)
+    removed = terms_list.pop(term_idx)
+    ws._touch()
+    return {"removed": removed, "count": len(terms_list)}
+
+
+@router.post("/api/dict-upload")
+async def upload_problematic_dict(file: UploadFile = File(...)):
+    """
+    Upload a CSV or JSON file as the problematic-terms dictionary.
+    CSV format: term[,replacement[,category[,note]]] — first row optionally a header.
+    JSON format: list of strings, list of {term, replacement, category, note}, or
+                 dict of {term: replacement}.
+    """
+    content = await file.read()
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".csv", ".json", ".txt"}:
+        return JSONResponse({"error": "Nur CSV, JSON oder TXT erlaubt"}, 400)
+
+    ws = get_workspace()
+    terms_list = ws.extras.setdefault("problematic_terms", [])
+    existing = {t["term"].lower() for t in terms_list}
+    new_terms: list[dict] = []
+
+    try:
+        if suffix == ".json":
+            data = json.loads(content.decode("utf-8-sig"))
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, str):
+                        t = item.strip()
+                        entry = {"term": t, "replacement": "", "category": "", "note": ""}
+                    elif isinstance(item, dict):
+                        t = (item.get("term") or "").strip()
+                        entry = {
+                            "term": t,
+                            "replacement": (item.get("replacement") or item.get("ersatz") or "").strip(),
+                            "category": (item.get("category") or item.get("kategorie") or "").strip(),
+                            "note": (item.get("note") or item.get("hinweis") or "").strip(),
+                        }
+                    else:
+                        continue
+                    if t and t.lower() not in existing:
+                        new_terms.append(entry)
+                        existing.add(t.lower())
+            elif isinstance(data, dict):
+                for term, info in data.items():
+                    t = term.strip()
+                    if not t or t.lower() in existing:
+                        continue
+                    if isinstance(info, dict):
+                        entry = {
+                            "term": t,
+                            "replacement": (info.get("replacement") or "").strip(),
+                            "category": (info.get("category") or "").strip(),
+                            "note": (info.get("note") or "").strip(),
+                        }
+                    else:
+                        entry = {"term": t, "replacement": str(info or ""), "category": "", "note": ""}
+                    new_terms.append(entry)
+                    existing.add(t.lower())
+        else:
+            # CSV or TXT — one term per line or CSV columns
+            text = content.decode("utf-8-sig")
+            reader = csv.reader(io.StringIO(text))
+            first_row = True
+            for row in reader:
+                if not row:
+                    continue
+                t = row[0].strip()
+                if not t:
+                    continue
+                # Skip header row if it looks like a header
+                if first_row and t.lower() in {"term", "begriff", "wort", "word"}:
+                    first_row = False
+                    continue
+                first_row = False
+                repl = row[1].strip() if len(row) > 1 else ""
+                cat = row[2].strip() if len(row) > 2 else ""
+                note = row[3].strip() if len(row) > 3 else ""
+                if t.lower() not in existing:
+                    new_terms.append({"term": t, "replacement": repl, "category": cat, "note": note})
+                    existing.add(t.lower())
+    except Exception as e:
+        return JSONResponse({"error": f"Datei konnte nicht gelesen werden: {e}"}, 400)
+
+    terms_list.extend(new_terms)
+    ws._touch()
+    return {"added": len(new_terms), "total": len(terms_list), "terms": terms_list}
+
+
+@router.post("/api/dict-scan")
+async def dict_scan(request: dict):
+    """
+    Scan a dataset for terms in the problematic-terms dictionary (1:1 matching).
+    Optionally also scans OCR text from image analyses.
+    """
+    dsn = request.get("dataset", "")
+    ds = get_datasets().get(dsn)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
+    df, profile = ds
+
+    ws = get_workspace()
+    terms_list = ws.extras.get("problematic_terms", [])
+    if not terms_list:
+        return JSONResponse({"error": "Wörterbuch ist leer. Bitte zuerst Begriffe hinzufügen."}, 400)
+
+    include_cols = request.get("columns") or [c for c in df.columns if df[c].dtype == object]
+    scan_ocr = bool(request.get("scan_ocr", False))
+    case_sensitive = bool(request.get("case_sensitive", False))
+    whole_word = bool(request.get("whole_word", True))
+
+    # Build lookup: term_lower → entry
+    term_lookup: dict[str, dict] = {}
+    for entry in terms_list:
+        t = (entry.get("term") or "").strip()
+        if t:
+            key = t if case_sensitive else t.lower()
+            term_lookup[key] = entry
+
+    id_col = profile.id_column or (df.columns[0] if len(df.columns) > 0 else "")
+    matches: list[dict] = []
+
+    for _, row in df.iterrows():
+        record_id = str(row[id_col]) if id_col and id_col in row.index else ""
+        for col in include_cols:
+            if col not in df.columns:
+                continue
+            cell_val = str(row.get(col, "") or "")
+            if not cell_val or cell_val == "nan":
+                continue
+            cell_cmp = cell_val if case_sensitive else cell_val.lower()
+            for term_key, entry in term_lookup.items():
+                if whole_word:
+                    pattern = r"(?<![^\s,;.!?\"'()\[\]])" + re.escape(term_key) + r"(?![^\s,;.!?\"'()\[\]])"
+                    found = bool(re.search(pattern, cell_cmp))
+                else:
+                    found = term_key in cell_cmp
+                if found:
+                    matches.append({
+                        "term": entry["term"],
+                        "cell_value": cell_val[:300],
+                        "column": col,
+                        "record_id": record_id,
+                        "replacement": entry.get("replacement", ""),
+                        "category": entry.get("category", ""),
+                        "note": entry.get("note", ""),
+                    })
+
+    # Optionally scan OCR text from image analyses
+    if scan_ocr and ws.image_analyses:
+        for analysis in ws.image_analyses:
+            if not analysis.result:
+                continue
+            text = (analysis.result.get("transcription") or
+                    analysis.result.get("text") or "")
+            if not text:
+                continue
+            text_cmp = text if case_sensitive else text.lower()
+            for term_key, entry in term_lookup.items():
+                if whole_word:
+                    pattern = r"(?<![^\s,;.!?\"'()\[\]])" + re.escape(term_key) + r"(?![^\s,;.!?\"'()\[\]])"
+                    found = bool(re.search(pattern, text_cmp))
+                else:
+                    found = term_key in text_cmp
+                if found:
+                    matches.append({
+                        "term": entry["term"],
+                        "cell_value": text[:300],
+                        "column": f"[OCR] {analysis.filename}",
+                        "record_id": analysis.record_id or analysis.image_id,
+                        "replacement": entry.get("replacement", ""),
+                        "category": entry.get("category", ""),
+                        "note": entry.get("note", ""),
+                    })
+
+    return {
+        "total_matches": len(matches),
+        "terms_checked": len(terms_list),
+        "records_scanned": len(df),
+        "matches": matches[:2000],
+        "dataset": dsn,
     }

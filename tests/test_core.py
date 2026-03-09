@@ -9,7 +9,6 @@ import pandas as pd
 
 from kwb.core.models import (
     AnalysisReport,
-    ColumnProfile,
     DatasetProfile,
     Finding,
     FindingCategory,

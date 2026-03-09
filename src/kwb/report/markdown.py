@@ -13,7 +13,6 @@ from kwb.core.models import (
     AnalysisReport,
     DatasetProfile,
     Finding,
-    FindingCategory,
     Severity,
 )
 
@@ -30,8 +29,8 @@ def _render_profile(profile: DatasetProfile) -> str:
     lines = [
         f"### {profile.source_name}",
         "",
-        f"| Eigenschaft | Wert |",
-        f"|---|---|",
+        "| Eigenschaft | Wert |",
+        "|---|---|",
         f"| Datei | `{profile.source_path}` |",
         f"| Zeilen | {profile.row_count:,} |",
         f"| Spalten | {profile.column_count} |",
@@ -82,14 +81,14 @@ def render_report(report: AnalysisReport) -> str:
     sections = []
 
     # Header
-    sections.append(f"# Datenqualitätsbericht")
-    sections.append(f"")
+    sections.append("# Datenqualitätsbericht")
+    sections.append("")
     sections.append(f"*Erstellt: {now}*")
-    sections.append(f"")
+    sections.append("")
 
     # Executive summary
-    sections.append(f"## Zusammenfassung")
-    sections.append(f"")
+    sections.append("## Zusammenfassung")
+    sections.append("")
     sections.append(
         f"| | Anzahl |\n|---|---|\n"
         f"| Datensätze analysiert | {s.get('datasets_analyzed', 0)} |\n"

@@ -282,7 +282,8 @@ class TestWorkspace(unittest.TestCase):
         self.assertGreater(ws.updated_at, t0)
 
     def test_save_and_load(self):
-        import tempfile, os
+        import tempfile
+        import os
         ws = self._ws()
         ws.set_field_mapping([FieldMapping("record_id", "CatalogIDDigital")])
         with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:

@@ -58,3 +58,17 @@ label{display:block;font-size:.73rem;font-weight:600;margin-top:.5rem;color:#555
 /* Entity status pill */
 .est{font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .35rem;border-radius:10px}
 .est-pending{background:#f3f4f6;color:#6b7280}.est-accepted{background:#dcfce7;color:var(--ok)}.est-rejected{background:#fee2e2;color:var(--crit)}
+/* Terms dict list */
+.terms-entry{display:flex;align-items:flex-start;gap:.4rem;padding:.3rem .4rem;border-bottom:1px solid var(--paper);font-size:.75rem}
+.terms-entry:hover{background:var(--paper)}
+.terms-term{font-weight:600;flex:1;min-width:0;word-break:break-word}
+.terms-cat{font-size:.62rem;padding:.1rem .3rem;border-radius:3px;background:#fef3c7;color:#92400e;flex-shrink:0}
+.terms-repl{font-size:.7rem;color:var(--ok);font-style:italic}
+/* Combined columns table */
+.col-sort-th{cursor:pointer;user-select:none}.col-sort-th:hover{color:var(--ac)}
+.col-sort-th.asc::after{content:' ↑'}.col-sort-th.desc::after{content:' ↓'}
+/* ID column bar */
+#id-col-bar .id-col-row{display:flex;align-items:center;gap:.5rem;margin:.3rem 0;font-size:.78rem;flex-wrap:wrap}
+#id-col-bar select{width:auto;margin-top:0;min-width:180px}
+/* Sortable table header */
+th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}

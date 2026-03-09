@@ -54,6 +54,6 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -e .[dev]
+          pip install -e ".[api,ai,dev]"
       - name: Check docs/FUNKTIONSKATALOG.md test statistics
         run: python scripts/update_test_catalog.py --check-doc
