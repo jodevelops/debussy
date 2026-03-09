@@ -49,8 +49,8 @@ function dl(name,content,type){const b=new Blob([content],{type});const a=docume
 
 // === NAV ===
 document.querySelector('.nav').onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))};
-function bindTabs(id){const el=$(id);if(!el)return;el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;e.currentTarget.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));e.currentTarget.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-bindTabs('dt');
+function bindTabs(el){el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));el.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
+document.querySelectorAll('.tabs').forEach(bindTabs);
 
 // === UPLOAD ===
 const uz=$('uz'),fi=$('fi');
