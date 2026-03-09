@@ -54,8 +54,7 @@ function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}cat
 initNav();initTabs();
 
 // === UPLOAD ===
-const uz=$('uz'),fi=$('fi');
-fi.onchange=e=>hf(e.target.files);uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)};
+function initUpload(){const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.target.files);if(uz){uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)}}}
 function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
 function rfl(){
   const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
@@ -104,7 +103,7 @@ async function loadRecords(reset=false){
   }catch(e){}
 }
 function pageRecords(dir){recordOffset=Math.max(0,recordOffset+(dir*recordLimit));loadRecords(false)}
-$('exp-ds').onchange=()=>loadRecords(true);
+function initPanels(){const expDs=$('exp-ds');if(expDs)expDs.onchange=()=>loadRecords(true)}
 
 // === FIELD MAPPING ===
 let fmCols=[];
@@ -1089,6 +1088,19 @@ function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classLi
 function hp(){$('po').classList.remove('a')}
 
 // === INIT ===
-(function(){loadPreset(); applyImgPreset(); applyActionPreset('ner'); applyActionPreset('scan'); applyActionPreset('edtf'); applyActionPreset('ocr'); refreshReviewStats();
-  $('cfg-tasks').innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');
-  renderCatalog();chkGPU();updWS();loadImages();loadTermsDict();})();
+function showInitError(label){const b=document.createElement('div');b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fee2e2;color:#991b1b;padding:.4rem 1rem;font-size:.78rem;border-top:2px solid #f87171';b.textContent='⚠ UI-Initialisierung fehlgeschlagen'+(label?': '+label:'')+' – bitte Konsole prüfen';document.body.appendChild(b)}
+(function(){
+  const failed=[];
+  [initNav,initTabs,initUpload,initPanels].forEach(fn=>{try{fn()}catch(err){console.error('[init]',fn.name,err);failed.push(fn.name)}});
+  try{loadPreset()}catch(err){console.error('[init] loadPreset',err);failed.push('loadPreset')}
+  try{applyImgPreset()}catch(err){console.error('[init] applyImgPreset',err);failed.push('applyImgPreset')}
+  try{applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr')}catch(err){console.error('[init] applyActionPreset',err);failed.push('applyActionPreset')}
+  try{refreshReviewStats()}catch(err){console.error('[init] refreshReviewStats',err);failed.push('refreshReviewStats')}
+  try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('')}catch(err){console.error('[init] cfg-tasks',err);failed.push('cfg-tasks')}
+  try{renderCatalog()}catch(err){console.error('[init] renderCatalog',err);failed.push('renderCatalog')}
+  try{chkGPU()}catch(err){console.error('[init] chkGPU',err);failed.push('chkGPU')}
+  try{updWS()}catch(err){console.error('[init] updWS',err);failed.push('updWS')}
+  try{loadImages()}catch(err){console.error('[init] loadImages',err);failed.push('loadImages')}
+  try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err);failed.push('loadTermsDict')}
+  if(failed.length)showInitError(failed.join(', '));
+})();
