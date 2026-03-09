@@ -107,6 +107,7 @@ $('exp-ds').onchange=()=>loadRecords(true);
 
 // === FIELD MAPPING ===
 let fmCols=[];
+let fmMeta={}; // full backend objects per col: {col_name: {csv_column,goobi_type,label,repeatable,...}}
 async function loadFMCols(){
   const ds=$('fm-ds').value;
   if(!ds){$('fm-table-wrap').style.display='none';return}
@@ -114,11 +115,15 @@ async function loadFMCols(){
     const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/columns')).json();
     if(d.error)return;
     fmCols=d.columns;
-    // API payload (GET): {mappings: [{csv_column, goobi_type, label, ...}]}
-    // Convert to internal UI state: {col_name: [label, goobi_type]}
+    // API payload (GET): {mappings: [{csv_column, goobi_type, label, repeatable, authority, ...}]}
+    // fmMeta keeps the full objects so saveFM() can preserve metadata not shown in the UI
+    // fmMapping holds the UI state: {col_name: [label, goobi_type]}
     const ex=await(await fetch('/api/workspace/field-mapping')).json();
-    fmMapping={};
-    (ex.mappings||[]).forEach(m=>{fmMapping[m.csv_column]=[m.label||m.goobi_type,m.goobi_type];});
+    fmMeta={};fmMapping={};
+    (ex.mappings||[]).forEach(m=>{
+      fmMeta[m.csv_column]=m;
+      fmMapping[m.csv_column]=[m.label||m.goobi_type,m.goobi_type];
+    });
     renderFMTable();
     $('fm-table-wrap').style.display='block';
   }catch(e){}
@@ -191,19 +196,20 @@ function clearFMRow(col){
   if(lbl)lbl.value='';if(typ)typ.value='';
 }
 async function saveFM(){
-  // API payload (POST): {mappings: [{csv_column, goobi_type, label, ...}]}
+  // API payload (POST): {mappings: [{csv_column, goobi_type, label, repeatable, authority, ...}]}
+  // Spread fmMeta to preserve fields not editable in the UI (repeatable, authority_uri, enabled, note)
   const mappings=[];
   fmCols.forEach(c=>{
     const lbl=$('fm-lbl-'+c.name);const typ=$('fm-typ-'+c.name);
     if(lbl&&typ&&typ.value){
-      mappings.push({csv_column:c.name,goobi_type:typ.value,label:lbl.value||typ.value});
+      mappings.push({...(fmMeta[c.name]||{}),csv_column:c.name,goobi_type:typ.value,label:lbl.value||typ.value});
     }
   });
   try{
     await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
-    // Update internal UI state: {col_name: [label, goobi_type]}
-    fmMapping={};
-    mappings.forEach(m=>{fmMapping[m.csv_column]=[m.label,m.goobi_type];});
+    // Update internal state from saved list
+    fmMeta={};fmMapping={};
+    mappings.forEach(m=>{fmMeta[m.csv_column]=m;fmMapping[m.csv_column]=[m.label,m.goobi_type];});
     $('fm-saved').style.display='inline';
     setTimeout(()=>{$('fm-saved').style.display='none'},2000);
   }catch(e){alert('Fehler: '+e.message)}
