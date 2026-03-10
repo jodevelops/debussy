@@ -42,7 +42,6 @@
 <div class="pg a" data-p="data"><div class="g2"><div class="sb">
 <div class="c"><h2>Daten laden</h2><div class="uz" id="uz" onclick="document.getElementById('fi').click()"><input type="file" id="fi" accept=".csv,.tsv" multiple><p style="font-size:.8rem">📂 CSV/TSV hierher ziehen oder klicken</p></div></div>
 <div class="c" id="fc" style="display:none"><h2>Dateien</h2><div class="cl" id="fcl"></div><button class="btn f" onclick="runStruct()">🔬 Strukturelle Analyse starten</button></div>
-<div class="c"><h2>GPUStack</h2><div id="gi" style="font-size:.75rem">Prüfe …</div></div>
 </div><div>
 <div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p><div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Empfohlener Workflow:</strong><br>① Daten &ndash; CSV laden, ID-Spalte festlegen &amp; Strukturanalyse<br>② NER &ndash; Entit&auml;ten erkennen (Personen, Orte, …)<br>③ Begriffe &ndash; Problematische Begriffe via W&ouml;rterbuch scannen<br>④ Datierung &ndash; EDTF-Normalisierung<br>⑤ Bilder &ndash; Bild-Upload &amp; KI-Analyse<br>⑥ Mapping &ndash; CSV-Spalten &rarr; Minimaldatensatz / Goobi<br>⑦ Export &ndash; Goobi-XML erzeugen (Mapping erforderlich!)</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
@@ -526,6 +525,10 @@
 <!-- ===== CONFIG ===== -->
 <div class="pg" data-p="config"><div style="max-width:900px">
 <div class="c" style="margin-bottom:1rem"><h2>GPUStack-Verbindung</h2>
+<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
+<span class="dot off" id="gd2"></span><span id="gl2" style="font-size:.75rem">GPUStack …</span>
+</div>
+<div id="gi" style="font-size:.75rem;margin-bottom:.6rem">Prüfe …</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.5rem">
 <div><label>Server-URL</label>
 <input id="cfg-url" type="text" placeholder="http://localhost:80" style="width:100%;box-sizing:border-box"></div>
@@ -537,17 +540,23 @@
 </div>
 <div style="display:flex;gap:.5rem;align-items:center">
 <button class="btn" onclick="saveGPUConfig()">Verbindung speichern</button>
+<button class="btn s" onclick="testConn()">Verbindung testen</button>
 <span id="cfg-save-status" style="font-size:.75rem"></span>
 </div>
+<div id="cfg-test" class="ar" style="display:none;margin-top:.4rem"></div>
 </div>
-<div class="c"><h2>Modelle</h2>
+<div class="c" style="margin-bottom:1rem"><h2>Verfügbare Modelle</h2>
+<p style="font-size:.73rem;color:#666;margin-bottom:.5rem">Wähle das Standard-Modell für Text- und Vision-Aufgaben. Die Hinweise zeigen, wofür jedes Modell geeignet ist.</p>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-<div><label>Text-Modell</label><select id="cfg-mt"></select></div>
-<div><label>Vision-Modell</label><select id="cfg-mv"></select></div>
+<div><label>Text-Modell</label><select id="cfg-mt"></select>
+<p style="font-size:.65rem;color:#888;margin-top:.2rem">NER, Datierung, Begriffsprüfung, Spalten-Beschreibungen</p></div>
+<div><label>Vision-Modell</label><select id="cfg-mv"></select>
+<p style="font-size:.65rem;color:#888;margin-top:.2rem">Bildbeschreibung, OCR, Personen-/Gesichtserkennung</p></div>
 </div>
 <div id="cfg-models" style="font-size:.7rem;font-family:monospace;margin-top:.4rem"></div>
+<div id="model-cards" style="margin-top:.6rem"></div>
 </div>
-<div class="c" style="margin-top:1rem"><h2>System-Instruktionen</h2>
+<div class="c" style="margin-bottom:1rem"><h2>System-Instruktionen</h2>
 <label>Aktive Instruktion</label>
 <select id="cfg-preset" onchange="loadPreset()">
 <option value="meta_de">Metadaten (DE)</option><option value="meta_en">Metadaten (EN)</option>
@@ -557,10 +566,6 @@
 </select>
 <textarea id="cfg-sys" rows="6" style="margin-top:.3rem"></textarea>
 <button class="btn sm" onclick="loadPreset()">Zurücksetzen</button>
-</div>
-<div class="c" style="margin-top:1rem"><h2>Verbindungstest</h2>
-<button class="btn" onclick="testConn()">GPUStack testen</button>
-<div id="cfg-test" class="ar" style="display:none;margin-top:.4rem"></div>
 </div>
 <div class="c" style="margin-top:1rem"><h2>Aufgaben-Übersicht</h2><div id="cfg-tasks"></div></div>
 </div></div>
@@ -598,7 +603,7 @@
 </div>
 
 <!-- Progress overlay -->
-<div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="sp"></div><p id="pp" style="font-size:.8rem"></p></div></div>
+<div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="pb"><div class="pf ind" id="pf"></div></div><p id="pct" style="font-size:.75rem;margin:.3rem 0;color:#555"></p><p id="pp" style="font-size:.8rem"></p><button class="btn s sm" id="po-cancel" onclick="cancelOp()">Abbrechen (ESC)</button></div></div>
 
 <!-- JS_PLACEHOLDER -->
 </body>

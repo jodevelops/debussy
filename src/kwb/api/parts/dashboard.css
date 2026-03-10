@@ -110,3 +110,15 @@ th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}
 .dict-type-other{background:#f3f4f6;color:#6b7280}
 .dict-auth{font-size:.62rem;color:var(--ok);font-family:monospace}
 .dict-rids{font-size:.6rem;color:#888;font-family:monospace}
+/* Progress bar */
+.pb{width:100%;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;margin:.5rem 0}
+.pf{height:100%;background:var(--ac);border-radius:4px;transition:width .3s;width:0}
+.pf.ind{animation:indeterminate 1.5s infinite linear;background:linear-gradient(90deg,var(--ac) 0%,var(--al) 50%,var(--ac) 100%);background-size:200% 100%;width:100%!important}
+@keyframes indeterminate{0%{background-position:200% 0}100%{background-position:-200% 0}}
+#po-cancel{margin-top:.6rem}
+/* Model cards */
+.model-card{display:flex;align-items:center;gap:.5rem;padding:.35rem .5rem;border:1px solid var(--brd);border-radius:var(--r);margin-bottom:.3rem;font-size:.73rem;background:var(--paper)}
+.model-card .mc-type{font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:3px;flex-shrink:0}
+.mc-text{background:#dbeafe;color:#1d4ed8}.mc-vision{background:#dcfce7;color:var(--ok)}
+.mc-audio{background:#fce7f3;color:#9d174d}.mc-embed{background:#f3f4f6;color:#6b7280}
+.mc-rerank{background:#fef3c7;color:#92400e}.mc-unknown{background:#f5f5f4;color:#57534e}
