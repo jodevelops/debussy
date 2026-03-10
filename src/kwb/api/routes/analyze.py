@@ -93,7 +93,10 @@ def _build_sampling_plan(
             frac = target_n / total_after_filter
             sampled = (
                 filtered.groupby(stratify_by, group_keys=False)
-                .apply(lambda g: g.sample(n=max(1, int(round(len(g) * frac))), random_state=42))
+                .apply(
+                    lambda g: g.sample(n=max(1, int(round(len(g) * frac))), random_state=42),
+                    include_groups=False,
+                )
                 .head(target_n)
             )
         else:
