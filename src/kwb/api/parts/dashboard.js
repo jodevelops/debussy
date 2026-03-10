@@ -41,6 +41,32 @@ let termsData=[]; // problematic terms dictionary
 let termsScanResults=[]; // last scan results
 let termsCatFilter='all';
 let colSortKey='name',colSortDir=1; // for combined columns table
+let _abortCtrl=null;
+let _opCancelled=false;
+
+// === MODEL HINTS ===
+const MODEL_HINTS={
+  'qwen3-coder':{type:'text',hint:'Code-Generierung, Reasoning, allgemeine Text-Aufgaben'},
+  'qwen3-vl':{type:'vision',hint:'Bildbeschreibung, OCR, Dokumentenanalyse (Vision-Language)'},
+  'internvl3':{type:'vision',hint:'Bilderkennung, Multi-Sprache, visuelle Fragen (Vision)'},
+  'internvl':{type:'vision',hint:'Vision-Language Modell'},
+  'faster-whisper':{type:'audio',hint:'Spracherkennung / Transkription (Whisper ASR)'},
+  'jina-reranker':{type:'rerank',hint:'Reranking von Suchergebnissen (nicht für Textgenerierung)'},
+  'granite-embedding':{type:'embed',hint:'Embedding-Generierung für Similarity Search'},
+  'deepseek-r1':{type:'text',hint:'Reasoning-Modell, Chain-of-Thought, komplexe Analysen'},
+  'gpt-oss':{type:'text',hint:'Grosses Text-Modell, NER, Datierung, Analyse'},
+  'qwen3-embedding':{type:'embed',hint:'Kompaktes Embedding-Modell (Mehrsprachig)'},
+  'llama':{type:'text',hint:'Allgemeines Text-Modell (Meta)'},
+  'mistral':{type:'text',hint:'Schnelles Text-Modell (Mistral AI)'},
+  'llava':{type:'vision',hint:'Vision-Language Modell'},
+  'phi':{type:'text',hint:'Kompaktes Text-Modell (Microsoft)'},
+  'bakllava':{type:'vision',hint:'Vision-Language Modell'},
+};
+function getModelHint(name){
+  const n=name.toLowerCase();
+  for(const[k,v]of Object.entries(MODEL_HINTS)){if(n.includes(k))return v;}
+  return{type:'unknown',hint:'Modelltyp unbekannt'};
+}
 
 // === SECURITY ===
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
@@ -49,7 +75,7 @@ function dl(name,content,type){const b=new Blob([content],{type});const a=docume
 
 // === NAV ===
 function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));if(p==='config')loadGPUConfig();}}catch(err){console.error('[initNav]',err)}}
+function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
 initNav();initTabs();
 
@@ -220,10 +246,11 @@ async function runStruct(){
   const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
   if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
+  _abortCtrl=new AbortController();
   const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
-  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();
+  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd,signal:_abortCtrl.signal})).json();
     if(r.error)throw Error(r.error);curRep=r;rrep(r);populateDS();updWS()
-  }catch(e){alert(e.message)}finally{hp()}
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp()}
 }
 
 // === NER ===
@@ -236,15 +263,19 @@ async function runNER(isPilot=false){
   const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
   sp(isPilot?'NER Pilotlauf …':'NER läuft …',method+', '+n+' Samples');
   const entityTypes=[...document.querySelectorAll('.ner-type-cb:checked')].map(c=>c.value);
-  try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,
-      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
-      stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
-      model:$('cfg-mt').value||'',
-      entity_types:entityTypes.length<10?entityTypes:[],
-      system_prompt:($('ner-sp')?.value||$('cfg-sys').value)})})).json();
-    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
-  }catch(e){alert(e.message)}finally{hp()}
+  const body={dataset:ds,columns:cols,method,sample_size:n,
+    sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+    stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
+    model:$('cfg-mt').value||'',
+    entity_types:entityTypes.length<10?entityTypes:[],
+    system_prompt:($('ner-sp')?.value||$('cfg-sys').value)};
+  try{
+    await fetchSSE('/api/ner/stream',body,
+      evt=>spUp(evt.chunk,evt.total_chunks,'Chunk '+evt.chunk+' — '+evt.entities_so_far+' Entities'),
+      result=>{nerData=result.entities||[];renderNER(result);renderRunMetrics('ner-metrics',result.run_metrics);updWS();},
+      msg=>{throw Error(msg);}
+    );
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}
 }
 
 function renderNER(r){
@@ -348,14 +379,18 @@ async function runScan(isPilot=false){const ds=$('scan-ds').value;if(!ds){alert(
   const baseN=parseInt($('scan-n').value)||10000;
   const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
   sp(isPilot?'Scan Pilotlauf …':'Scan …','');
-  try{const r=await(await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,sample_size:n,
-      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
-      stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
-      model:$('cfg-mt').value||'',
-      system_prompt:($('scan-sp')?.value||$('cfg-sys').value)})})).json();
-    if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
-  }catch(e){alert(e.message)}finally{hp()}}
+  const body={dataset:ds,sample_size:n,
+    sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+    stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
+    model:$('cfg-mt').value||'',
+    system_prompt:($('scan-sp')?.value||$('cfg-sys').value)};
+  try{
+    await fetchSSE('/api/scan/stream',body,
+      evt=>spUp(evt.chunk,evt.total_chunks,'Chunk '+evt.chunk+' — '+evt.issues_so_far+' Begriffe'),
+      result=>{renderScan(result);renderRunMetrics('scan-metrics',result.run_metrics);},
+      msg=>{throw Error(msg);}
+    );
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}}
 
 
 function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||[];
@@ -439,8 +474,10 @@ async function runDictScan(){
   if(!ds){alert('Datensatz wählen.');return;}
   if(!termsData.length){alert('Wörterbuch ist leer. Bitte erst Begriffe hinzufügen.');return;}
   sp('Dictionary-Scan läuft…',termsData.length+' Begriffe');
+  _abortCtrl=new AbortController();
   try{
     const r=await fetch('/api/dict-scan',{method:'POST',headers:{'Content-Type':'application/json'},
+      signal:_abortCtrl.signal,
       body:JSON.stringify({
         dataset:ds,
         whole_word:$('terms-whole-word')?.checked!==false,
@@ -452,7 +489,7 @@ async function runDictScan(){
     termsScanResults=d.matches||[];
     termsCatFilter='all';
     renderDictScanResults(d);
-  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+  }catch(e){if(e.name!=='AbortError')alert('Fehler: '+e.message);}finally{hp();}
 }
 function renderDictScanResults(d){
   const resEl=$('terms-results');const emptyEl=$('terms-results-empty');
@@ -507,15 +544,19 @@ async function runEDTF(isPilot=false){const ds=$('edtf-ds').value,col=$('edtf-co
   const baseN=parseInt($('edtf-n').value)||0;
   const n=isPilot?Math.max(1,Math.round((baseN||10000)*0.02)):baseN;
   sp(isPilot?'EDTF Pilotlauf …':'EDTF …',esc(col));
-  try{const r=await(await fetch('/api/edtf',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,column:col,sample_size:n,
-      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
-      stratified:isPilot,chunk_size:parseInt($('edtf-chunk').value)||200,
-      use_llm:$('edtf-llm').value==='1',
-      model:$('cfg-mt').value||'',
-      system_prompt:$('edtf-sp').value||$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);renderRunMetrics('edtf-metrics',r.run_metrics);updWS()
-  }catch(e){alert(e.message)}finally{hp()}}
+  const body={dataset:ds,column:col,sample_size:n,
+    sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+    stratified:isPilot,chunk_size:parseInt($('edtf-chunk').value)||200,
+    use_llm:$('edtf-llm').value==='1',
+    model:$('cfg-mt').value||'',
+    system_prompt:$('edtf-sp').value||$('cfg-sys').value};
+  try{
+    await fetchSSE('/api/edtf/stream',body,
+      evt=>spUp(evt.chunk,evt.total_chunks,'Chunk '+evt.chunk+' — '+evt.results_so_far+' konvertiert'),
+      result=>{edtfData=result.results||[];renderEDTF(result);renderRunMetrics('edtf-metrics',result.run_metrics);updWS();},
+      msg=>{throw Error(msg);}
+    );
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}}
 
 
 function renderEDTF(r){
@@ -742,18 +783,44 @@ async function setIdCol(filename,sourceName){
 
 // === GPU ===
 async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json();
+    // Update both header and KI tab status indicators
+    function setDot(cls,txt){
+      $('gd').className='dot '+cls;$('gl').textContent=txt;
+      if($('gd2'))$('gd2').className='dot '+cls;if($('gl2'))$('gl2').textContent=txt;
+    }
     if(!d.configured){
-      $('gd').className='dot mock';$('gl').textContent='Testdaten-Modus';
+      setDot('mock','Testdaten-Modus');
       $('gi').textContent='KI-Analyse verwendet Testdaten. F\u00fcr echte Ergebnisse: KWB_GPUSTACK_URL in .env konfigurieren.';
       if($('img-mock-hint'))$('img-mock-hint').style.display='block';
+      if($('model-cards'))$('model-cards').innerHTML='<p style="font-size:.73rem;color:#888">Keine Modelle verfügbar (Mock-Modus).</p>';
     }else if(d.available){
-      $('gd').className='dot on';$('gl').textContent='GPUStack: '+(d.models?.length||0)+' Modelle';
+      setDot('on','GPUStack: '+(d.models?.length||0)+' Modelle');
       gpuM=d.models||[];const cfg=d.config||{};
-      $('gi').innerHTML='<div style="font-size:.7rem;font-family:monospace">'+gpuM.map(m=>'<div>'+esc(m)+'</div>').join('')+'</div>';
-      for(const sid of['cfg-mt','cfg-mv']){$(sid).innerHTML=gpuM.map(m=>safeOpt(m,m)).join('')}
-      $('cfg-models').textContent='Text: '+(cfg.gpustack_model_text||'—')+' / Vision: '+(cfg.gpustack_model_vision||'—')
+      $('gi').innerHTML='<span style="color:var(--ok);font-weight:600">Verbunden</span> — '+(gpuM.length)+' Modelle verfügbar';
+      // Populate model dropdowns with type hints
+      const textModels=gpuM.filter(m=>{const h=getModelHint(m);return h.type==='text'||h.type==='unknown';});
+      const visionModels=gpuM.filter(m=>{const h=getModelHint(m);return h.type==='vision'||h.type==='unknown';});
+      $('cfg-mt').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+      $('cfg-mv').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+      // Pre-select configured models
+      if(cfg.gpustack_model_text)$('cfg-mt').value=cfg.gpustack_model_text;
+      if(cfg.gpustack_model_vision)$('cfg-mv').value=cfg.gpustack_model_vision;
+      $('cfg-models').textContent='Aktiv — Text: '+(cfg.gpustack_model_text||'—')+' / Vision: '+(cfg.gpustack_model_vision||'—');
+      // Render model cards
+      if($('model-cards')){
+        $('model-cards').innerHTML=gpuM.map(m=>{
+          const h=getModelHint(m);
+          return '<div class="model-card"><span class="mc-type mc-'+h.type+'">'+esc(h.type)+'</span><strong style="flex:1">'+esc(m)+'</strong><span style="color:#888;font-size:.68rem">'+esc(h.hint)+'</span></div>';
+        }).join('');
+      }
+      // Also populate image model dropdown
+      if($('img-model')){
+        $('img-model').innerHTML='<option value="">Standard (aus Konfiguration)</option>'+
+          visionModels.map(m=>safeOpt(m,m+' [VISION]')).join('')+
+          textModels.map(m=>safeOpt(m,m+' [TEXT]')).join('');
+      }
     }else{
-      $('gd').className='dot off';$('gl').textContent='GPUStack: nicht erreichbar';
+      setDot('off','GPUStack: nicht erreichbar');
       $('gi').textContent='Verbindung fehlgeschlagen. URL/Key in .env prüfen. '+(d.message||'');
     }
   }catch(e){$('gd').className='dot off';$('gl').textContent='Verbindungsfehler';}}
@@ -855,12 +922,16 @@ function renderImgGrid(){
   empty.style.display='none';
   empty.textContent='Noch keine Bilder hochgeladen.';
   grid.innerHTML = shown.map(function(img){
-    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
-      +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
+    const isTiff=(img.media_type||'').includes('tiff');
+    const thumb=isTiff
+      ?'<div style="height:140px;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#888;font-size:.85rem;font-weight:600;cursor:pointer" onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+'\')">TIFF</div>'
+      :'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
       +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer"'
       +' onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+' — '+(img.width||'?')+'x'+(img.height||'?')+'\')"'
       +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>'
+      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>';
+    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
+      +thumb
       +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
       +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
       +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
@@ -873,25 +944,22 @@ async function analyzeImages(){
   const sp_text = $('img-sp').value;
   const ids = uploadedImages.map(i=>i.id);
   sp('Bildanalyse läuft…', ids.length + ' Bild(er)');
+  const body={image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value};
   try{
-    const r = await fetch('/api/images/analyze',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value})
-    });
-    const data = await r.json();
-    if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
-    renderImgResults(data.results||[]);
-    hp();
-    // Persistence hint
-    if((data.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
-    // Update analyzed flag
-    (data.results||[]).forEach(res=>{
-      const img = uploadedImages.find(i=>i.id===res.id);
-      if(img) img.analyzed = !!res.result;
-    });
-    renderImgGrid();
-  }catch(e){$('img-results-empty').textContent='Fehler: '+e;hp();}
+    await fetchSSE('/api/images/analyze/stream',body,
+      evt=>{spUp(evt.current,evt.total,esc(evt.filename||''));},
+      result=>{
+        renderImgResults(result.results||[]);
+        if((result.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
+        (result.results||[]).forEach(res=>{
+          const img=uploadedImages.find(i=>i.id===res.id);
+          if(img)img.analyzed=!!res.result;
+        });
+        renderImgGrid();
+      },
+      msg=>{$('img-results-empty').textContent='Fehler: '+msg;}
+    );
+  }catch(e){if(e.name!=='AbortError')$('img-results-empty').textContent='Fehler: '+e;}finally{hp();}
 }
 
 function renderImgResults(results){
@@ -1036,9 +1104,11 @@ async function runOCR(){
   const mod=$('img-model').value;
   const ids=uploadedImages.map(i=>i.id);
   sp('OCR läuft…',ids.length+' Bild(er)');
+  _abortCtrl=new AbortController();
   try{
     const r=await fetch('/api/images/ocr',{
       method:'POST',headers:{'Content-Type':'application/json'},
+      signal:_abortCtrl.signal,
       body:JSON.stringify({image_ids:ids,model:mod,system_prompt:$('ocr-sp').value||''})
     });
     const data=await r.json();
@@ -1273,10 +1343,12 @@ function exportDictTyped(){window.open('/api/dictionary/export-typed','_blank')}
 async function runMdsValidation(){
   const ds=$('mds-ds').value;if(!ds){alert('Datensatz wählen');return}
   sp('MDS validieren …','');
+  _abortCtrl=new AbortController();
   try{const r=await(await fetch('/api/mds/validate',{method:'POST',headers:{'Content-Type':'application/json'},
+    signal:_abortCtrl.signal,
     body:JSON.stringify({dataset:ds,include_custom:$('mds-custom').checked})})).json();
     if(r.error){alert(r.error);return}renderMdsResults(r);
-  }catch(e){alert(e.message)}finally{hp()}
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp()}
 }
 function renderMdsResults(r){
   $('mds-empty').style.display='none';$('mds-results').style.display='block';
@@ -1359,8 +1431,59 @@ async function delCustomMdsField(idx){
 function renderCatalog(){$('cat-body').innerHTML=CATALOG.map(c=>'<tr><td style="font-size:.62rem">'+esc(c.id)+'</td><td style="font-weight:600">'+esc(c.name)+'</td><td style="font-size:.68rem">'+esc(c.module)+'</td><td><span class="bg '+(c.status==='done'?'ac':c.status==='partial'?'pl':'no')+'">'+esc(c.status)+'</span></td><td style="font-size:.68rem">'+esc(c.tests||'—')+'</td><td style="font-size:.7rem;color:#666">'+esc(c.note||'')+'</td></tr>').join('')}
 
 // === PROGRESS ===
-function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classList.add('a')}
-function hp(){$('po').classList.remove('a')}
+function sp(t,x){
+  _opCancelled=false;
+  $('pt').textContent=t;$('pp').textContent=x||'';$('pct').textContent='';
+  const pf=$('pf');pf.style.width='0';pf.classList.add('ind');
+  $('po').classList.add('a');
+}
+function spUp(current,total,detail){
+  const pf=$('pf');pf.classList.remove('ind');
+  const pct=total>0?Math.round((current/total)*100):0;
+  pf.style.width=pct+'%';
+  $('pct').textContent=current+' / '+total+' ('+pct+'%)';
+  if(detail)$('pp').textContent=detail;
+}
+function hp(){$('po').classList.remove('a');_abortCtrl=null;}
+function cancelOp(){
+  _opCancelled=true;
+  if(_abortCtrl){_abortCtrl.abort();_abortCtrl=null;}
+  hp();
+}
+// ESC handler
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    if($('lightbox').classList.contains('a')){closeLightbox();return;}
+    if($('po').classList.contains('a')){cancelOp();return;}
+  }
+});
+
+// === SSE READER ===
+async function fetchSSE(url,body,onProgress,onDone,onError){
+  _abortCtrl=new AbortController();
+  const resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body),signal:_abortCtrl.signal});
+  if(!resp.ok){const e=await resp.json().catch(()=>({error:resp.statusText}));throw Error(e.error||resp.statusText);}
+  const reader=resp.body.getReader();
+  const decoder=new TextDecoder();
+  let buf='';
+  while(true){
+    const{done,value}=await reader.read();
+    if(done)break;
+    buf+=decoder.decode(value,{stream:true});
+    const lines=buf.split('\n');
+    buf=lines.pop()||'';
+    for(const line of lines){
+      if(!line.startsWith('data: '))continue;
+      try{
+        const evt=JSON.parse(line.slice(6));
+        if(evt.type==='progress'&&onProgress)onProgress(evt);
+        else if(evt.type==='done'&&onDone)onDone(evt.result);
+        else if(evt.type==='error'&&onError)onError(evt.message);
+      }catch(parseErr){console.warn('SSE parse error',parseErr);}
+    }
+  }
+}
 
 // === INIT ===
 function showInitError(label){const b=document.createElement('div');b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fee2e2;color:#991b1b;padding:.4rem 1rem;font-size:.78rem;border-top:2px solid #f87171';b.textContent='⚠ UI-Initialisierung fehlgeschlagen'+(label?': '+label:'')+' – bitte Konsole prüfen';document.body.appendChild(b)}

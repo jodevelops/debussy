@@ -14,9 +14,11 @@ import base64
 import tempfile as _tempfile
 from pathlib import Path
 
+import json
+
 try:
     from fastapi import APIRouter, File, UploadFile
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import JSONResponse, Response, StreamingResponse
 except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
@@ -38,6 +40,11 @@ from kwb.ai.prompts import (
 from kwb.ingest.image_loader import ingest_image
 
 router = APIRouter()
+
+
+def _sse_event(data: dict) -> str:
+    """Format a dict as an SSE data line."""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _parse_image_review_status(status_raw: str) -> ImageReviewStatus | None:
@@ -257,6 +264,11 @@ def _sync_index() -> None:
 
 _sync_index()
 
+# Remove stale entries whose files no longer exist on disk
+_stale = [k for k, v in _uploaded_images.items() if not Path(v["path"]).exists()]
+for _k in _stale:
+    del _uploaded_images[_k]
+
 def _vision_prompt_for_task(task: str, context: str = ""):
     if task == "person_face_visibility":
         return prompt_person_face_visibility(additional_context=context)
@@ -352,6 +364,10 @@ async def image_data(img_id: str):
 @router.get("/api/images")
 async def images_list():
     """List all uploaded images and their analysis status."""
+    # Filter out stale entries whose files no longer exist
+    stale_ids = [k for k, img in _uploaded_images.items() if not Path(img["path"]).exists()]
+    for sid in stale_ids:
+        del _uploaded_images[sid]
     return {
         "images": [
             {
@@ -481,6 +497,128 @@ async def images_analyze(request: dict):
             "task": task,
         },
     }
+
+
+@router.post("/api/images/analyze/stream")
+async def images_analyze_stream(request: dict):
+    """SSE streaming version of /api/images/analyze — yields progress per image."""
+    from datetime import datetime
+    from kwb.core.utils import try_parse_json
+
+    image_ids = request.get("image_ids", list(_uploaded_images.keys()))
+    image_record_map = request.get("image_record_map", {})
+    mod = request.get("model", "")
+    task = request.get("prompt_task", "image_description")
+    syp = request.get("system_prompt", "")
+
+    if not image_ids:
+        return JSONResponse({"error": "Keine Bilder hochgeladen"}, 400)
+
+    prov = get_provider(mod)
+    prompt_name, prompt_version = _prompt_meta(task)
+    total = len(image_ids)
+
+    async def generate():
+        results = []
+        for idx, img_id in enumerate(image_ids, 1):
+            img = _uploaded_images.get(img_id)
+            if not img:
+                results.append({"id": img_id, "error": "Nicht gefunden"})
+                yield _sse_event({
+                    "type": "progress", "current": idx, "total": total,
+                    "filename": img_id,
+                })
+                continue
+
+            try:
+                b64 = base64.b64encode(
+                    Path(img["path"]).read_bytes()
+                ).decode("ascii")
+                data_url = f"data:{img['media_type']};base64,{b64}"
+                ctx = request.get("additional_context", "") or img["filename"]
+                prompt_msgs = _vision_prompt_for_task(task, context=ctx)
+                if syp:
+                    prompt_msgs[0] = AIMessage.system(syp)
+                prompt_msgs[1] = AIMessage.user([
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": prompt_msgs[1].content},
+                ])
+
+                resp = prov.complete(prompt_msgs, model=mod or None, max_tokens=900)
+                parsed = try_parse_json(resp.content) or {
+                    "description": resp.content, "uncertain": True,
+                }
+                img["analyzed"] = True
+                img["result"] = parsed
+                img["record_id"] = image_record_map.get(
+                    img_id, img.get("record_id", ""),
+                )
+                results.append({
+                    "id": img_id, "filename": img["filename"],
+                    "record_id": img.get("record_id", ""),
+                    "review_status": img.get("review_status", "pending"),
+                    "result": parsed,
+                })
+
+                ws = get_workspace()
+                ws.save_image_analysis(ImageAnalysisResult(
+                    image_id=img_id,
+                    filename=img["filename"],
+                    media_type=img["media_type"],
+                    size_bytes=img.get("size_bytes", 0),
+                    width=img.get("width"),
+                    height=img.get("height"),
+                    hash_sha256=img.get("hash_sha256", ""),
+                    exif_subset=img.get("exif_subset", {}),
+                    analyzed=True,
+                    result=parsed,
+                    model=mod or "default",
+                    analyzed_at=datetime.utcnow().isoformat(),
+                    record_id=img.get("record_id", ""),
+                    review_status=ImageReviewStatus(
+                        img.get("review_status", "pending")
+                    ),
+                    review_comment=img.get("review_comment", ""),
+                    reviewer=img.get("reviewer", ""),
+                    reviewed_at=img.get("reviewed_at", ""),
+                    prompt_name=prompt_name,
+                    prompt_version=prompt_version,
+                ))
+                ws.save(workspace_dir() / safe_filename(ws.name))
+
+            except Exception as e:
+                results.append({"id": img_id, "error": str(e)})
+
+            yield _sse_event({
+                "type": "progress", "current": idx, "total": total,
+                "filename": img.get("filename", img_id) if img else img_id,
+            })
+
+        ws = get_workspace()
+        ws.log_ai_run(
+            "image_analysis", mod or "vision", len(results),
+            len([r for r in results if "result" in r]),
+            prompt_name=prompt_name, prompt_version=prompt_version,
+        )
+        yield _sse_event({
+            "type": "done",
+            "result": {
+                "total": total,
+                "analyzed": len([r for r in results if "result" in r]),
+                "model": mod or "default",
+                "prompt_name": prompt_name,
+                "prompt_version": prompt_version,
+                "results": results,
+                "ai_provenance": {
+                    "model": mod or "default",
+                    "prompt_name": prompt_name,
+                    "prompt_version": prompt_version,
+                    "task": task,
+                },
+            },
+        })
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/api/images/{img_id}/review")
