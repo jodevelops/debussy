@@ -474,6 +474,12 @@ async def images_analyze(request: dict):
         "prompt_name": prompt_name,
         "prompt_version": prompt_version,
         "results": results,
+        "ai_provenance": {
+            "model": mod or "default",
+            "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
+            "task": task,
+        },
     }
 
 
@@ -672,6 +678,33 @@ async def images_ocr(request: dict):
 
     successful = [r for r in results if "result" in r]
     ws = get_workspace()
+
+    # Persist OCR results in workspace image_analyses for OCR→NER pipeline
+    from datetime import datetime
+    for r in successful:
+        img = _uploaded_images.get(r["id"])
+        if not img:
+            continue
+        record_id = image_record_map.get(r["id"], img.get("record_id", ""))
+        existing = ws.get_image_analysis(r["id"])
+        if existing:
+            existing.result = existing.result or {}
+            existing.result.update(r["result"])
+            existing.record_id = record_id
+        else:
+            ws.save_image_analysis(ImageAnalysisResult(
+                image_id=r["id"],
+                filename=img.get("filename", ""),
+                media_type=img.get("media_type", ""),
+                analyzed=True,
+                result=r["result"],
+                model=mod or "default",
+                analyzed_at=datetime.utcnow().isoformat(),
+                record_id=record_id,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+            ))
+
     ws.log_ai_run(
         "image_ocr", mod or "vision", len(image_ids), len(successful),
         prompt_name=prompt_name,
@@ -684,6 +717,11 @@ async def images_ocr(request: dict):
         "prompt_name": prompt_name,
         "prompt_version": prompt_version,
         "results": results,
+        "ai_provenance": {
+            "model": mod or "default",
+            "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
+        },
     }
 
 

@@ -325,6 +325,9 @@ async def api_ner(request: dict):
     prov = get_provider(mod)
     ws = get_workspace()
 
+    # Feature 9: Configurable entity types
+    entity_types = request.get("entity_types", [])
+
     working, sampling = _build_sampling_plan(df, request, profile.id_column, ss)
     started = time.perf_counter()
     all_entities = []
@@ -341,6 +344,7 @@ async def api_ner(request: dict):
                 system_prompt=syp,
                 use_spacy=(method in ("spacy", "hybrid")),
                 use_llm=(method in ("llm", "hybrid")),
+                entity_types=entity_types or None,
             )
             all_entities.extend(chunk_result.to_dict_list(deduplicated=False))
             chunk_reports.append({
@@ -351,6 +355,10 @@ async def api_ner(request: dict):
         except Exception:
             errors += len(chunk_df)
             chunk_reports.append({"chunk": chunk_no, "rows": len(chunk_df), "error": True})
+
+    # Filter by entity_types if specified
+    if entity_types:
+        all_entities = [e for e in all_entities if e.get("type") in entity_types]
 
     # preserve current API format from deduplicated dicts
     dedup = {}
@@ -364,11 +372,16 @@ async def api_ner(request: dict):
         etype = e.get("type", "CON")
         by_type[etype] = by_type.get(etype, 0) + 1
     ws.add_entities(ents, replace=True)
+
+    # Feature 7: AI result provenance metadata
+    model_name = mod or method
+    prompt_name = "entity_extraction_normdata"
+    prompt_version = PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0")
     ws.log_ai_run(
-        "ner_extract", mod or method, len(ents),
+        "ner_extract", model_name, len(ents),
         len([e for e in ents if e.get("confidence", 0) > 0.5]),
-        prompt_name="entity_extraction_normdata",
-        prompt_version=PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0"),
+        prompt_name=prompt_name,
+        prompt_version=prompt_version,
     )
 
     elapsed = max(time.perf_counter() - started, 0.001)
@@ -388,15 +401,24 @@ async def api_ner(request: dict):
         **metrics,
     })
 
+    # Feature 7: Include AI provenance in response
+    ai_provenance = {
+        "model": model_name,
+        "prompt_name": prompt_name,
+        "prompt_version": prompt_version,
+        "entity_types_requested": entity_types or "all",
+    }
+
     return {
         "task_name": "NER", "total": len(ents),
-        "prompt_name": "entity_extraction_normdata",
-        "prompt_version": PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0"),
+        "prompt_name": prompt_name,
+        "prompt_version": prompt_version,
         "succeeded": len([e for e in ents if e.get("confidence", 0) > 0.3]),
-        "model": mod or method,
+        "model": model_name,
         "entities": ents[:500],
         "by_type": by_type,
         "run_metrics": metrics,
+        "ai_provenance": ai_provenance,
         "workspace": ws.to_summary(),
     }
 
