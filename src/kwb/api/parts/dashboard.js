@@ -131,7 +131,7 @@ async function loadFMCols(){
 
 // Build type options: Minimaldatensatz 1.1 group + Goobi group
 function _fmTypeOpts(selectedType){
-  const mdsOpts=MDS_FIELDS.map(f=>'<option value="'+esc(f.goobi)+'"'+(f.goobi===selectedType?' selected':'')+(f.pflicht?'')+'>'+esc(f.mds+(f.pflicht?' ★':''))+' ('+esc(f.goobi)+')</option>').join('');
+  const mdsOpts=MDS_FIELDS.map(f=>'<option value="'+esc(f.goobi)+'"'+(f.goobi===selectedType?' selected':'')+(f.pflicht?' required':'')+'>'+esc(f.mds+(f.pflicht?' ★':''))+' ('+esc(f.goobi)+')</option>').join('');
   const goobiOpts=GOOBI_TYPES.filter(t=>!MDS_FIELDS.find(f=>f.goobi===t)).map(t=>'<option value="'+esc(t)+'"'+(t===selectedType?' selected':'')+'>'+esc(t)+'</option>').join('');
   return '<option value="">— kein Export —</option>'+
     '<optgroup label="Minimaldatensatz 1.1 (★ = Pflichtfeld)">'+mdsOpts+'</optgroup>'+
