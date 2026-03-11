@@ -1040,11 +1040,13 @@ async def dict_scan(request: dict):
     matches: list[dict] = []
 
     for _, row in df.iterrows():
-        record_id = str(row[id_col]) if id_col and id_col in row.index else ""
+        raw_id = row[id_col] if id_col and id_col in row.index else None
+        record_id = "" if raw_id is None or pd.isna(raw_id) else str(raw_id)
         for col in include_cols:
             if col not in df.columns:
                 continue
-            cell_val = str(row.get(col, "") or "")
+            raw_val = row.get(col)
+            cell_val = "" if raw_val is None or pd.isna(raw_val) else str(raw_val)
             if not cell_val or cell_val == "nan":
                 continue
             cell_cmp = cell_val if case_sensitive else cell_val.lower()
