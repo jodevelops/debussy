@@ -44,6 +44,9 @@ from kwb.api.routes.enrich import router as enrich_router
 from kwb.api.routes.export import router as export_router
 from kwb.api.routes.workspace import router as workspace_router
 from kwb.api.routes.ai import router as ai_router
+from kwb.api.routes.dictionary import router as dictionary_router
+from kwb.api.routes.mds_tasks import router as mds_tasks_router
+from kwb.api.routes.auth import router as auth_router
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -59,6 +62,9 @@ app.include_router(enrich_router)
 app.include_router(export_router)
 app.include_router(workspace_router)
 app.include_router(ai_router)
+app.include_router(dictionary_router)
+app.include_router(mds_tasks_router)
+app.include_router(auth_router)
 
 # ---------------------------------------------------------------------------
 # UI data injected into the dashboard HTML template
@@ -172,8 +178,14 @@ CATALOG = [
     {"id": "R-02", "name": "OCR/HTR",             "module": "Analyse",   "status": "planned", "note": ""},
     {"id": "R-03", "name": "Goobi Viewer API",    "module": "Export",    "status": "done",    "note": "REST Push via /api/goobi/*"},
     {"id": "R-04", "name": "METS/MODS Export",    "module": "Export",    "status": "planned", "note": ""},
-    {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "planned", "note": ""},
+    {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "done",    "note": "GeoNames JSON API"},
     {"id": "R-06", "name": "XML/PDF Ingest",      "module": "Ingest",    "status": "planned", "note": ""},
+    # Pipeline Review Gates
+    {"id": "P-02", "name": "OCR Review-Gate",      "module": "Pipeline",  "status": "done",    "note": "Stichprobe, Auto-Accept, nur akzeptierte OCR → NER"},
+    {"id": "P-03", "name": "NER Review-Gate",      "module": "Pipeline",  "status": "done",    "note": "Stichprobe, Auto-Accept, nur akzeptierte → Dictionary"},
+    {"id": "P-04", "name": "Authority Review-Gate", "module": "Pipeline", "status": "done",    "note": "GND/Wikidata/GeoNames Kandidaten prüfen → Dictionary"},
+    {"id": "P-05", "name": "Pipeline-Status",      "module": "Pipeline",  "status": "done",    "note": "GET /api/pipeline/status"},
+    {"id": "P-06", "name": "Zielformat-Export",    "module": "Export",    "status": "done",    "note": "GET /api/dictionary/export-target"},
 ]
 
 

@@ -9,7 +9,12 @@
 <body>
 <header>
 <h1>Debussy<em>v__VERSION__beta &mdash; GLAM Data AI Curation Workbench</em></h1>
-<div class="sbar"><span class="dot off" id="gd"></span><span id="gl">GPUStack …</span></div>
+<div class="sbar">
+<span id="user-info" style="font-size:.72rem;margin-right:.5rem"></span>
+<button class="btn sm" id="login-btn" onclick="showLogin()" style="margin-top:0">🔑 Login</button>
+<button class="btn sm s" id="logout-btn" onclick="doLogout()" style="margin-top:0;display:none">Abmelden</button>
+<span class="dot off" id="gd"></span><span id="gl">GPUStack …</span>
+</div>
 </header>
 <div class="ws-bar" id="wsbar">
 <span class="wsi">Workspace: <strong id="ws-name">—</strong></span>
@@ -18,14 +23,19 @@
 <span class="wsi">Wörterbuch: <strong id="ws-dict">0</strong></span>
 <span style="margin-left:auto"><button class="btn sm" onclick="saveWS()">💾 Speichern</button></span>
 </div>
+<div class="ws-bar" id="pipeline-bar" style="background:#f0f7ff;border-color:#d0e3ff;font-size:.72rem">
+<span id="pipeline-status" style="display:flex;gap:.6rem;flex-wrap:wrap">Pipeline: wird geladen…</span>
+</div>
 <div class="nav">
 <div class="nt a" data-p="data">① Daten</div>
 <div class="nt" data-p="ner">② NER</div>
 <div class="nt" data-p="terms">③ Begriffe</div>
 <div class="nt" data-p="dates">④ Datierung</div>
 <div class="nt" data-p="images">⑤ Bilder</div>
-<div class="nt" data-p="mapping">⑥ Mapping</div>
-<div class="nt" data-p="export">⑦ Export</div>
+<div class="nt" data-p="dict">⑥ Wörterbücher</div>
+<div class="nt" data-p="mapping">⑦ Mapping</div>
+<div class="nt" data-p="mds">⑧ MDS</div>
+<div class="nt" data-p="export">⑨ Export</div>
 <div class="nt" data-p="config">⚙️ KI</div>
 <div class="nt" data-p="catalog">📋 Katalog</div>
 </div>
@@ -35,7 +45,6 @@
 <div class="pg a" data-p="data"><div class="g2"><div class="sb">
 <div class="c"><h2>Daten laden</h2><div class="uz" id="uz" onclick="document.getElementById('fi').click()"><input type="file" id="fi" accept=".csv,.tsv" multiple><p style="font-size:.8rem">📂 CSV/TSV hierher ziehen oder klicken</p></div></div>
 <div class="c" id="fc" style="display:none"><h2>Dateien</h2><div class="cl" id="fcl"></div><button class="btn f" onclick="runStruct()">🔬 Strukturelle Analyse starten</button></div>
-<div class="c"><h2>GPUStack</h2><div id="gi" style="font-size:.75rem">Prüfe …</div></div>
 </div><div>
 <div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade CSV-Dateien, starte die Analyse, und nutze dann die anderen Tabs.</p><div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Empfohlener Workflow:</strong><br>① Daten &ndash; CSV laden, ID-Spalte festlegen &amp; Strukturanalyse<br>② NER &ndash; Entit&auml;ten erkennen (Personen, Orte, …)<br>③ Begriffe &ndash; Problematische Begriffe via W&ouml;rterbuch scannen<br>④ Datierung &ndash; EDTF-Normalisierung<br>⑤ Bilder &ndash; Bild-Upload &amp; KI-Analyse<br>⑥ Mapping &ndash; CSV-Spalten &rarr; Minimaldatensatz / Goobi<br>⑦ Export &ndash; Goobi-XML erzeugen (Mapping erforderlich!)</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
@@ -74,11 +83,32 @@
 </div>
 <div id="ner-cols" class="cl"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
 <label>Methode</label><select id="ner-method"><option value="llm">LLM</option><option value="spacy">SpaCy</option><option value="hybrid">Hybrid (SpaCy+LLM)</option></select>
+<label>Entity-Typen (leer = alle)</label>
+<div id="ner-type-config" class="cl" style="max-height:150px">
+<div class="ci"><input type="checkbox" value="PER" class="ner-type-cb" checked><span class="etype etype-PER">PER</span><span>Personen</span></div>
+<div class="ci"><input type="checkbox" value="ORG" class="ner-type-cb" checked><span class="etype etype-ORG">ORG</span><span>Organisationen</span></div>
+<div class="ci"><input type="checkbox" value="LOC" class="ner-type-cb" checked><span class="etype etype-LOC">LOC</span><span>Orte/Geografie</span></div>
+<div class="ci"><input type="checkbox" value="GPE" class="ner-type-cb" checked><span class="etype etype-GPE">GPE</span><span>Geo-politisch</span></div>
+<div class="ci"><input type="checkbox" value="FAC" class="ner-type-cb"><span class="etype etype-FAC">FAC</span><span>Bauwerke</span></div>
+<div class="ci"><input type="checkbox" value="EVT" class="ner-type-cb"><span class="etype etype-EVT">EVT</span><span>Ereignisse</span></div>
+<div class="ci"><input type="checkbox" value="WRK" class="ner-type-cb"><span class="etype etype-WRK">WRK</span><span>Werke</span></div>
+<div class="ci"><input type="checkbox" value="DAT" class="ner-type-cb"><span class="etype etype-DAT">DAT</span><span>Datierung</span></div>
+<div class="ci"><input type="checkbox" value="ETH" class="ner-type-cb"><span class="etype etype-ETH">ETH</span><span>Ethnien</span></div>
+<div class="ci"><input type="checkbox" value="CON" class="ner-type-cb"><span class="etype etype-CON">CON</span><span>Konzepte</span></div>
+</div>
 <label>Samples</label><input type="number" id="ner-n" value="10000" min="1" max="500000">
 <label>Chunk-Größe</label><input type="number" id="ner-chunk" value="200" min="10" max="2000">
 <div style="display:flex;gap:.4rem;flex-wrap:wrap">
 <button class="btn" onclick="runPilot('ner')">🧪 Pilotlauf auf 2%</button>
 <button class="btn s" onclick="runNER()">▶️ Gesamtlauf fortsetzen</button>
+</div>
+<div style="margin-top:.6rem;padding:.4rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px">
+<strong style="font-size:.73rem">Review-Gate</strong>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.3rem">
+<button class="btn sm" onclick="nerSpotCheck()">🔍 Stichprobe</button>
+<button class="btn sm" onclick="nerAutoAccept()">✓ Auto-Accept</button>
+<button class="btn sm" style="background:var(--info)" onclick="nerToDict()">→ Wörterbuch</button>
+</div>
 </div>
 </div>
 <div class="c"><h2>Problematische Begriffe</h2>
@@ -271,6 +301,14 @@
 <label class="lbl" style="margin-top:.5rem">OCR Prompt-Preset</label><select id="ocr-preset" class="sel" style="width:100%" onchange="applyActionPreset('ocr')"><option value="vision_de">Vision/OCR</option><option value="custom">Eigen</option></select>
 <textarea id="ocr-sp" class="ta" style="height:3.5rem;margin-top:.3rem"></textarea>
 <button class="btn f" style="margin-top:.3rem;background:var(--info)" onclick="runOCR()">📖 Text erkennen (OCR)</button>
+<div style="margin-top:.6rem;padding:.4rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px">
+<strong style="font-size:.73rem">Review-Gate</strong>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.3rem">
+<button class="btn sm" onclick="ocrSpotCheck()">🔍 Stichprobe</button>
+<button class="btn sm" onclick="ocrAutoAccept()">✓ Auto-Accept</button>
+<button class="btn sm" style="background:var(--info)" onclick="ocrToDict()">→ NER auf akzeptierte OCR</button>
+</div>
+</div>
 </div>
 
 <div>
@@ -304,6 +342,74 @@
 </div></div>
 </div></div>
 
+<!-- ===== WÖRTERBÜCHER (DICTIONARIES) ===== -->
+<div class="pg" data-p="dict"><div style="max-width:1200px">
+<div class="g2"><div class="sb">
+<div class="c"><h2>📖 Fach-Wörterbücher</h2>
+<p style="font-size:.75rem;color:#666;margin-bottom:.5rem">Typisierte Wörterbücher für Orte, Personen, Institutionen u.a. mit Normdaten-Anbindung.</p>
+
+<label>Wörterbuch-Typ</label>
+<select id="dict-type-filter" onchange="loadDictEntries()">
+<option value="">Alle Typen</option>
+<option value="place">Orte</option>
+<option value="person">Personen</option>
+<option value="institution">Institutionen</option>
+<option value="concept">Konzepte</option>
+<option value="event">Ereignisse</option>
+<option value="work">Werke</option>
+<option value="other">Sonstige</option>
+</select>
+
+<div id="dict-type-counts" style="font-size:.72rem;margin-top:.4rem"></div>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Neuer Eintrag</h3>
+<input type="text" id="dict-new-term" placeholder="Begriff">
+<select id="dict-new-type"><option value="">Typ wählen …</option><option value="place">Ort</option><option value="person">Person</option><option value="institution">Institution</option><option value="concept">Konzept</option><option value="event">Ereignis</option><option value="work">Werk</option></select>
+<input type="text" id="dict-new-preferred" placeholder="Vorzugsbenennung (optional)">
+<button class="btn f" onclick="addDictEntry()">＋ Eintrag hinzufügen</button>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Aus Datensatz aufbauen</h3>
+<select id="dict-build-ds"><option value="">— Datensatz wählen —</option></select>
+<div id="dict-build-cols" class="cl" style="max-height:130px"><p style="font-size:.73rem;color:#888">Datensatz wählen</p></div>
+<select id="dict-build-type"><option value="">Typ zuordnen …</option><option value="place">Ort</option><option value="person">Person</option><option value="institution">Institution</option></select>
+<button class="btn f s" onclick="buildDict()">📥 Dictionary aufbauen</button>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Aus NER übernehmen</h3>
+<button class="btn f" onclick="nerToDict()">🔗 Akzeptierte Entities → Wörterbuch</button>
+
+<h3 style="font-size:.82rem;margin-top:.5rem">Aus OCR → NER → Review</h3>
+<button class="btn f s" onclick="ocrToDict()">📖 OCR-Texte → NER (Review-Queue)</button>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Normdaten-Kandidaten</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">GND/Wikidata/GeoNames Treffer prüfen und übernehmen.</p>
+<div id="authority-candidates" style="max-height:200px;overflow-y:auto;font-size:.75rem"><em>Keine Kandidaten.</em></div>
+<button class="btn f" style="margin-top:.3rem" onclick="commitAuthority()">✓ Akzeptierte übernehmen</button>
+<button class="btn sm s" style="margin-top:.3rem" onclick="loadAuthorityCandidates()">🔄 Aktualisieren</button>
+</div>
+
+<div>
+<div class="c">
+<h2>Wörterbuch-Einträge <span id="dict-count" style="font-size:.7rem;color:#888"></span></h2>
+<div style="display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
+<button class="btn sm" onclick="exportDict('')">⬇️ Alle exportieren (JSON)</button>
+<button class="btn sm s" onclick="exportDictTyped()">⬇️ Nach Typ exportieren</button>
+<button class="btn sm" style="background:var(--info)" onclick="exportDictTarget()">⬇️ Zielformat exportieren</button>
+</div>
+<div id="dict-list-empty" class="em" style="font-size:.75rem;padding:1rem">Noch keine Einträge.</div>
+<div id="dict-list" class="scroll-box" style="max-height:500px"></div>
+</div>
+
+<div id="dict-detail" class="c" style="margin-top:1rem;display:none">
+<h2>Eintrag bearbeiten</h2>
+<div id="dict-detail-content"></div>
+</div>
+</div>
+</div></div></div>
+
 <!-- ===== FELD-MAPPING ===== -->
 <div class="pg" data-p="mapping"><div style="max-width:1100px">
 <div class="c"><h2>🗺️ Feld-Mapping: CSV → Minimaldatensatz / Goobi</h2>
@@ -327,6 +433,55 @@
 </div>
 </div>
 </div></div>
+
+<!-- ===== MDS VALIDATION & TASKS ===== -->
+<div class="pg" data-p="mds"><div style="max-width:1100px">
+<div class="g2"><div class="sb">
+<div class="c"><h2>📋 MDS-Prüfung</h2>
+<p style="font-size:.75rem;color:#666;margin-bottom:.4rem">Prüft, ob Mindestdatenstandard-Felder zugeordnet und befüllt sind.</p>
+<label>Datensatz</label><select id="mds-ds"><option value="">— Erst Daten laden —</option></select>
+<label style="display:flex;align-items:center;gap:.4rem;font-size:.73rem;margin-top:.4rem"><input type="checkbox" id="mds-custom" checked> Benutzerdefinierte Felder einbeziehen</label>
+<button class="btn f" onclick="runMdsValidation()">🔍 MDS validieren</button>
+<button class="btn f s" onclick="generateTasks()">📋 Tasks aus Lücken erzeugen</button>
+</div>
+
+<div class="c"><h2>Benutzerdefinierte MDS-Felder</h2>
+<input type="text" id="mds-cf-name" placeholder="Feldname">
+<input type="text" id="mds-cf-goobi" placeholder="Goobi-Typ">
+<select id="mds-cf-req"><option value="required">Pflicht</option><option value="recommended" selected>Empfohlen</option><option value="optional">Optional</option></select>
+<button class="btn f sm" onclick="addCustomMdsField()">＋ Feld hinzufügen</button>
+<div id="mds-custom-list" style="font-size:.73rem;margin-top:.4rem"></div>
+</div>
+</div>
+
+<div>
+<div id="mds-empty" class="em"><h3>Mindestdatenstandard</h3><p>Datensatz und Field-Mapping laden, dann MDS-Validierung starten.</p></div>
+<div id="mds-results" style="display:none">
+<div class="c">
+<h2>MDS-Validierung <span id="mds-schema" style="font-size:.7rem;color:#888"></span></h2>
+<div class="sg" id="mds-summary"></div>
+<div class="scroll-box"><table class="etbl" id="mds-tbl">
+<thead><tr><th>MDS-Feld</th><th>Goobi-Typ</th><th>Anforderung</th><th>Zugeordnet</th><th>Spalte</th><th>Füllgrad</th></tr></thead>
+<tbody id="mds-body"></tbody>
+</table></div>
+</div>
+</div>
+
+<div id="tasks-section" class="c" style="margin-top:1rem">
+<h2>Aufgaben <span id="tasks-count" style="font-size:.7rem;color:#888"></span></h2>
+<div class="fl" id="tasks-filter-bar" style="margin-bottom:.3rem">
+<div class="fb2 a" onclick="filterTasks('all',this)">Alle</div>
+<div class="fb2" onclick="filterTasks('open',this)">Offen</div>
+<div class="fb2" onclick="filterTasks('in_progress',this)">In Arbeit</div>
+<div class="fb2" onclick="filterTasks('done',this)">Erledigt</div>
+</div>
+<div id="tasks-list"></div>
+<div style="margin-top:.5rem">
+<button class="btn sm s" onclick="clearDoneTasks()">🗑 Erledigte entfernen</button>
+</div>
+</div>
+</div>
+</div></div></div>
 
 <!-- ===== EXPORT ===== -->
 <div class="pg" data-p="export"><div style="max-width:1100px">
@@ -396,14 +551,39 @@
 
 <!-- ===== CONFIG ===== -->
 <div class="pg" data-p="config"><div style="max-width:900px">
-<div class="c"><h2>Modelle</h2>
+<div class="c" style="margin-bottom:1rem"><h2>GPUStack-Verbindung</h2>
+<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
+<span class="dot off" id="gd2"></span><span id="gl2" style="font-size:.75rem">GPUStack …</span>
+</div>
+<div id="gi" style="font-size:.75rem;margin-bottom:.6rem">Prüfe …</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:.5rem">
+<div><label>Server-URL</label>
+<input id="cfg-url" type="text" placeholder="http://localhost:80" style="width:100%;box-sizing:border-box"></div>
+<div><label>API-Key</label>
+<div style="display:flex;gap:.3rem">
+<input id="cfg-key" type="password" placeholder="sk-… (leer lassen = unverändert)" style="flex:1;min-width:0">
+<button class="btn sm" onclick="toggleKeyVis()">👁</button>
+</div></div>
+</div>
+<div style="display:flex;gap:.5rem;align-items:center">
+<button class="btn" onclick="saveGPUConfig()">Verbindung speichern</button>
+<button class="btn s" onclick="testConn()">Verbindung testen</button>
+<span id="cfg-save-status" style="font-size:.75rem"></span>
+</div>
+<div id="cfg-test" class="ar" style="display:none;margin-top:.4rem"></div>
+</div>
+<div class="c" style="margin-bottom:1rem"><h2>Verfügbare Modelle</h2>
+<p style="font-size:.73rem;color:#666;margin-bottom:.5rem">Wähle das Standard-Modell für Text- und Vision-Aufgaben. Die Hinweise zeigen, wofür jedes Modell geeignet ist.</p>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem">
-<div><label>Text-Modell</label><select id="cfg-mt"></select></div>
-<div><label>Vision-Modell</label><select id="cfg-mv"></select></div>
+<div><label>Text-Modell</label><select id="cfg-mt"></select>
+<p style="font-size:.65rem;color:#888;margin-top:.2rem">NER, Datierung, Begriffsprüfung, Spalten-Beschreibungen</p></div>
+<div><label>Vision-Modell</label><select id="cfg-mv"></select>
+<p style="font-size:.65rem;color:#888;margin-top:.2rem">Bildbeschreibung, OCR, Personen-/Gesichtserkennung</p></div>
 </div>
 <div id="cfg-models" style="font-size:.7rem;font-family:monospace;margin-top:.4rem"></div>
+<div id="model-cards" style="margin-top:.6rem"></div>
 </div>
-<div class="c" style="margin-top:1rem"><h2>System-Instruktionen</h2>
+<div class="c" style="margin-bottom:1rem"><h2>System-Instruktionen</h2>
 <label>Aktive Instruktion</label>
 <select id="cfg-preset" onchange="loadPreset()">
 <option value="meta_de">Metadaten (DE)</option><option value="meta_en">Metadaten (EN)</option>
@@ -414,10 +594,6 @@
 <textarea id="cfg-sys" rows="6" style="margin-top:.3rem"></textarea>
 <button class="btn sm" onclick="loadPreset()">Zurücksetzen</button>
 </div>
-<div class="c" style="margin-top:1rem"><h2>Verbindungstest</h2>
-<button class="btn" onclick="testConn()">GPUStack testen</button>
-<div id="cfg-test" class="ar" style="display:none;margin-top:.4rem"></div>
-</div>
 <div class="c" style="margin-top:1rem"><h2>Aufgaben-Übersicht</h2><div id="cfg-tasks"></div></div>
 </div></div>
 
@@ -427,8 +603,34 @@
 <div class="scroll-box"><table class="etbl" id="cat-tbl"><thead><tr><th>ID</th><th>Funktion</th><th>Modul</th><th>Status</th><th>Tests</th><th>Hinweis</th></tr></thead><tbody id="cat-body"></tbody></table></div>
 </div></div></div>
 
+<!-- Image Lightbox (Feature 8) -->
+<div class="lightbox" id="lightbox">
+<span class="lightbox-close" onclick="closeLightbox()">&times;</span>
+<img class="lightbox-img" id="lightbox-img" alt="">
+<div class="lightbox-controls">
+<button class="lightbox-btn" onclick="rotateLightbox(-90)">↶ Links drehen</button>
+<button class="lightbox-btn" onclick="rotateLightbox(90)">↷ Rechts drehen</button>
+<button class="lightbox-btn" onclick="zoomLightbox(1.2)">🔍+ Zoom+</button>
+<button class="lightbox-btn" onclick="zoomLightbox(0.8)">🔍- Zoom-</button>
+<button class="lightbox-btn" onclick="resetLightbox()">↺ Reset</button>
+</div>
+<div class="lightbox-info" id="lightbox-info"></div>
+</div>
+
+<!-- Login overlay (Feature 6) -->
+<div class="login-overlay" id="login-overlay">
+<div class="login-card">
+<h2>Anmeldung</h2>
+<div id="login-err" class="err" style="display:none"></div>
+<label>Benutzername</label><input type="text" id="login-user" placeholder="admin">
+<label>Passwort</label><input type="password" id="login-pw" placeholder="••••" onkeydown="if(event.key==='Enter')doLogin()">
+<button class="btn f" onclick="doLogin()">Anmelden</button>
+<p style="font-size:.68rem;color:#888;margin-top:.6rem;text-align:center">Standard: admin / debussy</p>
+</div>
+</div>
+
 <!-- Progress overlay -->
-<div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="sp"></div><p id="pp" style="font-size:.8rem"></p></div></div>
+<div class="po" id="po"><div class="pc"><h3 id="pt">…</h3><div class="pb"><div class="pf ind" id="pf"></div></div><p id="pct" style="font-size:.75rem;margin:.3rem 0;color:#555"></p><p id="pp" style="font-size:.8rem"></p><button class="btn s sm" id="po-cancel" onclick="cancelOp()">Abbrechen (ESC)</button></div></div>
 
 <!-- JS_PLACEHOLDER -->
 </body>

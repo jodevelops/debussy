@@ -19,7 +19,7 @@ import pandas as pd
 
 try:
     from fastapi import APIRouter, File, UploadFile
-    from fastapi.responses import JSONResponse
+    from fastapi.responses import JSONResponse, StreamingResponse
 except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
@@ -35,6 +35,11 @@ from kwb.report.markdown import render_report
 from kwb.ai.prompts import PROMPT_VERSIONS
 
 router = APIRouter()
+
+
+def _sse_event(data: dict) -> str:
+    """Format a dict as an SSE data line."""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _apply_filters(df: pd.DataFrame, filters: dict | None) -> pd.DataFrame:
@@ -93,7 +98,10 @@ def _build_sampling_plan(
             frac = target_n / total_after_filter
             sampled = (
                 filtered.groupby(stratify_by, group_keys=False)
-                .apply(lambda g: g.sample(n=max(1, int(round(len(g) * frac))), random_state=42))
+                .apply(
+                    lambda g: g.sample(n=max(1, int(round(len(g) * frac))), random_state=42),
+                    include_groups=False,
+                )
                 .head(target_n)
             )
         else:
@@ -325,6 +333,9 @@ async def api_ner(request: dict):
     prov = get_provider(mod)
     ws = get_workspace()
 
+    # Feature 9: Configurable entity types
+    entity_types = request.get("entity_types", [])
+
     working, sampling = _build_sampling_plan(df, request, profile.id_column, ss)
     started = time.perf_counter()
     all_entities = []
@@ -341,6 +352,7 @@ async def api_ner(request: dict):
                 system_prompt=syp,
                 use_spacy=(method in ("spacy", "hybrid")),
                 use_llm=(method in ("llm", "hybrid")),
+                entity_types=entity_types or None,
             )
             all_entities.extend(chunk_result.to_dict_list(deduplicated=False))
             chunk_reports.append({
@@ -351,6 +363,10 @@ async def api_ner(request: dict):
         except Exception:
             errors += len(chunk_df)
             chunk_reports.append({"chunk": chunk_no, "rows": len(chunk_df), "error": True})
+
+    # Filter by entity_types if specified
+    if entity_types:
+        all_entities = [e for e in all_entities if e.get("type") in entity_types]
 
     # preserve current API format from deduplicated dicts
     dedup = {}
@@ -364,11 +380,16 @@ async def api_ner(request: dict):
         etype = e.get("type", "CON")
         by_type[etype] = by_type.get(etype, 0) + 1
     ws.add_entities(ents, replace=True)
+
+    # Feature 7: AI result provenance metadata
+    model_name = mod or method
+    prompt_name = "entity_extraction_normdata"
+    prompt_version = PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0")
     ws.log_ai_run(
-        "ner_extract", mod or method, len(ents),
+        "ner_extract", model_name, len(ents),
         len([e for e in ents if e.get("confidence", 0) > 0.5]),
-        prompt_name="entity_extraction_normdata",
-        prompt_version=PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0"),
+        prompt_name=prompt_name,
+        prompt_version=prompt_version,
     )
 
     elapsed = max(time.perf_counter() - started, 0.001)
@@ -388,17 +409,149 @@ async def api_ner(request: dict):
         **metrics,
     })
 
+    # Feature 7: Include AI provenance in response
+    ai_provenance = {
+        "model": model_name,
+        "prompt_name": prompt_name,
+        "prompt_version": prompt_version,
+        "entity_types_requested": entity_types or "all",
+    }
+
     return {
         "task_name": "NER", "total": len(ents),
-        "prompt_name": "entity_extraction_normdata",
-        "prompt_version": PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0"),
+        "prompt_name": prompt_name,
+        "prompt_version": prompt_version,
         "succeeded": len([e for e in ents if e.get("confidence", 0) > 0.3]),
-        "model": mod or method,
+        "model": model_name,
         "entities": ents[:500],
         "by_type": by_type,
         "run_metrics": metrics,
+        "ai_provenance": ai_provenance,
         "workspace": ws.to_summary(),
     }
+
+
+# ---------------------------------------------------------------------------
+# NER — SSE streaming
+# ---------------------------------------------------------------------------
+
+@router.post("/api/ner/stream")
+async def api_ner_stream(request: dict):
+    """SSE streaming version of /api/ner — yields progress per chunk."""
+    dsn = request.get("dataset", "")
+    ds = get_datasets().get(dsn)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
+    df, profile = ds
+    cols = request.get("columns", [])
+    if not cols:
+        cols = [c for c in df.columns if df[c].dtype == object]
+    method = request.get("method", "llm")
+    ss = min(int(request.get("sample_size", 10) or 10), max(len(df), 1))
+    chunk_size = max(1, min(int(request.get("chunk_size", 200) or 200), 1000))
+    syp = request.get("system_prompt", "")
+    mod = request.get("model", "")
+    prov = get_provider(mod)
+    ws = get_workspace()
+    entity_types = request.get("entity_types", [])
+    working, sampling = _build_sampling_plan(df, request, profile.id_column, ss)
+
+    total_chunks = max(1, -(-len(working) // chunk_size))  # ceil division
+
+    async def generate():
+        started = time.perf_counter()
+        all_entities = []
+        errors = 0
+        chunk_reports = []
+        for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
+            try:
+                chunk_result = ner_hybrid(
+                    chunk_df, cols,
+                    provider=prov if method != "spacy" else None,
+                    id_column=profile.id_column,
+                    sample_size=None,
+                    model=mod or None,
+                    system_prompt=syp,
+                    use_spacy=(method in ("spacy", "hybrid")),
+                    use_llm=(method in ("llm", "hybrid")),
+                    entity_types=entity_types or None,
+                )
+                new_ents = chunk_result.to_dict_list(deduplicated=False)
+                all_entities.extend(new_ents)
+                chunk_reports.append({
+                    "chunk": chunk_no, "rows": len(chunk_df),
+                    "entities": len(chunk_result.entities),
+                })
+            except Exception:
+                errors += len(chunk_df)
+                chunk_reports.append({
+                    "chunk": chunk_no, "rows": len(chunk_df), "error": True,
+                })
+
+            yield _sse_event({
+                "type": "progress", "chunk": chunk_no,
+                "total_chunks": total_chunks,
+                "entities_so_far": len(all_entities),
+            })
+
+        # Deduplicate + build final result (same logic as api_ner)
+        if entity_types:
+            all_entities = [e for e in all_entities if e.get("type") in entity_types]
+        dedup = {}
+        for e in all_entities:
+            key = f"{str(e.get('text','')).strip().lower()}||{e.get('type','CON')}"
+            if key not in dedup or float(e.get("confidence", 0)) > float(
+                dedup[key].get("confidence", 0)
+            ):
+                dedup[key] = e
+        ents = list(dedup.values())
+        by_type = {}
+        for e in ents:
+            etype = e.get("type", "CON")
+            by_type[etype] = by_type.get(etype, 0) + 1
+        ws.add_entities(ents, replace=True)
+
+        model_name = mod or method
+        prompt_name = "entity_extraction_normdata"
+        prompt_version = PROMPT_VERSIONS.get("entity_extraction_normdata", "1.0.0")
+        ws.log_ai_run(
+            "ner_extract", model_name, len(ents),
+            len([e for e in ents if e.get("confidence", 0) > 0.5]),
+            prompt_name=prompt_name, prompt_version=prompt_version,
+        )
+
+        elapsed = max(time.perf_counter() - started, 0.001)
+        metrics = {
+            "processed_rows": len(working), "total_rows": len(df),
+            "error_rows": errors,
+            "error_rate": round(errors / len(working), 4) if len(working) else 0,
+            "elapsed_seconds": round(elapsed, 2),
+            "eta_seconds": _estimate_eta(len(working), len(df), elapsed),
+            "chunk_count": len(chunk_reports), "chunks": chunk_reports,
+            "sampling": sampling,
+        }
+        _persist_chunk_run(ws, "ner", dsn, {
+            "run_id": str(uuid.uuid4()), **metrics,
+        })
+        ai_provenance = {
+            "model": model_name, "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
+            "entity_types_requested": entity_types or "all",
+        }
+        yield _sse_event({
+            "type": "done",
+            "result": {
+                "task_name": "NER", "total": len(ents),
+                "prompt_name": prompt_name, "prompt_version": prompt_version,
+                "succeeded": len([e for e in ents if e.get("confidence", 0) > 0.3]),
+                "model": model_name,
+                "entities": ents[:500], "by_type": by_type,
+                "run_metrics": metrics, "ai_provenance": ai_provenance,
+                "workspace": ws.to_summary(),
+            },
+        })
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +605,83 @@ async def api_scan(request: dict):
         "issues": issues[:200],
         "run_metrics": metrics,
     }
+
+
+# ---------------------------------------------------------------------------
+# Scan — SSE streaming
+# ---------------------------------------------------------------------------
+
+@router.post("/api/scan/stream")
+async def api_scan_stream(request: dict):
+    """SSE streaming version of /api/scan — yields progress per chunk."""
+    dsn = request.get("dataset", "")
+    ds = get_datasets().get(dsn)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
+    df, profile = ds
+    ss = min(int(request.get("sample_size", 20) or 20), max(len(df), 1))
+    chunk_size = max(1, min(int(request.get("chunk_size", 200) or 200), 1000))
+    syp = request.get("system_prompt", "")
+    mod = request.get("model", "")
+    prov = get_provider(mod)
+    working, sampling = _build_sampling_plan(df, request, profile.id_column, ss)
+
+    total_chunks = max(1, -(-len(working) // chunk_size))
+
+    async def generate():
+        started = time.perf_counter()
+        issues, errors, batches = [], 0, []
+        for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
+            try:
+                i2, batch = scan_problematic_terms(
+                    chunk_df, prov,
+                    id_column=profile.id_column,
+                    sample_size=len(chunk_df),
+                    model=mod or None,
+                    system_prompt=syp,
+                )
+                issues.extend(i2)
+                batches.append({
+                    "chunk": chunk_no, "rows": len(chunk_df),
+                    "issues": len(i2), "succeeded": batch.succeeded,
+                })
+            except Exception:
+                errors += len(chunk_df)
+                batches.append({
+                    "chunk": chunk_no, "rows": len(chunk_df), "error": True,
+                })
+
+            yield _sse_event({
+                "type": "progress", "chunk": chunk_no,
+                "total_chunks": total_chunks,
+                "issues_so_far": len(issues),
+            })
+
+        elapsed = max(time.perf_counter() - started, 0.001)
+        metrics = {
+            "processed_rows": len(working), "total_rows": len(df),
+            "error_rows": errors,
+            "error_rate": round(errors / len(working), 4) if len(working) else 0,
+            "elapsed_seconds": round(elapsed, 2),
+            "eta_seconds": _estimate_eta(len(working), len(df), elapsed),
+            "chunk_count": len(batches), "chunks": batches,
+            "sampling": sampling,
+        }
+        ws = get_workspace()
+        _persist_chunk_run(ws, "scan", dsn, {
+            "run_id": str(uuid.uuid4()), **metrics,
+        })
+        succeeded = sum(b.get("succeeded", 0) for b in batches)
+        yield _sse_event({
+            "type": "done",
+            "result": {
+                "task_name": "Scan", "total": len(working),
+                "succeeded": succeeded, "model": mod or "default",
+                "issues": issues[:200], "run_metrics": metrics,
+            },
+        })
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +764,116 @@ async def api_edtf(request: dict):
             for r in results
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# EDTF — SSE streaming
+# ---------------------------------------------------------------------------
+
+@router.post("/api/edtf/stream")
+async def api_edtf_stream(request: dict):
+    """SSE streaming version of /api/edtf — yields progress per chunk."""
+    dsn = request.get("dataset", "")
+    ds = get_datasets().get(dsn)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
+    df, profile = ds
+    col = request.get("column", "")
+    if not col:
+        return JSONResponse({"error": "Spalte wählen"}, 400)
+    if col not in df.columns:
+        return JSONResponse({"error": f"Spalte '{col}' nicht vorhanden"}, 400)
+
+    ss = int(request.get("sample_size", 0) or 0)
+    chunk_size = max(1, min(int(request.get("chunk_size", 200) or 200), 1000))
+    use_llm = request.get("use_llm", False)
+    syp = request.get("system_prompt", "")
+    mod = request.get("model", "")
+    ws = get_workspace()
+
+    mask = df[col].replace("", pd.NA).notna()
+    source_df = df[mask]
+    working, sampling = _build_sampling_plan(source_df, request, profile.id_column, ss)
+    prov = get_provider(mod) if use_llm else None
+
+    total_chunks = max(1, -(-len(working) // chunk_size))
+
+    async def generate():
+        started = time.perf_counter()
+        all_results = []
+        chunk_reports = []
+        errors = 0
+        for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
+            items = [
+                {
+                    "record_id": (
+                        str(row.get(profile.id_column, "")) if profile.id_column else ""
+                    ),
+                    "text": str(row[col]).strip(),
+                }
+                for _, row in chunk_df.iterrows()
+                if str(row[col]).strip()
+            ]
+            try:
+                results, _batch = normalize_dates(
+                    items, provider=prov, model=mod or None, system_prompt=syp,
+                )
+                all_results.extend(results)
+                chunk_reports.append({
+                    "chunk": chunk_no, "rows": len(chunk_df),
+                    "results": len(results),
+                })
+            except Exception:
+                errors += len(chunk_df)
+                chunk_reports.append({
+                    "chunk": chunk_no, "rows": len(chunk_df), "error": True,
+                })
+
+            yield _sse_event({
+                "type": "progress", "chunk": chunk_no,
+                "total_chunks": total_chunks,
+                "results_so_far": len(all_results),
+            })
+
+        results = all_results
+        ws.add_dates([
+            {"original": r.original, "edtf": r.edtf, "confidence": r.confidence,
+             "method": r.method, "record_id": r.record_id, "column": col}
+            for r in results
+        ], replace=True)
+
+        converted = len([r for r in results if r.edtf])
+        undated = len([r for r in results if not r.edtf and "undatiert" in r.note])
+        failed = len(results) - converted - undated
+        elapsed = max(time.perf_counter() - started, 0.001)
+        metrics = {
+            "processed_rows": len(working), "total_rows": len(source_df),
+            "error_rows": errors,
+            "error_rate": round(errors / len(working), 4) if len(working) else 0,
+            "elapsed_seconds": round(elapsed, 2),
+            "eta_seconds": _estimate_eta(len(working), len(source_df), elapsed),
+            "chunk_count": len(chunk_reports), "chunks": chunk_reports,
+            "sampling": sampling,
+        }
+        _persist_chunk_run(ws, "edtf", dsn, {
+            "run_id": str(uuid.uuid4()), **metrics,
+        })
+        yield _sse_event({
+            "type": "done",
+            "result": {
+                "task_name": "EDTF", "total": len(results),
+                "converted": converted, "failed": failed, "undated": undated,
+                "model": mod or "rule", "run_metrics": metrics,
+                "results": [
+                    {"record_id": r.record_id, "original": r.original,
+                     "edtf": r.edtf, "confidence": round(r.confidence, 3),
+                     "method": r.method, "note": r.note}
+                    for r in results
+                ],
+            },
+        })
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 # ---------------------------------------------------------------------------
@@ -700,11 +1040,13 @@ async def dict_scan(request: dict):
     matches: list[dict] = []
 
     for _, row in df.iterrows():
-        record_id = str(row[id_col]) if id_col and id_col in row.index else ""
+        raw_id = row[id_col] if id_col and id_col in row.index else None
+        record_id = "" if raw_id is None or pd.isna(raw_id) else str(raw_id)
         for col in include_cols:
             if col not in df.columns:
                 continue
-            cell_val = str(row.get(col, "") or "")
+            raw_val = row.get(col)
+            cell_val = "" if raw_val is None or pd.isna(raw_val) else str(raw_val)
             if not cell_val or cell_val == "nan":
                 continue
             cell_cmp = cell_val if case_sensitive else cell_val.lower()
@@ -759,3 +1101,88 @@ async def dict_scan(request: dict):
         "matches": matches[:2000],
         "dataset": dsn,
     }
+
+
+# ---------------------------------------------------------------------------
+# NER Review Gate — spot-check, auto-accept, single review
+# ---------------------------------------------------------------------------
+
+@router.post("/api/ner/review/sample")
+async def ner_review_sample(request: dict):
+    """Return a spot-check sample of pending NER entities for review."""
+    from kwb.core.workspace import ReviewStatus
+    ws = get_workspace()
+    sample_size = min(request.get("sample_size", 20), 200)
+    strategy = request.get("strategy", "random")
+    entity_type = request.get("entity_type", "")
+
+    pending = [
+        (i, e) for i, e in enumerate(ws.entity_reviews)
+        if e.status == ReviewStatus.PENDING
+        and (not entity_type or e.entity_type == entity_type)
+    ]
+    total_pending = len(pending)
+
+    if strategy == "low_confidence":
+        pending.sort(key=lambda t: t[1].confidence)
+    elif strategy == "by_type":
+        pending.sort(key=lambda t: t[1].entity_type)
+    else:
+        import random
+        random.shuffle(pending)
+
+    sample = pending[:sample_size]
+    return {
+        "sample": [
+            {"index": i, **e.to_dict()} for i, e in sample
+        ],
+        "total_pending": total_pending,
+        "sample_size": len(sample),
+        "strategy": strategy,
+    }
+
+
+@router.post("/api/ner/review/auto-accept")
+async def ner_review_auto_accept(request: dict):
+    """Auto-accept all NER entities with confidence >= min_confidence."""
+    from kwb.core.workspace import ReviewStatus
+    ws = get_workspace()
+    min_confidence = float(request.get("min_confidence", 0.8))
+    entity_types = request.get("entity_types", [])
+
+    auto_accepted = 0
+    for er in ws.entity_reviews:
+        if er.status != ReviewStatus.PENDING:
+            continue
+        if entity_types and er.entity_type not in entity_types:
+            continue
+        if er.confidence >= min_confidence:
+            er.accept(
+                note=f"Auto-accepted (confidence {er.confidence:.2f} >= {min_confidence})",
+            )
+            auto_accepted += 1
+
+    remaining = sum(
+        1 for e in ws.entity_reviews if e.status == ReviewStatus.PENDING
+    )
+    return {
+        "auto_accepted": auto_accepted,
+        "remaining_pending": remaining,
+        "min_confidence": min_confidence,
+    }
+
+
+@router.post("/api/ner/review/{index}")
+async def ner_review_single(index: int, request: dict):
+    """Review a single NER entity by index."""
+    ws = get_workspace()
+    if index < 0 or index >= len(ws.entity_reviews):
+        return JSONResponse({"error": "Index ungültig"}, 400)
+
+    updates = {}
+    for key in ("status", "entity_type", "text", "reviewer_note", "editor_note"):
+        if key in request:
+            updates[key] = request[key]
+
+    ws.update_entity(index, updates)
+    return {"ok": True, "entity": ws.entity_reviews[index].to_dict()}

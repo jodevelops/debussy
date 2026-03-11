@@ -14,16 +14,18 @@ import base64
 import tempfile as _tempfile
 from pathlib import Path
 
+import json
+
 try:
     from fastapi import APIRouter, File, UploadFile
-    from fastapi.responses import JSONResponse, Response
+    from fastapi.responses import JSONResponse, Response, StreamingResponse
 except ImportError:
     raise ImportError("pip install fastapi uvicorn python-multipart")
 
 from kwb.api.deps import (
     ALLOWED_IMAGE_EXT, MAX_FILE_BYTES, MAX_IMAGE_FILES,
     get_config, get_datasets, get_provider, get_workspace,
-    workspace_dir, safe_filename,
+    set_config, workspace_dir, safe_filename,
 )
 from kwb.ai.provider import AIMessage
 from kwb.ai.batch import process_batch
@@ -38,6 +40,11 @@ from kwb.ai.prompts import (
 from kwb.ingest.image_loader import ingest_image
 
 router = APIRouter()
+
+
+def _sse_event(data: dict) -> str:
+    """Format a dict as an SSE data line."""
+    return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
 def _parse_image_review_status(status_raw: str) -> ImageReviewStatus | None:
@@ -84,6 +91,53 @@ async def gpu_test(request: dict | None = None):
 
 
 # ---------------------------------------------------------------------------
+# GPU / Provider configuration (read + update)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/gpu/config")
+async def gpu_config_get():
+    """Return current GPUStack config (API key masked)."""
+    from kwb.core.utils import mask_secret
+    c = get_config()
+    return {
+        "gpustack_url": c.gpustack_url,
+        "gpustack_key_masked": mask_secret(c.gpustack_key) if c.gpustack_key else "",
+        "gpustack_model_text": c.gpustack_model_text,
+        "gpustack_model_vision": c.gpustack_model_vision,
+    }
+
+
+@router.post("/api/gpu/config")
+async def gpu_config_set(request: dict):
+    """Update GPUStack connection settings and persist to .env."""
+    from dataclasses import replace as dc_replace
+    c = get_config()
+
+    new_url = (request.get("gpustack_url") or "").strip()
+    new_key = (request.get("gpustack_key") or "").strip()
+    new_mt = (request.get("gpustack_model_text") or "").strip()
+    new_mv = (request.get("gpustack_model_vision") or "").strip()
+
+    # Only the API key uses "empty = keep existing" semantics (it's a secret).
+    # URL and model fields can be explicitly cleared by submitting an empty string.
+    gpustack_key = new_key if new_key else c.gpustack_key
+    updated = dc_replace(
+        c,
+        gpustack_url=new_url,
+        gpustack_key=gpustack_key,
+        gpustack_model_text=new_mt,
+        gpustack_model_vision=new_mv,
+    )
+    # Persist to disk first — if writing fails, in-memory config stays unchanged.
+    try:
+        updated.save_to_dotenv()
+    except Exception as e:
+        return JSONResponse({"status": "error", "message": f".env speichern fehlgeschlagen: {e}"}, 500)
+    set_config(updated)
+    return {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
 # AI column descriptions
 # ---------------------------------------------------------------------------
 
@@ -124,7 +178,7 @@ async def ai_describe_columns(request: dict | None = None):
         if br.parsed:
             descriptions[col] = br.parsed
         else:
-            descriptions[col] = {"column": col, "description": br.raw or "", "data_type": "unbekannt"}
+            descriptions[col] = {"column": col, "description": br.response.content if br.response else "", "data_type": "unbekannt"}
 
     col_list = []
     for c in profile.columns:
@@ -209,6 +263,11 @@ def _sync_index() -> None:
 
 
 _sync_index()
+
+# Remove stale entries whose files no longer exist on disk
+_stale = [k for k, v in _uploaded_images.items() if not Path(v["path"]).exists()]
+for _k in _stale:
+    del _uploaded_images[_k]
 
 def _vision_prompt_for_task(task: str, context: str = ""):
     if task == "person_face_visibility":
@@ -305,6 +364,10 @@ async def image_data(img_id: str):
 @router.get("/api/images")
 async def images_list():
     """List all uploaded images and their analysis status."""
+    # Filter out stale entries whose files no longer exist
+    stale_ids = [k for k, img in _uploaded_images.items() if not Path(img["path"]).exists()]
+    for sid in stale_ids:
+        del _uploaded_images[sid]
     return {
         "images": [
             {
@@ -427,7 +490,135 @@ async def images_analyze(request: dict):
         "prompt_name": prompt_name,
         "prompt_version": prompt_version,
         "results": results,
+        "ai_provenance": {
+            "model": mod or "default",
+            "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
+            "task": task,
+        },
     }
+
+
+@router.post("/api/images/analyze/stream")
+async def images_analyze_stream(request: dict):
+    """SSE streaming version of /api/images/analyze — yields progress per image."""
+    from datetime import datetime
+    from kwb.core.utils import try_parse_json
+
+    image_ids = request.get("image_ids", list(_uploaded_images.keys()))
+    image_record_map = request.get("image_record_map", {})
+    mod = request.get("model", "")
+    task = request.get("prompt_task", "image_description")
+    syp = request.get("system_prompt", "")
+
+    if not image_ids:
+        return JSONResponse({"error": "Keine Bilder hochgeladen"}, 400)
+
+    prov = get_provider(mod)
+    prompt_name, prompt_version = _prompt_meta(task)
+    total = len(image_ids)
+
+    async def generate():
+        results = []
+        for idx, img_id in enumerate(image_ids, 1):
+            img = _uploaded_images.get(img_id)
+            if not img:
+                results.append({"id": img_id, "error": "Nicht gefunden"})
+                yield _sse_event({
+                    "type": "progress", "current": idx, "total": total,
+                    "filename": img_id,
+                })
+                continue
+
+            try:
+                b64 = base64.b64encode(
+                    Path(img["path"]).read_bytes()
+                ).decode("ascii")
+                data_url = f"data:{img['media_type']};base64,{b64}"
+                ctx = request.get("additional_context", "") or img["filename"]
+                prompt_msgs = _vision_prompt_for_task(task, context=ctx)
+                if syp:
+                    prompt_msgs[0] = AIMessage.system(syp)
+                prompt_msgs[1] = AIMessage.user([
+                    {"type": "image_url", "image_url": {"url": data_url}},
+                    {"type": "text", "text": prompt_msgs[1].content},
+                ])
+
+                resp = prov.complete(prompt_msgs, model=mod or None, max_tokens=900)
+                parsed = try_parse_json(resp.content) or {
+                    "description": resp.content, "uncertain": True,
+                }
+                img["analyzed"] = True
+                img["result"] = parsed
+                img["record_id"] = image_record_map.get(
+                    img_id, img.get("record_id", ""),
+                )
+                results.append({
+                    "id": img_id, "filename": img["filename"],
+                    "record_id": img.get("record_id", ""),
+                    "review_status": img.get("review_status", "pending"),
+                    "result": parsed,
+                })
+
+                ws = get_workspace()
+                ws.save_image_analysis(ImageAnalysisResult(
+                    image_id=img_id,
+                    filename=img["filename"],
+                    media_type=img["media_type"],
+                    size_bytes=img.get("size_bytes", 0),
+                    width=img.get("width"),
+                    height=img.get("height"),
+                    hash_sha256=img.get("hash_sha256", ""),
+                    exif_subset=img.get("exif_subset", {}),
+                    analyzed=True,
+                    result=parsed,
+                    model=mod or "default",
+                    analyzed_at=datetime.utcnow().isoformat(),
+                    record_id=img.get("record_id", ""),
+                    review_status=ImageReviewStatus(
+                        img.get("review_status", "pending")
+                    ),
+                    review_comment=img.get("review_comment", ""),
+                    reviewer=img.get("reviewer", ""),
+                    reviewed_at=img.get("reviewed_at", ""),
+                    prompt_name=prompt_name,
+                    prompt_version=prompt_version,
+                ))
+                ws.save(workspace_dir() / safe_filename(ws.name))
+
+            except Exception as e:
+                results.append({"id": img_id, "error": str(e)})
+
+            yield _sse_event({
+                "type": "progress", "current": idx, "total": total,
+                "filename": img.get("filename", img_id) if img else img_id,
+            })
+
+        ws = get_workspace()
+        ws.log_ai_run(
+            "image_analysis", mod or "vision", len(results),
+            len([r for r in results if "result" in r]),
+            prompt_name=prompt_name, prompt_version=prompt_version,
+        )
+        yield _sse_event({
+            "type": "done",
+            "result": {
+                "total": total,
+                "analyzed": len([r for r in results if "result" in r]),
+                "model": mod or "default",
+                "prompt_name": prompt_name,
+                "prompt_version": prompt_version,
+                "results": results,
+                "ai_provenance": {
+                    "model": mod or "default",
+                    "prompt_name": prompt_name,
+                    "prompt_version": prompt_version,
+                    "task": task,
+                },
+            },
+        })
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
 @router.post("/api/images/{img_id}/review")
@@ -549,6 +740,73 @@ async def image_review_batch(request: dict):
     ws.save(workspace_dir() / safe_filename(ws.name))
     return {"updated": updated, "status": status.value}
 
+@router.post("/api/images/review/sample")
+async def image_review_sample(request: dict):
+    """Return a spot-check sample of pending OCR results for review."""
+    ws = get_workspace()
+    sample_size = min(request.get("sample_size", 10), 100)
+    strategy = request.get("strategy", "random")
+
+    pending = [
+        r for r in ws.image_analyses
+        if r.review_status == ImageReviewStatus.PENDING and r.analyzed
+    ]
+    total_pending = len(pending)
+
+    if strategy == "low_confidence":
+        pending.sort(key=lambda r: r.confidence)
+    else:
+        import random
+        random.shuffle(pending)
+
+    sample = pending[:sample_size]
+    return {
+        "sample": [r.to_dict() for r in sample],
+        "total_pending": total_pending,
+        "sample_size": len(sample),
+        "strategy": strategy,
+    }
+
+
+@router.post("/api/images/review/auto-accept")
+async def image_review_auto_accept(request: dict):
+    """Auto-accept all OCR results with confidence >= min_confidence."""
+    ws = get_workspace()
+    min_confidence = float(request.get("min_confidence", 0.85))
+
+    auto_accepted = 0
+    for analysis in ws.image_analyses:
+        if analysis.review_status != ImageReviewStatus.PENDING:
+            continue
+        if not analysis.analyzed:
+            continue
+        if analysis.confidence >= min_confidence:
+            analysis.update_review(
+                status=ImageReviewStatus.ACCEPTED,
+                comment=f"Auto-accepted (confidence {analysis.confidence:.2f} >= {min_confidence})",
+                reviewer="auto",
+            )
+            # Also update in-memory image index
+            img = _uploaded_images.get(analysis.image_id)
+            if img:
+                img["review_status"] = "accepted"
+                img["review_comment"] = analysis.review_comment
+                img["reviewed_at"] = analysis.reviewed_at
+            auto_accepted += 1
+
+    remaining = sum(
+        1 for r in ws.image_analyses
+        if r.review_status == ImageReviewStatus.PENDING
+    )
+
+    ws.save(workspace_dir() / safe_filename(ws.name))
+    return {
+        "auto_accepted": auto_accepted,
+        "remaining_pending": remaining,
+        "min_confidence": min_confidence,
+    }
+
+
 @router.delete("/api/images")
 async def images_clear():
     """Clear all uploaded images from memory and disk."""
@@ -625,6 +883,33 @@ async def images_ocr(request: dict):
 
     successful = [r for r in results if "result" in r]
     ws = get_workspace()
+
+    # Persist OCR results in workspace image_analyses for OCR→NER pipeline
+    from datetime import datetime
+    for r in successful:
+        img = _uploaded_images.get(r["id"])
+        if not img:
+            continue
+        record_id = image_record_map.get(r["id"], img.get("record_id", ""))
+        existing = ws.get_image_analysis(r["id"])
+        if existing:
+            existing.result = existing.result or {}
+            existing.result.update(r["result"])
+            existing.record_id = record_id
+        else:
+            ws.save_image_analysis(ImageAnalysisResult(
+                image_id=r["id"],
+                filename=img.get("filename", ""),
+                media_type=img.get("media_type", ""),
+                analyzed=True,
+                result=r["result"],
+                model=mod or "default",
+                analyzed_at=datetime.utcnow().isoformat(),
+                record_id=record_id,
+                prompt_name=prompt_name,
+                prompt_version=prompt_version,
+            ))
+
     ws.log_ai_run(
         "image_ocr", mod or "vision", len(image_ids), len(successful),
         prompt_name=prompt_name,
@@ -637,6 +922,11 @@ async def images_ocr(request: dict):
         "prompt_name": prompt_name,
         "prompt_version": prompt_version,
         "results": results,
+        "ai_provenance": {
+            "model": mod or "default",
+            "prompt_name": prompt_name,
+            "prompt_version": prompt_version,
+        },
     }
 
 

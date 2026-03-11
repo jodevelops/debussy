@@ -41,6 +41,32 @@ let termsData=[]; // problematic terms dictionary
 let termsScanResults=[]; // last scan results
 let termsCatFilter='all';
 let colSortKey='name',colSortDir=1; // for combined columns table
+let _abortCtrl=null;
+let _opCancelled=false;
+
+// === MODEL HINTS ===
+const MODEL_HINTS={
+  'qwen3-coder':{type:'text',hint:'Code-Generierung, Reasoning, allgemeine Text-Aufgaben'},
+  'qwen3-vl':{type:'vision',hint:'Bildbeschreibung, OCR, Dokumentenanalyse (Vision-Language)'},
+  'internvl3':{type:'vision',hint:'Bilderkennung, Multi-Sprache, visuelle Fragen (Vision)'},
+  'internvl':{type:'vision',hint:'Vision-Language Modell'},
+  'faster-whisper':{type:'audio',hint:'Spracherkennung / Transkription (Whisper ASR)'},
+  'jina-reranker':{type:'rerank',hint:'Reranking von Suchergebnissen (nicht für Textgenerierung)'},
+  'granite-embedding':{type:'embed',hint:'Embedding-Generierung für Similarity Search'},
+  'deepseek-r1':{type:'text',hint:'Reasoning-Modell, Chain-of-Thought, komplexe Analysen'},
+  'gpt-oss':{type:'text',hint:'Grosses Text-Modell, NER, Datierung, Analyse'},
+  'qwen3-embedding':{type:'embed',hint:'Kompaktes Embedding-Modell (Mehrsprachig)'},
+  'llama':{type:'text',hint:'Allgemeines Text-Modell (Meta)'},
+  'mistral':{type:'text',hint:'Schnelles Text-Modell (Mistral AI)'},
+  'llava':{type:'vision',hint:'Vision-Language Modell'},
+  'phi':{type:'text',hint:'Kompaktes Text-Modell (Microsoft)'},
+  'bakllava':{type:'vision',hint:'Vision-Language Modell'},
+};
+function getModelHint(name){
+  const n=name.toLowerCase();
+  for(const[k,v]of Object.entries(MODEL_HINTS)){if(n.includes(k))return v;}
+  return{type:'unknown',hint:'Modelltyp unbekannt'};
+}
 
 // === SECURITY ===
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
@@ -82,6 +108,14 @@ function hf(files,fiEl){
   if(fiEl)fiEl.value='';
   rfl();
 }
+function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
+function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));try{if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();loadAuthorityCandidates();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}catch(err){console.error('[nav:'+p+']',err)}}}catch(err){console.error('[initNav]',err)}}
+function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
+initNav();initTabs();
+
+// === UPLOAD ===
+function initUpload(){const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.target.files);if(uz){uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)}}}
+function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
 function rfl(){
   const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
   $('fcl').innerHTML=n.map(id=>{
@@ -93,10 +127,12 @@ function rfl(){
 function populateDS(){
   const n=Object.values(ufiles).map(f=>f.uploadName);
   for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds']){
+  const n=Object.keys(ufiles);
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds','dict-build-ds','mds-ds']){
     const s=$(id);if(!s)continue;
     s.innerHTML=n.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
   if(n.length>0){
-    loadCols('ner-ds','ner-cols');loadDateCols();loadRecords();loadFMCols();
+    loadCols('ner-ds','ner-cols');loadCols('dict-build-ds','dict-build-cols');loadDateCols();loadRecords();loadFMCols();
     ['ner-hint','edtf-hint','exp-hint'].forEach(id=>{const el=$(id);if(el)el.style.display='none'})
   }
 }
@@ -134,9 +170,11 @@ async function loadRecords(reset=false){
 }
 function pageRecords(dir){recordOffset=Math.max(0,recordOffset+(dir*recordLimit));loadRecords(false)}
 const expDsEl=$('exp-ds');if(expDsEl)expDsEl.onchange=()=>loadRecords(true);
+function initPanels(){const expDs=$('exp-ds');if(expDs)expDs.onchange=()=>loadRecords(true)}
 
 // === FIELD MAPPING ===
 let fmCols=[];
+let fmMeta={}; // full backend objects per col: {col_name: {csv_column,goobi_type,label,repeatable,...}}
 async function loadFMCols(){
   const ds=$('fm-ds').value;
   if(!ds){$('fm-table-wrap').style.display='none';return}
@@ -144,9 +182,16 @@ async function loadFMCols(){
     const d=await(await fetch('/api/dataset/'+encodeURIComponent(ds)+'/columns')).json();
     if(d.error)return;
     fmCols=d.columns;
-    // Load existing mapping
+    // API payload (GET): {mappings: [{csv_column, goobi_type, label, repeatable, authority, ...}]}
+    // fmMeta keeps the full objects so saveFM() can preserve metadata not shown in the UI
+    // fmMapping holds the UI state: {col_name: [label, goobi_type]}
     const ex=await(await fetch('/api/workspace/field-mapping')).json();
     fmMapping=((ex.mappings||[]).reduce((acc,m)=>{acc[m.csv_column]=[m.label||m.goobi_type||'',m.goobi_type||''];return acc;},{}));
+    fmMeta={};fmMapping={};
+    (ex.mappings||[]).forEach(m=>{
+      fmMeta[m.csv_column]=m;
+      fmMapping[m.csv_column]=[m.label||m.goobi_type,m.goobi_type];
+    });
     renderFMTable();
     $('fm-table-wrap').style.display='block';
   }catch(e){}
@@ -154,7 +199,7 @@ async function loadFMCols(){
 
 // Build type options: Minimaldatensatz 1.1 group + Goobi group
 function _fmTypeOpts(selectedType){
-  const mdsOpts=MDS_FIELDS.map(f=>'<option value="'+esc(f.goobi)+'"'+(f.goobi===selectedType?' selected':'')+(f.pflicht?'')+'>'+esc(f.mds+(f.pflicht?' ★':''))+' ('+esc(f.goobi)+')</option>').join('');
+  const mdsOpts=MDS_FIELDS.map(f=>'<option value="'+esc(f.goobi)+'"'+(f.goobi===selectedType?' selected':'')+(f.pflicht?' required':'')+'>'+esc(f.mds+(f.pflicht?' ★':''))+' ('+esc(f.goobi)+')</option>').join('');
   const goobiOpts=GOOBI_TYPES.filter(t=>!MDS_FIELDS.find(f=>f.goobi===t)).map(t=>'<option value="'+esc(t)+'"'+(t===selectedType?' selected':'')+'>'+esc(t)+'</option>').join('');
   return '<option value="">— kein Export —</option>'+
     '<optgroup label="Minimaldatensatz 1.1 (★ = Pflichtfeld)">'+mdsOpts+'</optgroup>'+
@@ -219,16 +264,22 @@ function clearFMRow(col){
   if(lbl)lbl.value='';if(typ)typ.value='';
 }
 async function saveFM(){
-  const mapping={};
+  // API payload (POST): {mappings: [{csv_column, goobi_type, label, repeatable, authority, ...}]}
+  // Spread fmMeta to preserve fields not editable in the UI (repeatable, authority_uri, enabled, note)
+  const mappings=[];
   fmCols.forEach(c=>{
     const lbl=$('fm-lbl-'+c.name);const typ=$('fm-typ-'+c.name);
     if(lbl&&typ&&typ.value){
-      mapping[c.name]=[lbl.value||typ.value,typ.value];
+      mappings.push({...(fmMeta[c.name]||{}),csv_column:c.name,goobi_type:typ.value,label:lbl.value||typ.value});
     }
   });
   try{
     await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings:Object.entries(mapping).map(([csv_column,v])=>({csv_column,label:Array.isArray(v)?(v[0]||''):'',goobi_type:Array.isArray(v)?(v[1]||''):'',enabled:true}))})});
     fmMapping=mapping;
+    await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
+    // Update internal state from saved list
+    fmMeta={};fmMapping={};
+    mappings.forEach(m=>{fmMeta[m.csv_column]=m;fmMapping[m.csv_column]=[m.label,m.goobi_type];});
     $('fm-saved').style.display='inline';
     setTimeout(()=>{$('fm-saved').style.display='none'},2000);
   }catch(e){alert('Fehler: '+e.message)}
@@ -241,8 +292,11 @@ async function runStruct(){
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
   const fd=new FormData();for(const id of sel){const it=ufiles[id];if(it)fd.append('files',it.file,it.uploadName)}
   try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();
+  _abortCtrl=new AbortController();
+  const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
+  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd,signal:_abortCtrl.signal})).json();
     if(r.error)throw Error(r.error);curRep=r;rrep(r);populateDS();updWS()
-  }catch(e){alert(e.message)}finally{hp()}
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp()}
 }
 
 // === NER ===
@@ -254,14 +308,20 @@ async function runNER(isPilot=false){
   const baseN=parseInt($('ner-n').value)||10000;
   const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
   sp(isPilot?'NER Pilotlauf …':'NER läuft …',method+', '+n+' Samples');
-  try{const r=await(await fetch('/api/ner',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,columns:cols,method,sample_size:n,
-      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
-      stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
-      model:$('cfg-mt').value||'',
-      system_prompt:($('ner-sp')?.value||$('cfg-sys').value)})})).json();
-    if(r.error)throw Error(r.error);nerData=r.entities||[];renderNER(r);renderRunMetrics('ner-metrics',r.run_metrics);updWS()
-  }catch(e){alert(e.message)}finally{hp()}
+  const entityTypes=[...document.querySelectorAll('.ner-type-cb:checked')].map(c=>c.value);
+  const body={dataset:ds,columns:cols,method,sample_size:n,
+    sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+    stratified:isPilot,chunk_size:parseInt($('ner-chunk').value)||200,
+    model:$('cfg-mt').value||'',
+    entity_types:entityTypes.length<10?entityTypes:[],
+    system_prompt:($('ner-sp')?.value||$('cfg-sys').value)};
+  try{
+    await fetchSSE('/api/ner/stream',body,
+      evt=>spUp(evt.chunk,evt.total_chunks,'Chunk '+evt.chunk+' — '+evt.entities_so_far+' Entities'),
+      result=>{nerData=result.entities||[];renderNER(result);renderRunMetrics('ner-metrics',result.run_metrics);updWS();},
+      msg=>{throw Error(msg);}
+    );
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}
 }
 
 function renderNER(r){
@@ -293,8 +353,9 @@ function applyNERFilters(){
 }
 
 function fillNERTable(ents){
-  $('ner-body').innerHTML=ents.map((e,i)=>{
+  $('ner-body').innerHTML=ents.map((e)=>{
     const status=e.status||'pending';
+    const realIdx=nerData.indexOf(e);
     return '<tr>'+
       '<td style="font-weight:600">'+esc(e.text)+(e.gnd_preferred?'<br><span style="font-size:.65rem;color:var(--ok)">GND: '+esc(e.gnd_preferred)+'</span>':'')+'</td>'+
       '<td><span class="etype etype-'+esc(e.type)+'">'+esc(e.type)+'</span></td>'+
@@ -303,7 +364,7 @@ function fillNERTable(ents){
       '<td style="font-size:.68rem">'+esc(e.record_id||'')+'</td>'+
       '<td style="font-size:.62rem">'+esc(e.source||'')+'</td>'+
       '<td><span class="est est-'+esc(status)+'">'+esc(status)+'</span></td>'+
-      '<td><button class="btn sm" onclick="setEntity('+i+',\'accepted\')">✓</button> <button class="btn sm s" onclick="setEntity('+i+',\'rejected\')">✗</button></td>'+
+      '<td><button class="btn sm" onclick="setEntity('+realIdx+',\'accepted\')">✓</button> <button class="btn sm s" onclick="setEntity('+realIdx+',\'rejected\')">✗</button></td>'+
     '</tr>';
   }).join('');
 }
@@ -365,14 +426,18 @@ async function runScan(isPilot=false){const ds=$('scan-ds').value;if(!ds){alert(
   const baseN=parseInt($('scan-n').value)||10000;
   const n=isPilot?Math.max(1,Math.round(baseN*0.02)):baseN;
   sp(isPilot?'Scan Pilotlauf …':'Scan …','');
-  try{const r=await(await fetch('/api/scan',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,sample_size:n,
-      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
-      stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
-      model:$('cfg-mt').value||'',
-      system_prompt:($('scan-sp')?.value||$('cfg-sys').value)})})).json();
-    if(r.error)throw Error(r.error);renderScan(r);renderRunMetrics('scan-metrics',r.run_metrics)
-  }catch(e){alert(e.message)}finally{hp()}}
+  const body={dataset:ds,sample_size:n,
+    sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+    stratified:isPilot,chunk_size:parseInt($('scan-chunk').value)||200,
+    model:$('cfg-mt').value||'',
+    system_prompt:($('scan-sp')?.value||$('cfg-sys').value)};
+  try{
+    await fetchSSE('/api/scan/stream',body,
+      evt=>spUp(evt.chunk,evt.total_chunks,'Chunk '+evt.chunk+' — '+evt.issues_so_far+' Begriffe'),
+      result=>{renderScan(result);renderRunMetrics('scan-metrics',result.run_metrics);},
+      msg=>{throw Error(msg);}
+    );
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}}
 
 
 function renderScan(r){$('scan-r').style.display='block';const issues=r.issues||[];
@@ -456,8 +521,10 @@ async function runDictScan(){
   if(!ds){alert('Datensatz wählen.');return;}
   if(!termsData.length){alert('Wörterbuch ist leer. Bitte erst Begriffe hinzufügen.');return;}
   sp('Dictionary-Scan läuft…',termsData.length+' Begriffe');
+  _abortCtrl=new AbortController();
   try{
     const r=await fetch('/api/dict-scan',{method:'POST',headers:{'Content-Type':'application/json'},
+      signal:_abortCtrl.signal,
       body:JSON.stringify({
         dataset:ds,
         whole_word:$('terms-whole-word')?.checked!==false,
@@ -469,7 +536,7 @@ async function runDictScan(){
     termsScanResults=d.matches||[];
     termsCatFilter='all';
     renderDictScanResults(d);
-  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+  }catch(e){if(e.name!=='AbortError')alert('Fehler: '+e.message);}finally{hp();}
 }
 function renderDictScanResults(d){
   const resEl=$('terms-results');const emptyEl=$('terms-results-empty');
@@ -524,15 +591,19 @@ async function runEDTF(isPilot=false){const ds=$('edtf-ds').value,col=$('edtf-co
   const baseN=parseInt($('edtf-n').value)||0;
   const n=isPilot?Math.max(1,Math.round((baseN||10000)*0.02)):baseN;
   sp(isPilot?'EDTF Pilotlauf …':'EDTF …',esc(col));
-  try{const r=await(await fetch('/api/edtf',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({dataset:ds,column:col,sample_size:n,
-      sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
-      stratified:isPilot,chunk_size:parseInt($('edtf-chunk').value)||200,
-      use_llm:$('edtf-llm').value==='1',
-      model:$('cfg-mt').value||'',
-      system_prompt:$('edtf-sp').value||$('cfg-sys').value})})).json();
-    if(r.error)throw Error(r.error);edtfData=r.results||[];renderEDTF(r);renderRunMetrics('edtf-metrics',r.run_metrics);updWS()
-  }catch(e){alert(e.message)}finally{hp()}}
+  const body={dataset:ds,column:col,sample_size:n,
+    sample_mode:isPilot?'stratified':'random',sample_percent:isPilot?2:null,
+    stratified:isPilot,chunk_size:parseInt($('edtf-chunk').value)||200,
+    use_llm:$('edtf-llm').value==='1',
+    model:$('cfg-mt').value||'',
+    system_prompt:$('edtf-sp').value||$('cfg-sys').value};
+  try{
+    await fetchSSE('/api/edtf/stream',body,
+      evt=>spUp(evt.chunk,evt.total_chunks,'Chunk '+evt.chunk+' — '+evt.results_so_far+' konvertiert'),
+      result=>{edtfData=result.results||[];renderEDTF(result);renderRunMetrics('edtf-metrics',result.run_metrics);updWS();},
+      msg=>{throw Error(msg);}
+    );
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}}
 
 
 function renderEDTF(r){
@@ -594,6 +665,29 @@ async function loadWS(file){if(!file)return;const fd=new FormData();fd.append('f
     if(r.error)throw Error(r.error);alert('Geladen: '+(r.entity_count||0)+' Entities');updWS()}catch(e){alert(e.message)}}
 
 // === CONFIG ===
+async function loadGPUConfig(){
+  try{const d=await(await fetch('/api/gpu/config')).json();
+    if($('cfg-url'))$('cfg-url').value=d.gpustack_url||'';
+    if($('cfg-key'))$('cfg-key').placeholder=d.gpustack_key_masked
+      ?'Aktuell: '+d.gpustack_key_masked+' (leer = unverändert)'
+      :'sk-… (leer lassen = unverändert)';
+  }catch(e){console.error('loadGPUConfig',e)}}
+
+function toggleKeyVis(){const inp=$('cfg-key');inp.type=inp.type==='password'?'text':'password';}
+
+async function saveGPUConfig(){
+  const url=($('cfg-url')?.value||'').trim();
+  const key=($('cfg-key')?.value||'').trim();
+  const mt=($('cfg-mt')?.value||'').trim();
+  const mv=($('cfg-mv')?.value||'').trim();
+  const st=$('cfg-save-status');
+  if(st)st.textContent='Speichern…';
+  try{const r=await(await fetch('/api/gpu/config',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gpustack_url:url,gpustack_key:key,gpustack_model_text:mt,gpustack_model_vision:mv})})).json();
+    if(st)st.textContent=r.status==='ok'?'✓ Gespeichert':'✗ '+(r.message||'Fehler');
+    if(r.status==='ok'){await chkGPU();await loadGPUConfig();}
+  }catch(e){if(st)st.textContent='✗ '+e.message}}
+
 function loadPreset(){const k=$('cfg-preset').value;$('cfg-sys').value=PRESETS[k]||''}
 function applyActionPreset(action){const map={ner:['ner-preset','ner-sp'],scan:['scan-preset','scan-sp'],edtf:['edtf-preset','edtf-sp'],ocr:['ocr-preset','ocr-sp']};const m=map[action];if(!m)return;const src=$(m[0]);const tgt=$(m[1]);if(!src||!tgt)return;const k=src.value;if(k!=='custom')tgt.value=PRESETS[k]||'';}
 async function testConn(){sp('Test …','');$('cfg-test').style.display='none';
@@ -655,6 +749,12 @@ function renderCols(){
 }
 
 // === ARBEITSPAKET ERSTELLEN ===
+// Parse a CSV line into fields, correctly handling quoted fields and empty cells.
+function _csvSplitLine(line){
+  const out=[];const re=/("(?:[^"]|"")*"|[^,]*)(,|$)/g;let m;
+  while((m=re.exec(line))!==null){out.push(m[1]);if(m[2]==='')break;}
+  return out;
+}
 async function createArbeitspaket(){
   if(!curRep){alert('Erst Daten laden und Analyse starten.');return;}
   const ds=curRep.datasets||[];
@@ -663,7 +763,7 @@ async function createArbeitspaket(){
   const d=ds[0];
   const dsName=d.source_name;
   const idCol=d.id_column||d.columns?.[0]?.name||'';
-  const fullName=Object.keys(ufiles).find(n=>n.includes(dsName)||n.startsWith(dsName))||Object.keys(ufiles)[0]||'';
+  const fullName=Object.keys(ufiles).find(n=>n===dsName||n.startsWith(dsName+'.'))||Object.keys(ufiles).find(n=>n.includes(dsName))||Object.keys(ufiles)[0]||'';
   if(!fullName){alert('Datensatz nicht mehr verfügbar. Bitte Seite neu laden.');return;}
   sp('Arbeitspaket wird erstellt…','CSV Export');
   try{
@@ -675,13 +775,13 @@ async function createArbeitspaket(){
     // Ensure record_id is first column
     const lines=text.split('\n');
     if(lines.length>0){
-      const hdrs=lines[0].split(',');
+      const hdrs=_csvSplitLine(lines[0]);
       const idIdx=hdrs.findIndex(h=>h.replace(/^"|"$/g,'')===idCol);
       let out=text;
       if(idIdx>0){
-        // Move id column to front
+        // Move id column to front using correct CSV tokenizer
         const reordered=lines.map(line=>{
-          const cols=line.match(/"(?:[^"]|"")*"|[^,]*/g)||line.split(',');
+          const cols=_csvSplitLine(line);
           if(cols.length>idIdx){const id=cols.splice(idIdx,1);cols.unshift(id[0]);}
           return cols.join(',');
         });
@@ -703,7 +803,7 @@ function showIdColBar(reportData){
   cont.innerHTML=ds.map(d=>{
     const cols=d.columns||[];
     const detected=d.id_column||'';
-    const fname=Object.keys(ufiles).find(n=>n.includes(d.source_name)||n.startsWith(d.source_name))||'';
+    const fname=Object.keys(ufiles).find(n=>n===d.source_name||n.startsWith(d.source_name+'.'))||Object.keys(ufiles).find(n=>n.includes(d.source_name))||'';
     return '<div class="id-col-row">'+
       '<strong style="min-width:140px;font-size:.75rem">'+esc(d.source_name)+':</strong>'+
       '<select id="idcol-'+esc(d.source_name)+'" style="min-width:200px">'+
@@ -736,18 +836,44 @@ async function setIdCol(filename,sourceName){
 
 // === GPU ===
 async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json();
+    // Update both header and KI tab status indicators
+    function setDot(cls,txt){
+      $('gd').className='dot '+cls;$('gl').textContent=txt;
+      if($('gd2'))$('gd2').className='dot '+cls;if($('gl2'))$('gl2').textContent=txt;
+    }
     if(!d.configured){
-      $('gd').className='dot mock';$('gl').textContent='Testdaten-Modus';
+      setDot('mock','Testdaten-Modus');
       $('gi').textContent='KI-Analyse verwendet Testdaten. F\u00fcr echte Ergebnisse: KWB_GPUSTACK_URL in .env konfigurieren.';
       if($('img-mock-hint'))$('img-mock-hint').style.display='block';
+      if($('model-cards'))$('model-cards').innerHTML='<p style="font-size:.73rem;color:#888">Keine Modelle verfügbar (Mock-Modus).</p>';
     }else if(d.available){
-      $('gd').className='dot on';$('gl').textContent='GPUStack: '+(d.models?.length||0)+' Modelle';
+      setDot('on','GPUStack: '+(d.models?.length||0)+' Modelle');
       gpuM=d.models||[];const cfg=d.config||{};
-      $('gi').innerHTML='<div style="font-size:.7rem;font-family:monospace">'+gpuM.map(m=>'<div>'+esc(m)+'</div>').join('')+'</div>';
-      for(const sid of['cfg-mt','cfg-mv']){$(sid).innerHTML=gpuM.map(m=>safeOpt(m,m)).join('')}
-      $('cfg-models').textContent='Text: '+(cfg.gpustack_model_text||'—')+' / Vision: '+(cfg.gpustack_model_vision||'—')
+      $('gi').innerHTML='<span style="color:var(--ok);font-weight:600">Verbunden</span> — '+(gpuM.length)+' Modelle verfügbar';
+      // Populate model dropdowns with type hints
+      const textModels=gpuM.filter(m=>{const h=getModelHint(m);return h.type==='text'||h.type==='unknown';});
+      const visionModels=gpuM.filter(m=>{const h=getModelHint(m);return h.type==='vision'||h.type==='unknown';});
+      $('cfg-mt').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+      $('cfg-mv').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+      // Pre-select configured models
+      if(cfg.gpustack_model_text)$('cfg-mt').value=cfg.gpustack_model_text;
+      if(cfg.gpustack_model_vision)$('cfg-mv').value=cfg.gpustack_model_vision;
+      $('cfg-models').textContent='Aktiv — Text: '+(cfg.gpustack_model_text||'—')+' / Vision: '+(cfg.gpustack_model_vision||'—');
+      // Render model cards
+      if($('model-cards')){
+        $('model-cards').innerHTML=gpuM.map(m=>{
+          const h=getModelHint(m);
+          return '<div class="model-card"><span class="mc-type mc-'+h.type+'">'+esc(h.type)+'</span><strong style="flex:1">'+esc(m)+'</strong><span style="color:#888;font-size:.68rem">'+esc(h.hint)+'</span></div>';
+        }).join('');
+      }
+      // Also populate image model dropdown
+      if($('img-model')){
+        $('img-model').innerHTML='<option value="">Standard (aus Konfiguration)</option>'+
+          visionModels.map(m=>safeOpt(m,m+' [VISION]')).join('')+
+          textModels.map(m=>safeOpt(m,m+' [TEXT]')).join('');
+      }
     }else{
-      $('gd').className='dot off';$('gl').textContent='GPUStack: nicht erreichbar';
+      setDot('off','GPUStack: nicht erreichbar');
       $('gi').textContent='Verbindung fehlgeschlagen. URL/Key in .env prüfen. '+(d.message||'');
     }
   }catch(e){$('gd').className='dot off';$('gl').textContent='Verbindungsfehler';}}
@@ -851,11 +977,16 @@ function renderImgGrid(){
   empty.style.display='none';
   empty.textContent='Noch keine Bilder hochgeladen.';
   grid.innerHTML = shown.map(function(img){
-    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
-      +'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
-      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block"'
+    const isTiff=(img.media_type||'').includes('tiff');
+    const thumb=isTiff
+      ?'<div style="height:140px;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#888;font-size:.85rem;font-weight:600;cursor:pointer" onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+'\')">TIFF</div>'
+      :'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
+      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer"'
+      +' onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+' — '+(img.width||'?')+'x'+(img.height||'?')+'\')"'
       +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
-      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>'
+      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>';
+    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
+      +thumb
       +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
       +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
       +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
@@ -868,25 +999,22 @@ async function analyzeImages(){
   const sp_text = $('img-sp').value;
   const ids = uploadedImages.map(i=>i.id);
   sp('Bildanalyse läuft…', ids.length + ' Bild(er)');
+  const body={image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value};
   try{
-    const r = await fetch('/api/images/analyze',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value})
-    });
-    const data = await r.json();
-    if(data.error){$('img-results-empty').textContent='Fehler: '+data.error;hp();return}
-    renderImgResults(data.results||[]);
-    hp();
-    // Persistence hint
-    if((data.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
-    // Update analyzed flag
-    (data.results||[]).forEach(res=>{
-      const img = uploadedImages.find(i=>i.id===res.id);
-      if(img) img.analyzed = !!res.result;
-    });
-    renderImgGrid();
-  }catch(e){$('img-results-empty').textContent='Fehler: '+e;hp();}
+    await fetchSSE('/api/images/analyze/stream',body,
+      evt=>{spUp(evt.current,evt.total,esc(evt.filename||''));},
+      result=>{
+        renderImgResults(result.results||[]);
+        if((result.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
+        (result.results||[]).forEach(res=>{
+          const img=uploadedImages.find(i=>i.id===res.id);
+          if(img)img.analyzed=!!res.result;
+        });
+        renderImgGrid();
+      },
+      msg=>{$('img-results-empty').textContent='Fehler: '+msg;}
+    );
+  }catch(e){if(e.name!=='AbortError')$('img-results-empty').textContent='Fehler: '+e;}finally{hp();}
 }
 
 function renderImgResults(results){
@@ -1031,9 +1159,11 @@ async function runOCR(){
   const mod=$('img-model').value;
   const ids=uploadedImages.map(i=>i.id);
   sp('OCR läuft…',ids.length+' Bild(er)');
+  _abortCtrl=new AbortController();
   try{
     const r=await fetch('/api/images/ocr',{
       method:'POST',headers:{'Content-Type':'application/json'},
+      signal:_abortCtrl.signal,
       body:JSON.stringify({image_ids:ids,model:mod,system_prompt:$('ocr-sp').value||''})
     });
     const data=await r.json();
@@ -1101,12 +1231,412 @@ async function exportJSONLD(){
   }catch(e){alert('Fehler: '+e.message);}finally{hp();}
 }
 
+// === LIGHTBOX (Feature 8) ===
+let lbRotation=0,lbZoom=1;
+function openLightbox(imgSrc,info){
+  const lb=$('lightbox'),img=$('lightbox-img');
+  img.src=imgSrc;lbRotation=0;lbZoom=1;
+  img.style.transform='';
+  $('lightbox-info').textContent=info||'';
+  lb.classList.add('a');
+  document.addEventListener('keydown',lbKeyHandler);
+}
+function closeLightbox(){$('lightbox').classList.remove('a');document.removeEventListener('keydown',lbKeyHandler)}
+function lbKeyHandler(e){if(e.key==='Escape')closeLightbox();if(e.key==='+')zoomLightbox(1.2);if(e.key==='-')zoomLightbox(0.8)}
+function rotateLightbox(deg){lbRotation=(lbRotation+deg)%360;applyLbTransform()}
+function zoomLightbox(factor){lbZoom=Math.max(0.1,Math.min(10,lbZoom*factor));applyLbTransform()}
+function resetLightbox(){lbRotation=0;lbZoom=1;applyLbTransform()}
+function applyLbTransform(){$('lightbox-img').style.transform='rotate('+lbRotation+'deg) scale('+lbZoom+')'}
+
+// === AUTH (Feature 6) ===
+let authToken='';
+function showLogin(){$('login-overlay').classList.add('a');$('login-user').focus()}
+async function doLogin(){
+  const u=$('login-user').value.trim(),p=$('login-pw').value;
+  if(!u||!p){$('login-err').textContent='Bitte ausfüllen';$('login-err').style.display='block';return}
+  try{const r=await(await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p})})).json();
+    if(r.error){$('login-err').textContent=r.error;$('login-err').style.display='block';return}
+    authToken=r.token;$('login-overlay').classList.remove('a');
+    $('user-info').textContent='👤 '+esc(r.display_name||r.username);
+    $('login-btn').style.display='none';$('logout-btn').style.display='';
+  }catch(e){$('login-err').textContent=e.message;$('login-err').style.display='block';}
+}
+async function doLogout(){
+  try{await fetch('/api/auth/logout',{method:'POST',headers:{'Authorization':'Bearer '+authToken}})}catch(e){}
+  authToken='';$('user-info').textContent='';$('login-btn').style.display='';$('logout-btn').style.display='none';
+}
+async function checkAuth(){
+  try{const r=await(await fetch('/api/auth/me')).json();
+    if(r.username){$('user-info').textContent='👤 '+esc(r.display_name||r.username);$('login-btn').style.display='none';$('logout-btn').style.display='';}
+  }catch(e){}
+}
+
+// === DICTIONARY (Features 1-3, 10-11) ===
+let dictData=[];
+async function loadDictEntries(){
+  const t=$('dict-type-filter').value;
+  try{const r=await(await fetch('/api/dictionary'+(t?'?entity_type='+encodeURIComponent(t):''))).json();
+    dictData=r.entries||[];renderDictList();
+    $('dict-count').textContent='('+dictData.length+(t?' '+t:'')+')';
+  }catch(e){console.error(e)}
+}
+function renderDictList(){
+  if(!dictData.length){$('dict-list-empty').style.display='block';$('dict-list').innerHTML='';return}
+  $('dict-list-empty').style.display='none';
+  $('dict-list').innerHTML=dictData.map((e,i)=>{
+    const auth=e.gnd_id?'GND:'+esc(e.gnd_id):'';
+    const wk=e.wikidata_id?'WD:'+esc(e.wikidata_id):'';
+    const rids=e.record_ids?e.record_ids.slice(0,3).join(', ')+(e.record_ids.length>3?' +'+( e.record_ids.length-3):''):'';
+    return '<div class="dict-entry" onclick="showDictDetail(\''+esc(e.entry_id)+'\')">'
+      +'<span class="dict-type dict-type-'+(e.entity_type||'other')+'">'+esc(e.entity_type||'?')+'</span>'
+      +'<span class="dict-term">'+esc(e.term)+(e.preferred_name?' → <em>'+esc(e.preferred_name)+'</em>':'')+'</span>'
+      +(auth?'<span class="dict-auth">'+auth+'</span>':'')
+      +(wk?'<span class="dict-auth">'+wk+'</span>':'')
+      +(rids?'<span class="dict-rids">'+esc(rids)+'</span>':'')
+      +'</div>';
+  }).join('');
+}
+async function loadDictTypes(){
+  try{const r=await(await fetch('/api/dictionary/types')).json();
+    $('dict-type-counts').innerHTML=(r.types||[]).map(t=>'<span class="dict-type dict-type-'+esc(t.type)+'">'+esc(t.label)+': '+t.count+'</span> ').join('');
+  }catch(e){}
+}
+async function addDictEntry(){
+  const term=$('dict-new-term').value.trim();if(!term){alert('Begriff eingeben');return}
+  const body={term,entity_type:$('dict-new-type').value,preferred_name:$('dict-new-preferred').value.trim()};
+  try{const r=await(await fetch('/api/dictionary/entry',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    if(r.error){alert(r.error);return}$('dict-new-term').value='';loadDictEntries();loadDictTypes();updWS();
+  }catch(e){alert(e.message)}
+}
+async function buildDict(){
+  const ds=$('dict-build-ds').value;if(!ds){alert('Datensatz wählen');return}
+  const cols=[...document.querySelectorAll('#dict-build-cols .ci input:checked')].map(c=>c.value);
+  if(!cols.length){alert('Spalten wählen');return}
+  sp('Dictionary aufbauen …','');
+  try{const r=await(await fetch('/api/dictionary/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:ds,columns:cols,entity_type:$('dict-build-type').value})})).json();
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();alert(r.added+' neue Einträge hinzugefügt.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function nerToDict(){
+  sp('NER → Wörterbuch …','');
+  try{const r=await(await fetch('/api/dictionary/from-ner',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status:'accepted'})})).json();
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();alert(r.added+' Einträge übernommen.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function ocrToDict(){
+  sp('OCR → NER (Review-Queue) …','');
+  try{const r=await(await fetch('/api/dictionary/from-ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('cfg-mt').value||''})})).json();
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();loadPipelineStatus();
+    alert('OCR: '+r.ocr_texts_processed+' Texte → '+r.entities_found+' Entities in Review-Queue.'
+      +(r.skipped_pending?' ('+r.skipped_pending+' ungeprüft übersprungen)':'')
+      +'\nNächster Schritt: Entities im NER-Tab prüfen, dann "NER → Wörterbuch".');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function showDictDetail(entryId){
+  const entry=dictData.find(e=>e.entry_id===entryId);if(!entry)return;
+  $('dict-detail').style.display='block';
+  $('dict-detail-content').innerHTML=
+    '<div style="font-size:.78rem">'
+    +'<strong>'+esc(entry.term)+'</strong> <span class="dict-type dict-type-'+(entry.entity_type||'other')+'">'+esc(entry.entity_type||'?')+'</span>'
+    +'<br>ID: <code>'+esc(entry.entry_id)+'</code>'
+    +(entry.preferred_name?'<br>Vorzugsbenennung: <em>'+esc(entry.preferred_name)+'</em>':'')
+    +(entry.alternatives&&entry.alternatives.length?'<br>Schreibweisen: '+entry.alternatives.map(a=>esc(a)).join(', '):'')
+    +(entry.record_ids&&entry.record_ids.length?'<br>Records ('+entry.record_ids.length+'): '+entry.record_ids.slice(0,10).map(r=>esc(r)).join(', ')+(entry.record_ids.length>10?' …':''):'')
+    +'<br>Quelle: '+esc(entry.source||'—')
+    +'<hr style="border:none;border-top:1px solid var(--brd);margin:.4rem 0">'
+    +'<strong>Normdaten:</strong>'
+    +(entry.gnd_id?'<br>GND: <a href="https://d-nb.info/gnd/'+esc(entry.gnd_id)+'" target="_blank">'+esc(entry.gnd_id)+'</a> '+esc(entry.gnd_preferred||''):'<br>GND: —')
+    +(entry.wikidata_id?'<br>Wikidata: <a href="https://www.wikidata.org/wiki/'+esc(entry.wikidata_id)+'" target="_blank">'+esc(entry.wikidata_id)+'</a>':'')
+    +(entry.geonames_id?'<br>GeoNames: '+esc(entry.geonames_id):'')
+    +'<hr style="border:none;border-top:1px solid var(--brd);margin:.4rem 0">'
+    +'<div style="display:flex;gap:.3rem;flex-wrap:wrap">'
+    +'<button class="btn sm" onclick="enrichDictGND(\''+esc(entryId)+'\',\''+esc(entry.term)+'\')">🔍 GND suchen</button>'
+    +'<button class="btn sm" onclick="enrichDictWikidata(\''+esc(entryId)+'\',\''+esc(entry.term)+'\')">🌐 Wikidata suchen</button>'
+    +'<button class="btn sm s" style="background:var(--crit)" onclick="deleteDictEntry(\''+esc(entryId)+'\')">🗑 Löschen</button>'
+    +'</div><div id="dict-enrich-results" style="margin-top:.4rem;font-size:.73rem"></div></div>';
+}
+async function enrichDictGND(entryId,term){
+  try{const r=await(await fetch('/api/gnd/search?term='+encodeURIComponent(term))).json();
+    if(!r.results||!r.results.length){$('dict-enrich-results').innerHTML='<em>Keine GND-Treffer.</em>';return}
+    $('dict-enrich-results').innerHTML='<strong>GND-Treffer:</strong><br>'+r.results.slice(0,5).map(g=>
+      '<div style="padding:.2rem 0;cursor:pointer" onclick="applyGNDToDict(\''+esc(entryId)+'\',\''+esc(g.gnd_id)+'\',\''+esc(g.preferred_name||'')+'\',\''+esc(g.type||'')+'\',\''+esc(g.uri||'')+'\')">'
+      +'<span class="gnd-match">'+esc(g.gnd_id)+'</span> '+esc(g.preferred_name||g.label||'')+' <span style="color:#888;font-size:.68rem">('+esc(g.type||'')+')</span></div>'
+    ).join('');
+  }catch(e){$('dict-enrich-results').innerHTML='Fehler: '+esc(e.message)}
+}
+async function applyGNDToDict(entryId,gndId,preferred,gndType,uri){
+  try{await fetch('/api/dictionary/enrich/'+entryId,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({gnd_id:gndId,gnd_preferred:preferred,gnd_type:gndType,gnd_uri:uri,source:'api'})});
+    loadDictEntries();showDictDetail(entryId);
+  }catch(e){alert(e.message)}
+}
+async function enrichDictWikidata(entryId,term){
+  try{const r=await(await fetch('/api/wikidata/search?term='+encodeURIComponent(term))).json();
+    if(!r.results||!r.results.length){$('dict-enrich-results').innerHTML='<em>Keine Wikidata-Treffer.</em>';return}
+    $('dict-enrich-results').innerHTML='<strong>Wikidata-Treffer:</strong><br>'+r.results.slice(0,5).map(w=>
+      '<div style="padding:.2rem 0;cursor:pointer" onclick="applyWDToDict(\''+esc(entryId)+'\',\''+esc(w.id||w.wikidata_id||'')+'\')">'
+      +esc(w.id||w.wikidata_id||'')+' — '+esc(w.label||w.name||'')+'</div>'
+    ).join('');
+  }catch(e){$('dict-enrich-results').innerHTML='Fehler: '+esc(e.message)}
+}
+async function applyWDToDict(entryId,wdId){
+  try{await fetch('/api/dictionary/enrich/'+entryId,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({wikidata_id:wdId,source:'api'})});
+    loadDictEntries();showDictDetail(entryId);
+  }catch(e){alert(e.message)}
+}
+async function deleteDictEntry(entryId){
+  if(!confirm('Eintrag wirklich löschen?'))return;
+  try{await fetch('/api/dictionary/entry/'+entryId,{method:'DELETE'});
+    $('dict-detail').style.display='none';loadDictEntries();loadDictTypes();updWS();
+  }catch(e){alert(e.message)}
+}
+function exportDict(entityType){
+  window.open('/api/dictionary/export'+(entityType?'?entity_type='+encodeURIComponent(entityType):''),'_blank');
+}
+function exportDictTyped(){window.open('/api/dictionary/export-typed','_blank')}
+function exportDictTarget(){window.open('/api/dictionary/export-target','_blank')}
+
+// === PIPELINE STATUS ===
+async function loadPipelineStatus(){
+  try{
+    const r=await(await fetch('/api/pipeline/status')).json();
+    const el=$('pipeline-status');if(!el)return;
+    const s=r;
+    function bar(label,done,total){
+      const pct=total?Math.round(done/total*100):0;
+      return '<span class="wsi" title="'+label+': '+done+'/'+total+'">'
+        +label+': <strong>'+done+'/'+total+'</strong>'
+        +'<span style="display:inline-block;width:40px;height:6px;background:#e0e0e0;border-radius:3px;vertical-align:middle;margin-left:.3rem">'
+        +'<span style="display:block;height:100%;width:'+pct+'%;background:var(--pri);border-radius:3px"></span></span></span>';
+    }
+    el.innerHTML=bar('OCR',s.phase1_ocr.accepted,s.phase1_ocr.total)
+      +bar('NER',s.phase2_ner.accepted,s.phase2_ner.total)
+      +bar('Authority',s.phase3_authority.accepted,s.phase3_authority.total)
+      +'<span class="wsi">Dict: <strong>'+s.dictionary.enriched+'/'+s.dictionary.total+' angereichert</strong></span>';
+  }catch(e){console.error('[pipeline-status]',e)}
+}
+
+// === OCR REVIEW GATE ===
+async function ocrSpotCheck(){
+  sp('Stichprobe laden …','');
+  try{
+    const r=await(await fetch('/api/images/review/sample',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sample_size:10,strategy:'low_confidence'})})).json();
+    alert('Stichprobe: '+r.sample_size+' von '+r.total_pending+' ausstehend. Prüfen Sie die Ergebnisse im Bilder-Tab.');
+    loadImages();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function ocrAutoAccept(){
+  const conf=parseFloat(prompt('Minimale Konfidenz (0.0-1.0):','0.85'));
+  if(isNaN(conf))return;
+  sp('Auto-Accept …','');
+  try{
+    const r=await(await fetch('/api/images/review/auto-accept',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({min_confidence:conf})})).json();
+    alert(r.auto_accepted+' akzeptiert, '+r.remaining_pending+' noch ausstehend.');
+    loadImages();loadPipelineStatus();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+
+// === NER REVIEW GATE ===
+async function nerSpotCheck(){
+  sp('NER-Stichprobe …','');
+  try{
+    const r=await(await fetch('/api/ner/review/sample',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sample_size:20,strategy:'low_confidence'})})).json();
+    alert('Stichprobe: '+r.sample_size+' von '+r.total_pending+' ausstehend.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function nerAutoAccept(){
+  const conf=parseFloat(prompt('Minimale Konfidenz (0.0-1.0):','0.8'));
+  if(isNaN(conf))return;
+  sp('NER Auto-Accept …','');
+  try{
+    const r=await(await fetch('/api/ner/review/auto-accept',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({min_confidence:conf})})).json();
+    alert(r.auto_accepted+' akzeptiert, '+r.remaining_pending+' noch ausstehend.');
+    loadPipelineStatus();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+
+// === AUTHORITY REVIEW ===
+async function loadAuthorityCandidates(){
+  try{
+    const r=await(await fetch('/api/authority/candidates?status=pending')).json();
+    const el=$('authority-candidates');if(!el)return;
+    const cands=r.candidates||[];
+    if(!cands.length){el.innerHTML='<em>Keine ausstehenden Kandidaten.</em>';return}
+    el.innerHTML=cands.slice(0,100).map(c=>
+      '<div style="padding:.3rem;border-bottom:1px solid var(--brd);font-size:.75rem;display:flex;align-items:center;gap:.3rem">'
+      +'<span class="dict-type dict-type-'+(c.authority_type||'other')+'">'+esc(c.source)+'</span>'
+      +'<span>'+esc(c.preferred_name)+' ('+esc(c.authority_id)+')</span>'
+      +'<span style="color:#888">Score: '+(c.score*100).toFixed(0)+'%</span>'
+      +'<button class="btn sm" onclick="reviewAuthCandidate(\''+esc(c.candidate_id)+'\',\'accepted\')">✓</button>'
+      +'<button class="btn sm s" onclick="reviewAuthCandidate(\''+esc(c.candidate_id)+'\',\'rejected\')">✗</button>'
+      +'</div>'
+    ).join('')+'<div style="margin-top:.3rem;font-size:.72rem;color:#888">'+r.total+' Kandidaten gesamt</div>';
+  }catch(e){console.error(e)}
+}
+async function reviewAuthCandidate(candidateId,status){
+  try{await fetch('/api/authority/candidates/'+candidateId+'/review',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status})});loadAuthorityCandidates();loadPipelineStatus();
+  }catch(e){alert(e.message)}
+}
+async function commitAuthority(){
+  sp('Normdaten übernehmen …','');
+  try{
+    const r=await(await fetch('/api/authority/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    alert(r.committed+' Normdaten in Wörterbuch übernommen.');
+    loadDictEntries();loadDictTypes();loadAuthorityCandidates();loadPipelineStatus();updWS();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+
+// === MDS VALIDATION (Feature 4) ===
+async function runMdsValidation(){
+  const ds=$('mds-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('MDS validieren …','');
+  _abortCtrl=new AbortController();
+  try{const r=await(await fetch('/api/mds/validate',{method:'POST',headers:{'Content-Type':'application/json'},
+    signal:_abortCtrl.signal,
+    body:JSON.stringify({dataset:ds,include_custom:$('mds-custom').checked})})).json();
+    if(r.error){alert(r.error);return}renderMdsResults(r);
+  }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp()}
+}
+function renderMdsResults(r){
+  $('mds-empty').style.display='none';$('mds-results').style.display='block';
+  $('mds-schema').textContent=r.schema_name||'MDS 1.1';
+  $('mds-summary').innerHTML=
+    '<div class="mt"><div class="v">'+r.required_mapped+'/'+r.required_total+'</div><div class="l">Pflichtfelder zugeordnet</div></div>'
+    +'<div class="mt"><div class="v">'+r.required_filled+'/'+r.required_total+'</div><div class="l">Pflichtfelder befüllt</div></div>'
+    +'<div class="mt su"><div class="v">'+(r.completeness_score*100).toFixed(0)+'%</div><div class="l">Vollständigkeit</div></div>';
+  $('mds-body').innerHTML=(r.fields||[]).map(f=>{
+    const st=f.mapped?(f.fill_rate>0.5?'mds-ok':'mds-partial'):'mds-missing';
+    return '<tr><td><span class="mds-status '+st+'"></span>'+esc(f.mds_name)+'</td>'
+      +'<td style="font-family:monospace;font-size:.68rem">'+esc(f.goobi_type)+'</td>'
+      +'<td><span class="bg '+(f.requirement==='required'?'no':'pl')+'">'+esc(f.requirement)+'</span></td>'
+      +'<td>'+(f.mapped?'✓':'✗')+'</td>'
+      +'<td style="font-size:.7rem">'+esc(f.csv_column||'—')+'</td>'
+      +'<td><div class="mds-bar"><div class="mds-fill" style="width:'+(f.fill_rate*100)+'%"></div></div> '+(f.fill_rate*100).toFixed(0)+'%</td></tr>';
+  }).join('');
+}
+
+// === TASKS (Feature 5) ===
+let tasksFilter='all';
+async function generateTasks(){
+  const ds=$('mds-ds').value;if(!ds){alert('Datensatz wählen');return}
+  sp('Tasks generieren …','');
+  try{const r=await(await fetch('/api/tasks/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataset:ds})})).json();
+    if(r.error){alert(r.error);return}renderTasks(r.tasks||[]);alert(r.added+' neue Tasks erzeugt.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function loadTasks(){
+  try{const r=await(await fetch('/api/tasks')).json();renderTasks(r.tasks||[])}catch(e){}
+}
+function renderTasks(tasks){
+  const flt=tasksFilter==='all'?tasks:tasks.filter(t=>t.status===tasksFilter);
+  $('tasks-count').textContent='('+flt.length+'/'+tasks.length+')';
+  $('tasks-list').innerHTML=flt.length?flt.map(t=>
+    '<div class="task-item">'
+    +'<span class="task-prio task-prio-'+t.priority+'">P'+t.priority+'</span>'
+    +'<span class="task-status task-'+t.status+'">'+esc(t.status)+'</span>'
+    +'<div style="flex:1"><strong>'+esc(t.title)+'</strong><br><span style="font-size:.7rem;color:#666">'+esc(t.description||'')+'</span>'
+    +(t.suggestion?'<br><span style="font-size:.68rem;color:var(--ok)">💡 '+esc(t.suggestion)+'</span>':'')
+    +'</div>'
+    +'<div style="display:flex;gap:.2rem;flex-shrink:0">'
+    +(t.status==='open'?'<button class="btn sm" onclick="updateTask(\''+esc(t.task_id)+'\',\'in_progress\')">▶</button>':'')
+    +(t.status==='in_progress'?'<button class="btn sm" onclick="updateTask(\''+esc(t.task_id)+'\',\'done\')">✓</button>':'')
+    +(t.status!=='done'?'<button class="btn sm s" onclick="updateTask(\''+esc(t.task_id)+'\',\'skipped\')">⏭</button>':'')
+    +'</div></div>'
+  ).join(''):'<div class="em" style="font-size:.75rem">Keine Tasks vorhanden.</div>';
+}
+function filterTasks(f,btn){
+  tasksFilter=f;
+  document.querySelectorAll('#tasks-filter-bar .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn)btn.classList.add('a');
+  loadTasks();
+}
+async function updateTask(taskId,status){
+  try{await fetch('/api/tasks/'+taskId+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});loadTasks()}catch(e){alert(e.message)}
+}
+async function clearDoneTasks(){
+  try{await fetch('/api/tasks/clear-done',{method:'POST'});loadTasks()}catch(e){alert(e.message)}
+}
+async function addCustomMdsField(){
+  const name=$('mds-cf-name').value.trim(),goobi=$('mds-cf-goobi').value.trim();
+  if(!name||!goobi){alert('Feldname und Goobi-Typ erforderlich');return}
+  try{const r=await(await fetch('/api/mds/custom-field',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({mds_name:name,goobi_type:goobi,requirement:$('mds-cf-req').value})})).json();
+    if(r.error){alert(r.error);return}$('mds-cf-name').value='';$('mds-cf-goobi').value='';loadCustomMdsFields();
+  }catch(e){alert(e.message)}
+}
+async function loadCustomMdsFields(){
+  try{const r=await(await fetch('/api/mds/fields')).json();
+    const custom=r.custom||[];
+    $('mds-custom-list').innerHTML=custom.length?custom.map((f,i)=>'<div style="display:flex;gap:.3rem;align-items:center;padding:.2rem 0"><span>'+esc(f.mds_name)+' → '+esc(f.goobi_type)+'</span><span class="bg '+(f.requirement==='required'?'no':'pl')+'">'+esc(f.requirement)+'</span><button class="btn sm s" onclick="delCustomMdsField('+i+')">✗</button></div>').join(''):'<em style="color:#888">Keine benutzerdefinierten Felder.</em>';
+  }catch(e){}
+}
+async function delCustomMdsField(idx){
+  try{await fetch('/api/mds/custom-field/'+idx,{method:'DELETE'});loadCustomMdsFields()}catch(e){alert(e.message)}
+}
+
 // === CATALOG ===
 function renderCatalog(){$('cat-body').innerHTML=CATALOG.map(c=>'<tr><td style="font-size:.62rem">'+esc(c.id)+'</td><td style="font-weight:600">'+esc(c.name)+'</td><td style="font-size:.68rem">'+esc(c.module)+'</td><td><span class="bg '+(c.status==='done'?'ac':c.status==='partial'?'pl':'no')+'">'+esc(c.status)+'</span></td><td style="font-size:.68rem">'+esc(c.tests||'—')+'</td><td style="font-size:.7rem;color:#666">'+esc(c.note||'')+'</td></tr>').join('')}
 
 // === PROGRESS ===
-function sp(t,x){$('pt').textContent=t;$('pp').textContent=x||'';$('po').classList.add('a')}
-function hp(){$('po').classList.remove('a')}
+function sp(t,x){
+  _opCancelled=false;
+  $('pt').textContent=t;$('pp').textContent=x||'';$('pct').textContent='';
+  const pf=$('pf');pf.style.width='0';pf.classList.add('ind');
+  $('po').classList.add('a');
+}
+function spUp(current,total,detail){
+  const pf=$('pf');pf.classList.remove('ind');
+  const pct=total>0?Math.round((current/total)*100):0;
+  pf.style.width=pct+'%';
+  $('pct').textContent=current+' / '+total+' ('+pct+'%)';
+  if(detail)$('pp').textContent=detail;
+}
+function hp(){$('po').classList.remove('a');_abortCtrl=null;}
+function cancelOp(){
+  _opCancelled=true;
+  if(_abortCtrl){_abortCtrl.abort();_abortCtrl=null;}
+  hp();
+}
+// ESC handler
+document.addEventListener('keydown',function(e){
+  if(e.key==='Escape'){
+    if($('lightbox').classList.contains('a')){closeLightbox();return;}
+    if($('po').classList.contains('a')){cancelOp();return;}
+  }
+});
+
+// === SSE READER ===
+async function fetchSSE(url,body,onProgress,onDone,onError){
+  _abortCtrl=new AbortController();
+  const resp=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body),signal:_abortCtrl.signal});
+  if(!resp.ok){const e=await resp.json().catch(()=>({error:resp.statusText}));throw Error(e.error||resp.statusText);}
+  const reader=resp.body.getReader();
+  const decoder=new TextDecoder();
+  let buf='';
+  while(true){
+    const{done,value}=await reader.read();
+    if(done)break;
+    buf+=decoder.decode(value,{stream:true});
+    const lines=buf.split('\n');
+    buf=lines.pop()||'';
+    for(const line of lines){
+      if(!line.startsWith('data: '))continue;
+      try{
+        const evt=JSON.parse(line.slice(6));
+        if(evt.type==='progress'&&onProgress)onProgress(evt);
+        else if(evt.type==='done'&&onDone)onDone(evt.result);
+        else if(evt.type==='error'&&onError)onError(evt.message);
+      }catch(parseErr){console.warn('SSE parse error',parseErr);}
+    }
+  }
+}
 
 // === INIT ===
 (function(){
@@ -1115,4 +1645,25 @@ function hp(){$('po').classList.remove('a')}
   try{const t=$('cfg-tasks');if(t)t.innerHTML=Object.values(TASKS).map(x=>'<div class="ft"><span class="bg ac">'+esc(x.type||'')+'</span><div><strong>'+esc(x.name)+'</strong><br><span class="d">'+esc(x.description||'')+'</span></div></div>').join('');}catch(e){console.error('[init-tasks]',e)}
   try{renderCatalog();}catch(e){console.error('[init-catalog]',e)}
   try{chkGPU();updWS();loadImages();loadTermsDict();}catch(e){console.error('[init-async]',e)}
+function showInitError(label){const b=document.createElement('div');b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fee2e2;color:#991b1b;padding:.4rem 1rem;font-size:.78rem;border-top:2px solid #f87171';b.textContent='⚠ UI-Initialisierung fehlgeschlagen'+(label?': '+label:'')+' – bitte Konsole prüfen';document.body.appendChild(b)}
+(function(){
+  const failed=[];
+  [initNav,initTabs,initUpload,initPanels].forEach(fn=>{try{fn()}catch(err){console.error('[init]',fn.name,err);failed.push(fn.name)}});
+  try{loadPreset()}catch(err){console.error('[init] loadPreset',err);failed.push('loadPreset')}
+  try{applyImgPreset()}catch(err){console.error('[init] applyImgPreset',err);failed.push('applyImgPreset')}
+  try{applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr')}catch(err){console.error('[init] applyActionPreset',err);failed.push('applyActionPreset')}
+  try{refreshReviewStats()}catch(err){console.error('[init] refreshReviewStats',err);failed.push('refreshReviewStats')}
+  try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('')}catch(err){console.error('[init] cfg-tasks',err);failed.push('cfg-tasks')}
+  try{renderCatalog()}catch(err){console.error('[init] renderCatalog',err);failed.push('renderCatalog')}
+  try{chkGPU()}catch(err){console.error('[init] chkGPU',err);failed.push('chkGPU')}
+  try{updWS()}catch(err){console.error('[init] updWS',err);failed.push('updWS')}
+  try{loadImages()}catch(err){console.error('[init] loadImages',err);failed.push('loadImages')}
+  try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err);failed.push('loadTermsDict')}
+  try{loadGPUConfig()}catch(err){console.error('[init] loadGPUConfig',err);failed.push('loadGPUConfig')}
+  try{checkAuth()}catch(err){console.error('[init] checkAuth',err);failed.push('checkAuth')}
+  try{loadDictEntries();loadDictTypes()}catch(err){console.error('[init] dict',err);failed.push('dict')}
+  try{loadPipelineStatus()}catch(err){console.error('[init] pipeline',err);failed.push('pipeline')}
+  try{loadTasks()}catch(err){console.error('[init] tasks',err);failed.push('tasks')}
+  try{loadCustomMdsFields()}catch(err){console.error('[init] mdsFields',err);failed.push('mdsFields')}
+  if(failed.length)showInitError(failed.join(', '));
 })();

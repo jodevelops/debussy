@@ -35,6 +35,7 @@ class KWBConfig:
     goobi_api_url: str = ""
     goobi_api_key: str = ""
     goobi_project: str = ""
+    geonames_username: str = ""
     batch_size: int = 50
     batch_delay_seconds: float = 0.1
     max_retries: int = 3
@@ -50,6 +51,53 @@ class KWBConfig:
             default_model=self.gpustack_model_text,
             timeout_seconds=self.timeout_seconds, max_retries=self.max_retries,
         )
+
+    def save_to_dotenv(self, path=None) -> None:
+        """Write/update GPUStack vars in a .env file.
+
+        Only the four GPUStack fields are written; all other lines are preserved.
+        If *path* is None the same search order as ``_load_dotenv`` is used;
+        if no .env exists at all a new one is created in the current directory.
+        """
+        if path is None:
+            for candidate in [Path.cwd(), Path.cwd().parent,
+                               Path(__file__).parent.parent.parent.parent]:
+                p = candidate / ".env"
+                if p.exists():
+                    path = p
+                    break
+            if path is None:
+                path = Path.cwd() / ".env"
+
+        path = Path(path)
+        mapping = {
+            "KWB_GPUSTACK_URL": self.gpustack_url,
+            "KWB_GPUSTACK_KEY": self.gpustack_key,
+            "KWB_GPUSTACK_MODEL_TEXT": self.gpustack_model_text,
+            "KWB_GPUSTACK_MODEL_VISION": self.gpustack_model_vision,
+        }
+
+        existing_lines: list[str] = []
+        if path.exists():
+            existing_lines = path.read_text("utf-8").splitlines()
+
+        updated_keys: set[str] = set()
+        new_lines: list[str] = []
+        for line in existing_lines:
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#") and "=" in stripped:
+                key = stripped.split("=", 1)[0].strip()
+                if key in mapping:
+                    new_lines.append(f"{key}={mapping[key]}")
+                    updated_keys.add(key)
+                    continue
+            new_lines.append(line)
+
+        for key, value in mapping.items():
+            if key not in updated_keys:
+                new_lines.append(f"{key}={value}")
+
+        path.write_text("\n".join(new_lines) + "\n", "utf-8")
 
     def display_safe(self):
         from kwb.core.utils import mask_secret
@@ -71,6 +119,7 @@ def load_config(dotenv_path=None):
         gpustack_key=_get("KWB_GPUSTACK_KEY", dotenv),
         gpustack_model_text=_get("KWB_GPUSTACK_MODEL_TEXT", dotenv),
         gpustack_model_vision=_get("KWB_GPUSTACK_MODEL_VISION", dotenv),
+        geonames_username=_get("KWB_GEONAMES_USERNAME", dotenv),
         goobi_api_url=_get("KWB_GOOBI_API_URL", dotenv),
         goobi_api_key=_get("KWB_GOOBI_API_KEY", dotenv),
         goobi_project=_get("KWB_GOOBI_PROJECT", dotenv),

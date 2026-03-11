@@ -314,6 +314,7 @@ def ner_hybrid(
     system_prompt: str = "",
     use_spacy: bool = True,
     use_llm: bool = True,
+    entity_types: list[str] | None = None,
 ) -> NERResult:
     """
     Run hybrid NER on selected columns of a DataFrame.
@@ -370,6 +371,12 @@ def ner_hybrid(
             merged[k] = llm_ent
 
     result.entities = list(merged.values())
+
+    # Feature 9: Filter by requested entity types
+    if entity_types:
+        allowed = set(entity_types)
+        result.entities = [e for e in result.entities if e.entity_type.value in allowed]
+
     return result
 
 

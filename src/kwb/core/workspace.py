@@ -16,6 +16,7 @@ DESIGN NOTES:
 from __future__ import annotations
 
 import json
+import uuid as _uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -92,42 +93,108 @@ class FieldMapping:
 # Normdaten-Wörterbuch
 # ---------------------------------------------------------------------------
 
+class DictionaryType(str, Enum):
+    """Types for typed dictionaries."""
+    PLACE = "place"
+    PERSON = "person"
+    INSTITUTION = "institution"
+    CONCEPT = "concept"
+    EVENT = "event"
+    WORK = "work"
+    OTHER = "other"
+
+    @property
+    def label_de(self) -> str:
+        return {
+            "place": "Orte", "person": "Personen",
+            "institution": "Institutionen", "concept": "Konzepte",
+            "event": "Ereignisse", "work": "Werke", "other": "Sonstige",
+        }[self.value]
+
+    @staticmethod
+    def from_entity_type(entity_type: str) -> "DictionaryType":
+        """Map NER entity types to dictionary types."""
+        mapping = {
+            "PER": DictionaryType.PERSON,
+            "ORG": DictionaryType.INSTITUTION,
+            "LOC": DictionaryType.PLACE,
+            "GPE": DictionaryType.PLACE,
+            "FAC": DictionaryType.PLACE,
+            "EVT": DictionaryType.EVENT,
+            "WRK": DictionaryType.WORK,
+            "CON": DictionaryType.CONCEPT,
+            "ETH": DictionaryType.CONCEPT,
+            "DAT": DictionaryType.OTHER,
+        }
+        return mapping.get(entity_type, DictionaryType.OTHER)
+
+
 @dataclass
 class DictionaryEntry:
-    """A single normed term → GND authority mapping."""
+    """A single normed term with authority mapping, record provenance, and type."""
     term: str                          # Original/preferred display term
+    entry_id: str = ""                 # Unique ID (auto-generated UUID)
+    entity_type: str = ""              # DictionaryType value: place/person/institution/…
+    preferred_name: str = ""           # Vorzugsbenennung
+    record_ids: list[str] = field(default_factory=list)  # Records where this term appears
     gnd_id: str = ""                   # e.g. "4074335-4"
     gnd_preferred: str = ""            # GND preferred name
     gnd_type: str = ""                 # "Geographic", "Person", "SubjectHeading", …
     gnd_uri: str = ""                  # full URI
     wikidata_id: str = ""              # "Q64"
+    geonames_id: str = ""             # GeoNames ID
     alternatives: list[str] = field(default_factory=list)
     confidence: float = 1.0
-    source: str = "manual"            # "manual" | "api" | "llm"
+    source: str = "manual"            # "manual" | "api" | "llm" | "ner" | "ocr"
     note: str = ""
+    term_normalized: str = ""          # NFC + whitespace-collapsed form
+    term_source: str = ""              # "ocr" | "metadata" | "manual"
+
+    def __post_init__(self):
+        if not self.entry_id:
+            self.entry_id = str(_uuid.uuid4())[:8]
 
     @property
     def has_authority(self) -> bool:
-        return bool(self.gnd_id or self.wikidata_id)
+        return bool(self.gnd_id or self.wikidata_id or self.geonames_id)
+
+    def add_record_id(self, record_id: str) -> None:
+        """Add a record_id if not already present."""
+        if record_id and record_id not in self.record_ids:
+            self.record_ids.append(record_id)
+
+    def merge_record_ids(self, other_ids: list[str]) -> None:
+        """Merge record IDs from another source."""
+        for rid in other_ids:
+            self.add_record_id(rid)
 
     def to_dict(self) -> dict:
         return {
             "term": self.term,
+            "entry_id": self.entry_id,
+            "entity_type": self.entity_type,
+            "preferred_name": self.preferred_name,
+            "record_ids": self.record_ids,
             "gnd_id": self.gnd_id,
             "gnd_preferred": self.gnd_preferred,
             "gnd_type": self.gnd_type,
             "gnd_uri": self.gnd_uri,
             "wikidata_id": self.wikidata_id,
+            "geonames_id": self.geonames_id,
             "alternatives": self.alternatives,
             "confidence": self.confidence,
             "source": self.source,
             "note": self.note,
+            "term_normalized": self.term_normalized,
+            "term_source": self.term_source,
         }
 
     @staticmethod
     def from_dict(d: dict) -> "DictionaryEntry":
-        e = DictionaryEntry(term=d["term"])
+        e = DictionaryEntry(term=d.get("term", ""))
         for k, v in d.items():
+            if k == "term":
+                continue
             if hasattr(e, k):
                 setattr(e, k, v)
         return e
@@ -148,6 +215,70 @@ class ImageReviewStatus(str, Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
+
+
+@dataclass
+class AuthorityCandidate:
+    """An authority-match candidate pending human review."""
+    entry_id: str                       # Target DictionaryEntry.entry_id
+    candidate_id: str = ""              # Auto UUID
+    source: str = ""                    # "gnd" | "wikidata" | "geonames"
+    authority_id: str = ""              # GND ID, QID, or GeoNames ID
+    preferred_name: str = ""
+    authority_type: str = ""            # "Person", "PlaceOrGeographicName", etc.
+    uri: str = ""
+    score: float = 0.0
+    extra: dict = field(default_factory=dict)
+    status: ReviewStatus = ReviewStatus.PENDING
+    reviewer_note: str = ""
+    reviewed_at: str = ""
+
+    def __post_init__(self):
+        if not self.candidate_id:
+            self.candidate_id = str(_uuid.uuid4())[:8]
+
+    def accept(self, note: str = "") -> None:
+        self.status = ReviewStatus.ACCEPTED
+        self.reviewer_note = note
+        self.reviewed_at = datetime.utcnow().isoformat()
+
+    def reject(self, note: str = "") -> None:
+        self.status = ReviewStatus.REJECTED
+        self.reviewer_note = note
+        self.reviewed_at = datetime.utcnow().isoformat()
+
+    def to_dict(self) -> dict:
+        return {
+            "entry_id": self.entry_id,
+            "candidate_id": self.candidate_id,
+            "source": self.source,
+            "authority_id": self.authority_id,
+            "preferred_name": self.preferred_name,
+            "authority_type": self.authority_type,
+            "uri": self.uri,
+            "score": self.score,
+            "extra": self.extra,
+            "status": self.status.value,
+            "reviewer_note": self.reviewer_note,
+            "reviewed_at": self.reviewed_at,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "AuthorityCandidate":
+        return AuthorityCandidate(
+            entry_id=d.get("entry_id", ""),
+            candidate_id=d.get("candidate_id", ""),
+            source=d.get("source", ""),
+            authority_id=d.get("authority_id", ""),
+            preferred_name=d.get("preferred_name", ""),
+            authority_type=d.get("authority_type", ""),
+            uri=d.get("uri", ""),
+            score=float(d.get("score", 0)),
+            extra=d.get("extra", {}),
+            status=ReviewStatus(d.get("status", "pending")),
+            reviewer_note=d.get("reviewer_note", ""),
+            reviewed_at=d.get("reviewed_at", ""),
+        )
 
 
 @dataclass
@@ -407,6 +538,8 @@ class Workspace:
         self._dictionary: list[DictionaryEntry] = []
         self.entity_reviews: list[EntityReview] = []
         self.dates: list[CuratedDate] = []
+        self.tasks: list[dict] = []  # CurationTask dicts
+        self.custom_mds_fields: list[dict] = []  # Custom MDS field definitions
         self.notes: str = ""
         self.model_text: str = ""
         self.model_vision: str = ""
@@ -414,6 +547,7 @@ class Workspace:
         self.source_files: list[str] = []
         self.ai_runs: list[dict] = []
         self.image_analyses: list[ImageAnalysisResult] = []
+        self.authority_candidates: list[AuthorityCandidate] = []
 
     @property
     def field_mapping(self):
@@ -497,6 +631,10 @@ class Workspace:
     def add_entry(self, entry: DictionaryEntry) -> None:
         for i, e in enumerate(self._dictionary):
             if e.term.lower() == entry.term.lower():
+                # Merge record_ids from old entry
+                entry.merge_record_ids(e.record_ids)
+                if not entry.entry_id:
+                    entry.entry_id = e.entry_id
                 self._dictionary[i] = entry
                 self._touch()
                 return
@@ -504,19 +642,44 @@ class Workspace:
         self._touch()
 
     def add_to_dictionary(self, entries: list[dict]) -> int:
-        """Add dictionary entries from dicts. Skips duplicates by term."""
-        existing = {e.term.lower() for e in self._dictionary}
+        """Add dictionary entries from dicts. Merges record_ids on duplicates."""
+        lookup = {e.term.lower(): i for i, e in enumerate(self._dictionary)}
         added = 0
         for d in entries:
             term = d.get("term", "")
-            if term.lower() not in existing:
-                self._dictionary.append(DictionaryEntry(
+            if not term:
+                continue
+            record_id = d.get("record_id", "")
+            record_ids = d.get("record_ids", [])
+            if record_id and record_id not in record_ids:
+                record_ids = [record_id] + record_ids
+
+            key = term.lower()
+            if key in lookup:
+                existing = self._dictionary[lookup[key]]
+                existing.merge_record_ids(record_ids)
+                # Update entity_type if not set
+                if not existing.entity_type and d.get("entity_type"):
+                    existing.entity_type = d["entity_type"]
+                # Add alternative spelling
+                if term not in existing.alternatives and term != existing.term:
+                    existing.alternatives.append(term)
+            else:
+                entity_type = d.get("entity_type", d.get("category", ""))
+                if entity_type in ("PER", "ORG", "LOC", "GPE", "FAC",
+                                   "EVT", "WRK", "DAT", "ETH", "CON"):
+                    entity_type = DictionaryType.from_entity_type(entity_type).value
+                entry = DictionaryEntry(
                     term=term,
+                    entity_type=entity_type or d.get("gnd_type", ""),
                     gnd_id=d.get("gnd_id", ""),
-                    gnd_type=d.get("category", d.get("gnd_type", "")),
+                    gnd_type=d.get("gnd_type", ""),
                     source=d.get("source", "manual"),
-                ))
-                existing.add(term.lower())
+                    record_ids=record_ids,
+                    preferred_name=d.get("preferred_name", ""),
+                )
+                self._dictionary.append(entry)
+                lookup[key] = len(self._dictionary) - 1
                 added += 1
         self._touch()
         return added
@@ -525,6 +688,8 @@ class Workspace:
         for e in self._dictionary:
             if e.term.lower() == term.lower():
                 return e
+            if term.lower() in [a.lower() for a in e.alternatives]:
+                return e
         return None
 
     def lookup_gnd(self, gnd_id: str) -> DictionaryEntry | None:
@@ -532,6 +697,70 @@ class Workspace:
             if e.gnd_id == gnd_id:
                 return e
         return None
+
+    def lookup_by_id(self, entry_id: str) -> DictionaryEntry | None:
+        """Find a dictionary entry by its unique entry_id."""
+        for e in self._dictionary:
+            if e.entry_id == entry_id:
+                return e
+        return None
+
+    def dictionary_by_type(self, entity_type: str) -> list[DictionaryEntry]:
+        """Return entries filtered by DictionaryType value."""
+        return [e for e in self._dictionary if e.entity_type == entity_type]
+
+    def export_dictionary_json(
+        self, entity_type: str | None = None, indent: int = 2,
+    ) -> str:
+        """Export dictionary (or a typed subset) as JSON string."""
+        if entity_type:
+            entries = self.dictionary_by_type(entity_type)
+        else:
+            entries = list(self._dictionary)
+        return json.dumps(
+            [e.to_dict() for e in entries],
+            ensure_ascii=False, indent=indent,
+        )
+
+    def export_typed_dictionaries(self) -> dict[str, list[dict]]:
+        """Export all dictionaries grouped by entity_type."""
+        result: dict[str, list[dict]] = {}
+        for e in self._dictionary:
+            t = e.entity_type or "other"
+            result.setdefault(t, []).append(e.to_dict())
+        return result
+
+    def build_dictionary_from_dataframe(
+        self,
+        df,  # pandas.DataFrame
+        columns: list[str],
+        entity_type: str = "",
+        id_column: str = "",
+        source: str = "ingest",
+    ) -> int:
+        """Build/extend dictionary from unique values in a DataFrame.
+
+        Collects unique terms from the given columns and records which
+        record IDs each term appears in.
+        """
+        entries: list[dict] = []
+        for _, row in df.iterrows():
+            rid = str(row.get(id_column, "")) if id_column else ""
+            for col in columns:
+                val = row.get(col)
+                if val is None or str(val).strip() in ("", "nan", "NaN"):
+                    continue
+                # Handle semicolon-separated multi-values
+                for part in str(val).split(";"):
+                    term = part.strip()
+                    if term:
+                        entries.append({
+                            "term": term,
+                            "entity_type": entity_type,
+                            "record_id": rid,
+                            "source": source,
+                        })
+        return self.add_to_dictionary(entries)
 
     # ------------------------------------------------------------------
     # Entity helpers
@@ -670,6 +899,34 @@ class Workspace:
         return [r for r in self.image_analyses if r.review_status == status]
 
     # ------------------------------------------------------------------
+    # Authority candidate helpers
+    # ------------------------------------------------------------------
+
+    def add_authority_candidate(self, candidate: AuthorityCandidate) -> None:
+        """Add an authority candidate for review."""
+        self.authority_candidates.append(candidate)
+        self._touch()
+
+    def authority_candidates_for_entry(self, entry_id: str) -> list[AuthorityCandidate]:
+        """Return all authority candidates for a given dictionary entry."""
+        return [c for c in self.authority_candidates if c.entry_id == entry_id]
+
+    def authority_review_stats(self) -> dict[str, int]:
+        """Return count of authority candidates per status."""
+        stats: dict[str, int] = {s.value: 0 for s in ReviewStatus}
+        for c in self.authority_candidates:
+            stats[c.status.value] += 1
+        stats["total"] = len(self.authority_candidates)
+        return stats
+
+    def accepted_ocr_analyses(self) -> list[ImageAnalysisResult]:
+        """Return only accepted OCR image analyses."""
+        return [
+            r for r in self.image_analyses
+            if r.review_status == ImageReviewStatus.ACCEPTED
+        ]
+
+    # ------------------------------------------------------------------
     # AI run logging
     # ------------------------------------------------------------------
 
@@ -717,6 +974,8 @@ class Workspace:
             "source_files": self.source_files,
             "image_analysis_count": len(self.image_analyses),
             "image_review_status": self.image_review_stats(),
+            "authority_candidates_count": len(self.authority_candidates),
+            "authority_review_status": self.authority_review_stats(),
         }
 
     # ------------------------------------------------------------------
@@ -745,8 +1004,11 @@ class Workspace:
             "dictionary": [e.to_dict() for e in self._dictionary],
             "entity_reviews": [r.to_dict() for r in self.entity_reviews],
             "dates": [d.to_dict() for d in self.dates],
+            "tasks": self.tasks,
+            "custom_mds_fields": self.custom_mds_fields,
             "ai_runs": self.ai_runs,
             "image_analyses": [r.to_dict() for r in self.image_analyses],
+            "authority_candidates": [c.to_dict() for c in self.authority_candidates],
             "notes": self.notes,
             "model_text": self.model_text,
             "model_vision": self.model_vision,
@@ -787,9 +1049,15 @@ class Workspace:
         ws.dates = [
             CuratedDate.from_dict(dt) for dt in d.get("dates", [])
         ]
+        ws.tasks = d.get("tasks", [])
+        ws.custom_mds_fields = d.get("custom_mds_fields", [])
         ws.ai_runs = d.get("ai_runs", [])
         ws.image_analyses = [
             ImageAnalysisResult.from_dict(r) for r in d.get("image_analyses", [])
+        ]
+        ws.authority_candidates = [
+            AuthorityCandidate.from_dict(c)
+            for c in d.get("authority_candidates", [])
         ]
         ws.source_files = d.get("source_files", [])
         ws.notes = d.get("notes", "")

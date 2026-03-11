@@ -111,18 +111,28 @@ def load_csv(
     delim = delimiter or _sniff_delimiter(sample)
 
     # Load as str to avoid mixed-type warnings (e.g. GND confidence "70%")
-    try:
-        df = pd.read_csv(
-            path,
-            sep=delim,
-            encoding=enc,
-            dtype=str,
-            keep_default_na=False,     # don't convert "" → NaN automatically
-            na_values=[],              # we handle NA ourselves
-            engine="python",           # handles mixed delimiters gracefully
-        )
-    except pd.errors.ParserError as e:
-        raise CSVLoadError(f"CSV parse error: {e}") from e
+    # Try detected encoding first, then fall back to common European encodings.
+    _encoding_candidates = [enc] + [e for e in ("utf-8", "cp1252", "latin-1") if e != enc]
+    df = None
+    last_err: Exception | None = None
+    for candidate_enc in _encoding_candidates:
+        try:
+            df = pd.read_csv(
+                path,
+                sep=delim,
+                encoding=candidate_enc,
+                dtype=str,
+                keep_default_na=False,     # don't convert "" → NaN automatically
+                na_values=[],              # we handle NA ourselves
+                engine="python",           # handles mixed delimiters gracefully
+            )
+            enc = candidate_enc  # remember which encoding actually worked
+            break
+        except (UnicodeDecodeError, pd.errors.ParserError) as e:
+            last_err = e
+            continue
+    if df is None:
+        raise CSVLoadError(f"Cannot decode file (tried {_encoding_candidates}): {last_err}") from last_err
 
     if len(df) > max_rows:
         raise CSVLoadError(
