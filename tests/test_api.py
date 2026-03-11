@@ -26,6 +26,7 @@ Model forwarding:
 """
 
 import io
+import os
 import json
 import re
 import subprocess
@@ -39,7 +40,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 # ---------------------------------------------------------------------------
 # Conditional imports — skip if FastAPI/httpx not available
 # ---------------------------------------------------------------------------
+_FORCE_NO_FASTAPI = os.environ.get("KWB_FORCE_NO_FASTAPI") == "1"
 try:
+    if _FORCE_NO_FASTAPI:
+        raise ImportError("FastAPI disabled for deterministic catalog checks")
     from fastapi.testclient import TestClient
     _FASTAPI_AVAILABLE = True
 except ImportError:
