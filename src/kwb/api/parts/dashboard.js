@@ -307,8 +307,9 @@ function applyNERFilters(){
 }
 
 function fillNERTable(ents){
-  $('ner-body').innerHTML=ents.map((e,i)=>{
+  $('ner-body').innerHTML=ents.map((e)=>{
     const status=e.status||'pending';
+    const realIdx=nerData.indexOf(e);
     return '<tr>'+
       '<td style="font-weight:600">'+esc(e.text)+(e.gnd_preferred?'<br><span style="font-size:.65rem;color:var(--ok)">GND: '+esc(e.gnd_preferred)+'</span>':'')+'</td>'+
       '<td><span class="etype etype-'+esc(e.type)+'">'+esc(e.type)+'</span></td>'+
@@ -317,7 +318,7 @@ function fillNERTable(ents){
       '<td style="font-size:.68rem">'+esc(e.record_id||'')+'</td>'+
       '<td style="font-size:.62rem">'+esc(e.source||'')+'</td>'+
       '<td><span class="est est-'+esc(status)+'">'+esc(status)+'</span></td>'+
-      '<td><button class="btn sm" onclick="setEntity('+i+',\'accepted\')">✓</button> <button class="btn sm s" onclick="setEntity('+i+',\'rejected\')">✗</button></td>'+
+      '<td><button class="btn sm" onclick="setEntity('+realIdx+',\'accepted\')">✓</button> <button class="btn sm s" onclick="setEntity('+realIdx+',\'rejected\')">✗</button></td>'+
     '</tr>';
   }).join('');
 }
@@ -702,6 +703,12 @@ function renderCols(){
 }
 
 // === ARBEITSPAKET ERSTELLEN ===
+// Parse a CSV line into fields, correctly handling quoted fields and empty cells.
+function _csvSplitLine(line){
+  const out=[];const re=/("(?:[^"]|"")*"|[^,]*)(,|$)/g;let m;
+  while((m=re.exec(line))!==null){out.push(m[1]);if(m[2]==='')break;}
+  return out;
+}
 async function createArbeitspaket(){
   if(!curRep){alert('Erst Daten laden und Analyse starten.');return;}
   const ds=curRep.datasets||[];
@@ -710,7 +717,7 @@ async function createArbeitspaket(){
   const d=ds[0];
   const dsName=d.source_name;
   const idCol=d.id_column||d.columns?.[0]?.name||'';
-  const fullName=Object.keys(ufiles).find(n=>n.includes(dsName)||n.startsWith(dsName))||Object.keys(ufiles)[0]||'';
+  const fullName=Object.keys(ufiles).find(n=>n===dsName||n.startsWith(dsName+'.'))||Object.keys(ufiles).find(n=>n.includes(dsName))||Object.keys(ufiles)[0]||'';
   if(!fullName){alert('Datensatz nicht mehr verfügbar. Bitte Seite neu laden.');return;}
   sp('Arbeitspaket wird erstellt…','CSV Export');
   try{
@@ -722,13 +729,13 @@ async function createArbeitspaket(){
     // Ensure record_id is first column
     const lines=text.split('\n');
     if(lines.length>0){
-      const hdrs=lines[0].split(',');
+      const hdrs=_csvSplitLine(lines[0]);
       const idIdx=hdrs.findIndex(h=>h.replace(/^"|"$/g,'')===idCol);
       let out=text;
       if(idIdx>0){
-        // Move id column to front
+        // Move id column to front using correct CSV tokenizer
         const reordered=lines.map(line=>{
-          const cols=line.match(/"(?:[^"]|"")*"|[^,]*/g)||line.split(',');
+          const cols=_csvSplitLine(line);
           if(cols.length>idIdx){const id=cols.splice(idIdx,1);cols.unshift(id[0]);}
           return cols.join(',');
         });
@@ -750,7 +757,7 @@ function showIdColBar(reportData){
   cont.innerHTML=ds.map(d=>{
     const cols=d.columns||[];
     const detected=d.id_column||'';
-    const fname=Object.keys(ufiles).find(n=>n.includes(d.source_name)||n.startsWith(d.source_name))||'';
+    const fname=Object.keys(ufiles).find(n=>n===d.source_name||n.startsWith(d.source_name+'.'))||Object.keys(ufiles).find(n=>n.includes(d.source_name))||'';
     return '<div class="id-col-row">'+
       '<strong style="min-width:140px;font-size:.75rem">'+esc(d.source_name)+':</strong>'+
       '<select id="idcol-'+esc(d.source_name)+'" style="min-width:200px">'+

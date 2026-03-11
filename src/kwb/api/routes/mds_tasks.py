@@ -76,6 +76,8 @@ async def add_custom_mds_field(request: dict):
         return JSONResponse({"error": "mds_name und goobi_type erforderlich"}, 400)
 
     requirement = request.get("requirement", "recommended")
+    if requirement not in {"required", "recommended", "optional"}:
+        return JSONResponse({"error": f"Ungültiger Wert für requirement: '{requirement}'. Erlaubt: required, recommended, optional"}, 400)
     note = request.get("note", "")
 
     # Check for duplicates
