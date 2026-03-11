@@ -75,7 +75,7 @@ function dl(name,content,type){const b=new Blob([content],{type});const a=docume
 
 // === NAV ===
 function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}}catch(err){console.error('[initNav]',err)}}
+function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();loadAuthorityCandidates();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
 initNav();initTabs();
 
@@ -1269,10 +1269,12 @@ async function nerToDict(){
   }catch(e){alert(e.message)}finally{hp()}
 }
 async function ocrToDict(){
-  sp('OCR → NER → Wörterbuch …','');
+  sp('OCR → NER (Review-Queue) …','');
   try{const r=await(await fetch('/api/dictionary/from-ocr',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:$('cfg-mt').value||''})})).json();
-    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();
-    alert('OCR: '+r.ocr_texts_processed+' Texte → '+r.entities_found+' Entities → '+r.dictionary_added+' neue Wörterbuch-Einträge');
+    if(r.error){alert(r.error);return}loadDictEntries();loadDictTypes();updWS();loadPipelineStatus();
+    alert('OCR: '+r.ocr_texts_processed+' Texte → '+r.entities_found+' Entities in Review-Queue.'
+      +(r.skipped_pending?' ('+r.skipped_pending+' ungeprüft übersprungen)':'')
+      +'\nNächster Schritt: Entities im NER-Tab prüfen, dann "NER → Wörterbuch".');
   }catch(e){alert(e.message)}finally{hp()}
 }
 async function showDictDetail(entryId){
@@ -1338,6 +1340,102 @@ function exportDict(entityType){
   window.open('/api/dictionary/export'+(entityType?'?entity_type='+encodeURIComponent(entityType):''),'_blank');
 }
 function exportDictTyped(){window.open('/api/dictionary/export-typed','_blank')}
+function exportDictTarget(){window.open('/api/dictionary/export-target','_blank')}
+
+// === PIPELINE STATUS ===
+async function loadPipelineStatus(){
+  try{
+    const r=await(await fetch('/api/pipeline/status')).json();
+    const el=$('pipeline-status');if(!el)return;
+    const s=r;
+    function bar(label,done,total){
+      const pct=total?Math.round(done/total*100):0;
+      return '<span class="wsi" title="'+label+': '+done+'/'+total+'">'
+        +label+': <strong>'+done+'/'+total+'</strong>'
+        +'<span style="display:inline-block;width:40px;height:6px;background:#e0e0e0;border-radius:3px;vertical-align:middle;margin-left:.3rem">'
+        +'<span style="display:block;height:100%;width:'+pct+'%;background:var(--pri);border-radius:3px"></span></span></span>';
+    }
+    el.innerHTML=bar('OCR',s.phase1_ocr.accepted,s.phase1_ocr.total)
+      +bar('NER',s.phase2_ner.accepted,s.phase2_ner.total)
+      +bar('Authority',s.phase3_authority.accepted,s.phase3_authority.total)
+      +'<span class="wsi">Dict: <strong>'+s.dictionary.enriched+'/'+s.dictionary.total+' angereichert</strong></span>';
+  }catch(e){console.error('[pipeline-status]',e)}
+}
+
+// === OCR REVIEW GATE ===
+async function ocrSpotCheck(){
+  sp('Stichprobe laden …','');
+  try{
+    const r=await(await fetch('/api/images/review/sample',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sample_size:10,strategy:'low_confidence'})})).json();
+    alert('Stichprobe: '+r.sample_size+' von '+r.total_pending+' ausstehend. Prüfen Sie die Ergebnisse im Bilder-Tab.');
+    loadImages();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function ocrAutoAccept(){
+  const conf=parseFloat(prompt('Minimale Konfidenz (0.0-1.0):','0.85'));
+  if(isNaN(conf))return;
+  sp('Auto-Accept …','');
+  try{
+    const r=await(await fetch('/api/images/review/auto-accept',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({min_confidence:conf})})).json();
+    alert(r.auto_accepted+' akzeptiert, '+r.remaining_pending+' noch ausstehend.');
+    loadImages();loadPipelineStatus();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+
+// === NER REVIEW GATE ===
+async function nerSpotCheck(){
+  sp('NER-Stichprobe …','');
+  try{
+    const r=await(await fetch('/api/ner/review/sample',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({sample_size:20,strategy:'low_confidence'})})).json();
+    alert('Stichprobe: '+r.sample_size+' von '+r.total_pending+' ausstehend.');
+  }catch(e){alert(e.message)}finally{hp()}
+}
+async function nerAutoAccept(){
+  const conf=parseFloat(prompt('Minimale Konfidenz (0.0-1.0):','0.8'));
+  if(isNaN(conf))return;
+  sp('NER Auto-Accept …','');
+  try{
+    const r=await(await fetch('/api/ner/review/auto-accept',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({min_confidence:conf})})).json();
+    alert(r.auto_accepted+' akzeptiert, '+r.remaining_pending+' noch ausstehend.');
+    loadPipelineStatus();
+  }catch(e){alert(e.message)}finally{hp()}
+}
+
+// === AUTHORITY REVIEW ===
+async function loadAuthorityCandidates(){
+  try{
+    const r=await(await fetch('/api/authority/candidates?status=pending')).json();
+    const el=$('authority-candidates');if(!el)return;
+    const cands=r.candidates||[];
+    if(!cands.length){el.innerHTML='<em>Keine ausstehenden Kandidaten.</em>';return}
+    el.innerHTML=cands.slice(0,100).map(c=>
+      '<div style="padding:.3rem;border-bottom:1px solid var(--brd);font-size:.75rem;display:flex;align-items:center;gap:.3rem">'
+      +'<span class="dict-type dict-type-'+(c.authority_type||'other')+'">'+esc(c.source)+'</span>'
+      +'<span>'+esc(c.preferred_name)+' ('+esc(c.authority_id)+')</span>'
+      +'<span style="color:#888">Score: '+(c.score*100).toFixed(0)+'%</span>'
+      +'<button class="btn sm" onclick="reviewAuthCandidate(\''+esc(c.candidate_id)+'\',\'accepted\')">✓</button>'
+      +'<button class="btn sm s" onclick="reviewAuthCandidate(\''+esc(c.candidate_id)+'\',\'rejected\')">✗</button>'
+      +'</div>'
+    ).join('')+'<div style="margin-top:.3rem;font-size:.72rem;color:#888">'+r.total+' Kandidaten gesamt</div>';
+  }catch(e){console.error(e)}
+}
+async function reviewAuthCandidate(candidateId,status){
+  try{await fetch('/api/authority/candidates/'+candidateId+'/review',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({status})});loadAuthorityCandidates();loadPipelineStatus();
+  }catch(e){alert(e.message)}
+}
+async function commitAuthority(){
+  sp('Normdaten übernehmen …','');
+  try{
+    const r=await(await fetch('/api/authority/commit',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).json();
+    alert(r.committed+' Normdaten in Wörterbuch übernommen.');
+    loadDictEntries();loadDictTypes();loadAuthorityCandidates();loadPipelineStatus();updWS();
+  }catch(e){alert(e.message)}finally{hp()}
+}
 
 // === MDS VALIDATION (Feature 4) ===
 async function runMdsValidation(){
@@ -1503,6 +1601,7 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
   try{loadGPUConfig()}catch(err){console.error('[init] loadGPUConfig',err);failed.push('loadGPUConfig')}
   try{checkAuth()}catch(err){console.error('[init] checkAuth',err);failed.push('checkAuth')}
   try{loadDictEntries();loadDictTypes()}catch(err){console.error('[init] dict',err);failed.push('dict')}
+  try{loadPipelineStatus()}catch(err){console.error('[init] pipeline',err);failed.push('pipeline')}
   try{loadTasks()}catch(err){console.error('[init] tasks',err);failed.push('tasks')}
   try{loadCustomMdsFields()}catch(err){console.error('[init] mdsFields',err);failed.push('mdsFields')}
   if(failed.length)showInitError(failed.join(', '));

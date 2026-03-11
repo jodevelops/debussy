@@ -178,8 +178,14 @@ CATALOG = [
     {"id": "R-02", "name": "OCR/HTR",             "module": "Analyse",   "status": "planned", "note": ""},
     {"id": "R-03", "name": "Goobi Viewer API",    "module": "Export",    "status": "done",    "note": "REST Push via /api/goobi/*"},
     {"id": "R-04", "name": "METS/MODS Export",    "module": "Export",    "status": "planned", "note": ""},
-    {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "planned", "note": ""},
+    {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "done",    "note": "GeoNames JSON API"},
     {"id": "R-06", "name": "XML/PDF Ingest",      "module": "Ingest",    "status": "planned", "note": ""},
+    # Pipeline Review Gates
+    {"id": "P-02", "name": "OCR Review-Gate",      "module": "Pipeline",  "status": "done",    "note": "Stichprobe, Auto-Accept, nur akzeptierte OCR → NER"},
+    {"id": "P-03", "name": "NER Review-Gate",      "module": "Pipeline",  "status": "done",    "note": "Stichprobe, Auto-Accept, nur akzeptierte → Dictionary"},
+    {"id": "P-04", "name": "Authority Review-Gate", "module": "Pipeline", "status": "done",    "note": "GND/Wikidata/GeoNames Kandidaten prüfen → Dictionary"},
+    {"id": "P-05", "name": "Pipeline-Status",      "module": "Pipeline",  "status": "done",    "note": "GET /api/pipeline/status"},
+    {"id": "P-06", "name": "Zielformat-Export",    "module": "Export",    "status": "done",    "note": "GET /api/dictionary/export-target"},
 ]
 
 

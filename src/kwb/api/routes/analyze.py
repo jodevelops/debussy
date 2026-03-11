@@ -1099,3 +1099,88 @@ async def dict_scan(request: dict):
         "matches": matches[:2000],
         "dataset": dsn,
     }
+
+
+# ---------------------------------------------------------------------------
+# NER Review Gate — spot-check, auto-accept, single review
+# ---------------------------------------------------------------------------
+
+@router.post("/api/ner/review/sample")
+async def ner_review_sample(request: dict):
+    """Return a spot-check sample of pending NER entities for review."""
+    from kwb.core.workspace import ReviewStatus
+    ws = get_workspace()
+    sample_size = min(request.get("sample_size", 20), 200)
+    strategy = request.get("strategy", "random")
+    entity_type = request.get("entity_type", "")
+
+    pending = [
+        (i, e) for i, e in enumerate(ws.entity_reviews)
+        if e.status == ReviewStatus.PENDING
+        and (not entity_type or e.entity_type == entity_type)
+    ]
+    total_pending = len(pending)
+
+    if strategy == "low_confidence":
+        pending.sort(key=lambda t: t[1].confidence)
+    elif strategy == "by_type":
+        pending.sort(key=lambda t: t[1].entity_type)
+    else:
+        import random
+        random.shuffle(pending)
+
+    sample = pending[:sample_size]
+    return {
+        "sample": [
+            {"index": i, **e.to_dict()} for i, e in sample
+        ],
+        "total_pending": total_pending,
+        "sample_size": len(sample),
+        "strategy": strategy,
+    }
+
+
+@router.post("/api/ner/review/auto-accept")
+async def ner_review_auto_accept(request: dict):
+    """Auto-accept all NER entities with confidence >= min_confidence."""
+    from kwb.core.workspace import ReviewStatus
+    ws = get_workspace()
+    min_confidence = float(request.get("min_confidence", 0.8))
+    entity_types = request.get("entity_types", [])
+
+    auto_accepted = 0
+    for er in ws.entity_reviews:
+        if er.status != ReviewStatus.PENDING:
+            continue
+        if entity_types and er.entity_type not in entity_types:
+            continue
+        if er.confidence >= min_confidence:
+            er.accept(
+                note=f"Auto-accepted (confidence {er.confidence:.2f} >= {min_confidence})",
+            )
+            auto_accepted += 1
+
+    remaining = sum(
+        1 for e in ws.entity_reviews if e.status == ReviewStatus.PENDING
+    )
+    return {
+        "auto_accepted": auto_accepted,
+        "remaining_pending": remaining,
+        "min_confidence": min_confidence,
+    }
+
+
+@router.post("/api/ner/review/{index}")
+async def ner_review_single(index: int, request: dict):
+    """Review a single NER entity by index."""
+    ws = get_workspace()
+    if index < 0 or index >= len(ws.entity_reviews):
+        return JSONResponse({"error": "Index ungültig"}, 400)
+
+    updates = {}
+    for key in ("status", "entity_type", "text", "reviewer_note", "editor_note"):
+        if key in request:
+            updates[key] = request[key]
+
+    ws.update_entity(index, updates)
+    return {"ok": True, "entity": ws.entity_reviews[index].to_dict()}

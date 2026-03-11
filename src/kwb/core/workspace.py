@@ -147,6 +147,8 @@ class DictionaryEntry:
     confidence: float = 1.0
     source: str = "manual"            # "manual" | "api" | "llm" | "ner" | "ocr"
     note: str = ""
+    term_normalized: str = ""          # NFC + whitespace-collapsed form
+    term_source: str = ""              # "ocr" | "metadata" | "manual"
 
     def __post_init__(self):
         if not self.entry_id:
@@ -183,6 +185,8 @@ class DictionaryEntry:
             "confidence": self.confidence,
             "source": self.source,
             "note": self.note,
+            "term_normalized": self.term_normalized,
+            "term_source": self.term_source,
         }
 
     @staticmethod
@@ -211,6 +215,70 @@ class ImageReviewStatus(str, Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     REJECTED = "rejected"
+
+
+@dataclass
+class AuthorityCandidate:
+    """An authority-match candidate pending human review."""
+    entry_id: str                       # Target DictionaryEntry.entry_id
+    candidate_id: str = ""              # Auto UUID
+    source: str = ""                    # "gnd" | "wikidata" | "geonames"
+    authority_id: str = ""              # GND ID, QID, or GeoNames ID
+    preferred_name: str = ""
+    authority_type: str = ""            # "Person", "PlaceOrGeographicName", etc.
+    uri: str = ""
+    score: float = 0.0
+    extra: dict = field(default_factory=dict)
+    status: ReviewStatus = ReviewStatus.PENDING
+    reviewer_note: str = ""
+    reviewed_at: str = ""
+
+    def __post_init__(self):
+        if not self.candidate_id:
+            self.candidate_id = str(_uuid.uuid4())[:8]
+
+    def accept(self, note: str = "") -> None:
+        self.status = ReviewStatus.ACCEPTED
+        self.reviewer_note = note
+        self.reviewed_at = datetime.utcnow().isoformat()
+
+    def reject(self, note: str = "") -> None:
+        self.status = ReviewStatus.REJECTED
+        self.reviewer_note = note
+        self.reviewed_at = datetime.utcnow().isoformat()
+
+    def to_dict(self) -> dict:
+        return {
+            "entry_id": self.entry_id,
+            "candidate_id": self.candidate_id,
+            "source": self.source,
+            "authority_id": self.authority_id,
+            "preferred_name": self.preferred_name,
+            "authority_type": self.authority_type,
+            "uri": self.uri,
+            "score": self.score,
+            "extra": self.extra,
+            "status": self.status.value,
+            "reviewer_note": self.reviewer_note,
+            "reviewed_at": self.reviewed_at,
+        }
+
+    @staticmethod
+    def from_dict(d: dict) -> "AuthorityCandidate":
+        return AuthorityCandidate(
+            entry_id=d.get("entry_id", ""),
+            candidate_id=d.get("candidate_id", ""),
+            source=d.get("source", ""),
+            authority_id=d.get("authority_id", ""),
+            preferred_name=d.get("preferred_name", ""),
+            authority_type=d.get("authority_type", ""),
+            uri=d.get("uri", ""),
+            score=float(d.get("score", 0)),
+            extra=d.get("extra", {}),
+            status=ReviewStatus(d.get("status", "pending")),
+            reviewer_note=d.get("reviewer_note", ""),
+            reviewed_at=d.get("reviewed_at", ""),
+        )
 
 
 @dataclass
@@ -479,6 +547,7 @@ class Workspace:
         self.source_files: list[str] = []
         self.ai_runs: list[dict] = []
         self.image_analyses: list[ImageAnalysisResult] = []
+        self.authority_candidates: list[AuthorityCandidate] = []
 
     @property
     def field_mapping(self):
@@ -830,6 +899,34 @@ class Workspace:
         return [r for r in self.image_analyses if r.review_status == status]
 
     # ------------------------------------------------------------------
+    # Authority candidate helpers
+    # ------------------------------------------------------------------
+
+    def add_authority_candidate(self, candidate: AuthorityCandidate) -> None:
+        """Add an authority candidate for review."""
+        self.authority_candidates.append(candidate)
+        self._touch()
+
+    def authority_candidates_for_entry(self, entry_id: str) -> list[AuthorityCandidate]:
+        """Return all authority candidates for a given dictionary entry."""
+        return [c for c in self.authority_candidates if c.entry_id == entry_id]
+
+    def authority_review_stats(self) -> dict[str, int]:
+        """Return count of authority candidates per status."""
+        stats: dict[str, int] = {s.value: 0 for s in ReviewStatus}
+        for c in self.authority_candidates:
+            stats[c.status.value] += 1
+        stats["total"] = len(self.authority_candidates)
+        return stats
+
+    def accepted_ocr_analyses(self) -> list[ImageAnalysisResult]:
+        """Return only accepted OCR image analyses."""
+        return [
+            r for r in self.image_analyses
+            if r.review_status == ImageReviewStatus.ACCEPTED
+        ]
+
+    # ------------------------------------------------------------------
     # AI run logging
     # ------------------------------------------------------------------
 
@@ -877,6 +974,8 @@ class Workspace:
             "source_files": self.source_files,
             "image_analysis_count": len(self.image_analyses),
             "image_review_status": self.image_review_stats(),
+            "authority_candidates_count": len(self.authority_candidates),
+            "authority_review_status": self.authority_review_stats(),
         }
 
     # ------------------------------------------------------------------
@@ -909,6 +1008,7 @@ class Workspace:
             "custom_mds_fields": self.custom_mds_fields,
             "ai_runs": self.ai_runs,
             "image_analyses": [r.to_dict() for r in self.image_analyses],
+            "authority_candidates": [c.to_dict() for c in self.authority_candidates],
             "notes": self.notes,
             "model_text": self.model_text,
             "model_vision": self.model_vision,
@@ -954,6 +1054,10 @@ class Workspace:
         ws.ai_runs = d.get("ai_runs", [])
         ws.image_analyses = [
             ImageAnalysisResult.from_dict(r) for r in d.get("image_analyses", [])
+        ]
+        ws.authority_candidates = [
+            AuthorityCandidate.from_dict(c)
+            for c in d.get("authority_candidates", [])
         ]
         ws.source_files = d.get("source_files", [])
         ws.notes = d.get("notes", "")
