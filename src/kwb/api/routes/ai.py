@@ -178,7 +178,7 @@ async def ai_describe_columns(request: dict | None = None):
         if br.parsed:
             descriptions[col] = br.parsed
         else:
-            descriptions[col] = {"column": col, "description": br.raw or "", "data_type": "unbekannt"}
+            descriptions[col] = {"column": col, "description": br.response.content if br.response else "", "data_type": "unbekannt"}
 
     col_list = []
     for c in profile.columns:

@@ -107,8 +107,21 @@ def set_config(cfg) -> None:
 # ---------------------------------------------------------------------------
 # Provider factory
 # ---------------------------------------------------------------------------
+
+# Test-override: set this module-level variable to inject a mock provider.
+# Tests do:  deps._prov_override = MockProvider.with_defaults()
+_prov_override = None
+
+
 def get_provider(model: str = ""):
-    """Build AI provider: GPUStack if configured, else MockProvider."""
+    """Build AI provider: GPUStack if configured, else MockProvider.
+
+    When _prov_override is set (e.g. in tests), it is returned directly.
+    """
+    global _prov_override
+    if _prov_override is not None:
+        return _prov_override
+
     from kwb.ai.gpustack import GPUStackProvider
     from kwb.ai.mock import MockProvider
 
