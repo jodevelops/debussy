@@ -111,11 +111,9 @@ function hf(files,fiEl){
 function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
 function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));try{if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();loadAuthorityCandidates();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}catch(err){console.error('[nav:'+p+']',err)}}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
-initNav();initTabs();
 
 // === UPLOAD ===
-function initUpload(){const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.target.files);if(uz){uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};uz.ondragleave=()=>uz.classList.remove('dr');uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files)}}}
-function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
+function initUpload(){bindUpload();}
 function rfl(){
   const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
   $('fcl').innerHTML=n.map(id=>{
@@ -125,13 +123,11 @@ function rfl(){
   }).join('');
 }
 function populateDS(){
-  const n=Object.values(ufiles).map(f=>f.uploadName);
-  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds']){
-  const n=Object.keys(ufiles);
+  const names=Object.values(ufiles).map(f=>f.uploadName);
   for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds','dict-build-ds','mds-ds']){
     const s=$(id);if(!s)continue;
-    s.innerHTML=n.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
-  if(n.length>0){
+    s.innerHTML=names.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
+  if(names.length>0){
     loadCols('ner-ds','ner-cols');loadCols('dict-build-ds','dict-build-cols');loadDateCols();loadRecords();loadFMCols();
     ['ner-hint','edtf-hint','exp-hint'].forEach(id=>{const el=$(id);if(el)el.style.display='none'})
   }
@@ -274,8 +270,6 @@ async function saveFM(){
     }
   });
   try{
-    await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings:Object.entries(mapping).map(([csv_column,v])=>({csv_column,label:Array.isArray(v)?(v[0]||''):'',goobi_type:Array.isArray(v)?(v[1]||''):'',enabled:true}))})});
-    fmMapping=mapping;
     await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
     // Update internal state from saved list
     fmMeta={};fmMapping={};
@@ -290,10 +284,8 @@ async function runStruct(){
   const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
   if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
-  const fd=new FormData();for(const id of sel){const it=ufiles[id];if(it)fd.append('files',it.file,it.uploadName)}
-  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();
   _abortCtrl=new AbortController();
-  const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
+  const fd=new FormData();for(const id of sel){const it=ufiles[id];if(it)fd.append('files',it.file,it.uploadName)}
   try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd,signal:_abortCtrl.signal})).json();
     if(r.error)throw Error(r.error);curRep=r;rrep(r);populateDS();updWS()
   }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp()}
@@ -1639,12 +1631,6 @@ async function fetchSSE(url,body,onProgress,onDone,onError){
 }
 
 // === INIT ===
-(function(){
-  try{bindNav();document.querySelectorAll('.tabs').forEach(bindTabs);bindUpload();}catch(e){console.error('[init-bind]',e)}
-  try{loadPreset();applyImgPreset();applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr');refreshReviewStats();}catch(e){console.error('[init-presets]',e)}
-  try{const t=$('cfg-tasks');if(t)t.innerHTML=Object.values(TASKS).map(x=>'<div class="ft"><span class="bg ac">'+esc(x.type||'')+'</span><div><strong>'+esc(x.name)+'</strong><br><span class="d">'+esc(x.description||'')+'</span></div></div>').join('');}catch(e){console.error('[init-tasks]',e)}
-  try{renderCatalog();}catch(e){console.error('[init-catalog]',e)}
-  try{chkGPU();updWS();loadImages();loadTermsDict();}catch(e){console.error('[init-async]',e)}
 function showInitError(label){const b=document.createElement('div');b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fee2e2;color:#991b1b;padding:.4rem 1rem;font-size:.78rem;border-top:2px solid #f87171';b.textContent='⚠ UI-Initialisierung fehlgeschlagen'+(label?': '+label:'')+' – bitte Konsole prüfen';document.body.appendChild(b)}
 (function(){
   const failed=[];
