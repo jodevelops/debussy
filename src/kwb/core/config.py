@@ -35,6 +35,7 @@ class KWBConfig:
     goobi_api_url: str = ""
     goobi_api_key: str = ""
     goobi_project: str = ""
+    geonames_username: str = ""
     batch_size: int = 50
     batch_delay_seconds: float = 0.1
     max_retries: int = 3
@@ -118,6 +119,7 @@ def load_config(dotenv_path=None):
         gpustack_key=_get("KWB_GPUSTACK_KEY", dotenv),
         gpustack_model_text=_get("KWB_GPUSTACK_MODEL_TEXT", dotenv),
         gpustack_model_vision=_get("KWB_GPUSTACK_MODEL_VISION", dotenv),
+        geonames_username=_get("KWB_GEONAMES_USERNAME", dotenv),
         goobi_api_url=_get("KWB_GOOBI_API_URL", dotenv),
         goobi_api_key=_get("KWB_GOOBI_API_KEY", dotenv),
         goobi_project=_get("KWB_GOOBI_PROJECT", dotenv),

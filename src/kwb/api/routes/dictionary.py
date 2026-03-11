@@ -86,6 +86,97 @@ async def export_typed_dictionaries():
     )
 
 
+@router.get("/api/dictionary/export-target")
+async def export_dictionary_target(entity_type: str = ""):
+    """Export dictionary in the target JSON format for downstream systems.
+
+    Target format per entry:
+    {
+        "id": "entry_id",
+        "category": "person",
+        "term_source": "Joh. Seb. Bach",
+        "term_normalized": "Johann Sebastian Bach",
+        "source": "ocr",
+        "authority": {
+            "wikidata_qid": "Q1339",
+            "gnd_id": "11850529X",
+            "geonames_id": null
+        },
+        "occurrences": [{"record_id": "rec_001"}]
+    }
+    """
+    ws = get_workspace()
+    if entity_type:
+        entries = ws.dictionary_by_type(entity_type)
+    else:
+        entries = list(ws.dictionary)
+
+    def _to_target(entry):
+        return {
+            "id": entry.entry_id,
+            "category": entry.entity_type,
+            "term_source": entry.term,
+            "term_normalized": entry.term_normalized or entry.preferred_name or entry.term,
+            "source": entry.term_source or entry.source,
+            "authority": {
+                "wikidata_qid": entry.wikidata_id or None,
+                "gnd_id": entry.gnd_id or None,
+                "geonames_id": entry.geonames_id or None,
+            },
+            "occurrences": [{"record_id": rid} for rid in entry.record_ids],
+        }
+
+    data = json.dumps(
+        [_to_target(e) for e in entries], ensure_ascii=False, indent=2,
+    )
+    filename = f"dictionary_target_{entity_type}.json" if entity_type else "dictionary_target.json"
+    return Response(
+        content=data.encode("utf-8"),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/api/pipeline/status")
+async def pipeline_status():
+    """Return pipeline progress across all three review gates."""
+    ws = get_workspace()
+
+    # Phase 1: OCR
+    ocr_stats = {"total": 0, "pending": 0, "accepted": 0, "rejected": 0}
+    for r in ws.image_analyses:
+        ocr_stats["total"] += 1
+        ocr_stats[r.review_status.value] = ocr_stats.get(r.review_status.value, 0) + 1
+
+    # Phase 2: NER
+    ner_stats = {"total": 0, "pending": 0, "accepted": 0, "rejected": 0}
+    for e in ws.entity_reviews:
+        ner_stats["total"] += 1
+        ner_stats[e.status.value] = ner_stats.get(e.status.value, 0) + 1
+
+    # Phase 3: Authority
+    auth_stats = {"total": 0, "pending": 0, "accepted": 0, "rejected": 0}
+    for c in ws.authority_candidates:
+        auth_stats["total"] += 1
+        auth_stats[c.status.value] = auth_stats.get(c.status.value, 0) + 1
+
+    # Dictionary
+    dict_total = len(ws.dictionary)
+    enriched = sum(1 for e in ws.dictionary if e.has_authority)
+    dict_stats = {
+        "total": dict_total,
+        "enriched": enriched,
+        "unenriched": dict_total - enriched,
+    }
+
+    return {
+        "phase1_ocr": ocr_stats,
+        "phase2_ner": ner_stats,
+        "phase3_authority": auth_stats,
+        "dictionary": dict_stats,
+    }
+
+
 @router.post("/api/dictionary/entry")
 async def add_or_update_entry(request: dict):
     """Add or update a single dictionary entry."""
@@ -228,18 +319,32 @@ async def ner_to_dictionary(request: dict):
 
 @router.post("/api/dictionary/from-ocr")
 async def ocr_to_dictionary(request: dict):
-    """Run NER on OCR text results and add entities to dictionary.
+    """Run NER on accepted OCR text results and add entities to review queue.
 
-    This is the OCR → NER → Dictionary pipeline (Feature 11).
-    Requires OCR results in workspace image_analyses.
+    REVIEW GATE: Only OCR results with review_status == ACCEPTED are processed.
+    Entities are added to entity_reviews (not directly to dictionary).
+    Use POST /api/dictionary/from-ner to transfer accepted entities to dictionary.
+
+    Set include_pending=true to also process pending OCR results (legacy mode).
     """
     ws = get_workspace()
+    include_pending = request.get("include_pending", False)
 
-    # Collect OCR texts from image analyses
+    # Collect OCR texts — GATE: only accepted OCR results
     ocr_texts: list[dict] = []
+    skipped_pending = 0
     for analysis in ws.image_analyses:
         if not analysis.result:
             continue
+        if analysis.review_status.value == "accepted":
+            pass  # always include accepted
+        elif include_pending and analysis.review_status.value == "pending":
+            pass  # include pending only in legacy mode
+        else:
+            if analysis.review_status.value == "pending":
+                skipped_pending += 1
+            continue
+
         text = (analysis.result.get("transcription") or
                 analysis.result.get("text") or "")
         if not text.strip():
@@ -251,9 +356,15 @@ async def ocr_to_dictionary(request: dict):
         })
 
     if not ocr_texts:
-        return JSONResponse(
-            {"error": "Keine OCR-Ergebnisse vorhanden. Bitte zuerst OCR durchführen."}, 400,
-        )
+        msg = "Keine akzeptierten OCR-Ergebnisse vorhanden."
+        if skipped_pending > 0:
+            msg += (
+                f" {skipped_pending} Ergebnisse warten auf Review."
+                " Bitte zuerst OCR-Ergebnisse prüfen (Tab Bilder)."
+            )
+        else:
+            msg += " Bitte zuerst OCR durchführen."
+        return JSONResponse({"error": msg}, 400)
 
     # Run NER on OCR texts
     entity_types = request.get("entity_types", ["PER", "ORG", "LOC", "GPE"])
@@ -265,19 +376,11 @@ async def ocr_to_dictionary(request: dict):
     provider = get_provider(model)
     llm_entities, batch = ner_llm(ocr_texts, provider, model=model or None)
 
-    # Filter by requested entity types and add to dictionary
-    entries_to_add: list[dict] = []
+    # Filter by requested entity types
     entities_added = []
     for entity in llm_entities:
         if entity_types and entity.entity_type.value not in entity_types:
             continue
-        dict_type = DictionaryType.from_entity_type(entity.entity_type.value).value
-        entries_to_add.append({
-            "term": entity.text,
-            "entity_type": dict_type,
-            "record_id": entity.record_id,
-            "source": "ocr",
-        })
         entities_added.append({
             "text": entity.text,
             "type": entity.entity_type.value,
@@ -285,7 +388,7 @@ async def ocr_to_dictionary(request: dict):
             "record_id": entity.record_id,
         })
 
-    # Also add to entity_reviews for review
+    # Add to entity_reviews for review (NOT directly to dictionary)
     ws.add_entities([
         {
             "text": e.text,
@@ -298,12 +401,11 @@ async def ocr_to_dictionary(request: dict):
         for e in llm_entities
     ])
 
-    added = ws.add_to_dictionary(entries_to_add)
     return {
         "ocr_texts_processed": len(ocr_texts),
+        "skipped_pending": skipped_pending,
         "entities_found": len(llm_entities),
-        "entities_filtered": len(entries_to_add),
-        "dictionary_added": added,
-        "dictionary_total": len(ws.dictionary),
+        "entities_filtered": len(entities_added),
+        "entities_in_review": len(ws.entity_reviews),
         "entities": entities_added[:200],
     }

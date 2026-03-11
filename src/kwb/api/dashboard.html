@@ -23,6 +23,9 @@
 <span class="wsi">Wörterbuch: <strong id="ws-dict">0</strong></span>
 <span style="margin-left:auto"><button class="btn sm" onclick="saveWS()">💾 Speichern</button></span>
 </div>
+<div class="ws-bar" id="pipeline-bar" style="background:#f0f7ff;border-color:#d0e3ff;font-size:.72rem">
+<span id="pipeline-status" style="display:flex;gap:.6rem;flex-wrap:wrap">Pipeline: wird geladen…</span>
+</div>
 <div class="nav">
 <div class="nt a" data-p="data">① Daten</div>
 <div class="nt" data-p="ner">② NER</div>
@@ -98,6 +101,14 @@
 <div style="display:flex;gap:.4rem;flex-wrap:wrap">
 <button class="btn" onclick="runPilot('ner')">🧪 Pilotlauf auf 2%</button>
 <button class="btn s" onclick="runNER()">▶️ Gesamtlauf fortsetzen</button>
+</div>
+<div style="margin-top:.6rem;padding:.4rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px">
+<strong style="font-size:.73rem">Review-Gate</strong>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.3rem">
+<button class="btn sm" onclick="nerSpotCheck()">🔍 Stichprobe</button>
+<button class="btn sm" onclick="nerAutoAccept()">✓ Auto-Accept</button>
+<button class="btn sm" style="background:var(--info)" onclick="nerToDict()">→ Wörterbuch</button>
+</div>
 </div>
 </div>
 <div class="c"><h2>Problematische Begriffe</h2>
@@ -290,6 +301,14 @@
 <label class="lbl" style="margin-top:.5rem">OCR Prompt-Preset</label><select id="ocr-preset" class="sel" style="width:100%" onchange="applyActionPreset('ocr')"><option value="vision_de">Vision/OCR</option><option value="custom">Eigen</option></select>
 <textarea id="ocr-sp" class="ta" style="height:3.5rem;margin-top:.3rem"></textarea>
 <button class="btn f" style="margin-top:.3rem;background:var(--info)" onclick="runOCR()">📖 Text erkennen (OCR)</button>
+<div style="margin-top:.6rem;padding:.4rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px">
+<strong style="font-size:.73rem">Review-Gate</strong>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.3rem">
+<button class="btn sm" onclick="ocrSpotCheck()">🔍 Stichprobe</button>
+<button class="btn sm" onclick="ocrAutoAccept()">✓ Auto-Accept</button>
+<button class="btn sm" style="background:var(--info)" onclick="ocrToDict()">→ NER auf akzeptierte OCR</button>
+</div>
+</div>
 </div>
 
 <div>
@@ -361,8 +380,15 @@
 <h3 style="font-size:.82rem">Aus NER übernehmen</h3>
 <button class="btn f" onclick="nerToDict()">🔗 Akzeptierte Entities → Wörterbuch</button>
 
-<h3 style="font-size:.82rem;margin-top:.5rem">Aus OCR → NER → Wörterbuch</h3>
-<button class="btn f s" onclick="ocrToDict()">📖 OCR-Texte → NER → Wörterbuch</button>
+<h3 style="font-size:.82rem;margin-top:.5rem">Aus OCR → NER → Review</h3>
+<button class="btn f s" onclick="ocrToDict()">📖 OCR-Texte → NER (Review-Queue)</button>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3 style="font-size:.82rem">Normdaten-Kandidaten</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">GND/Wikidata/GeoNames Treffer prüfen und übernehmen.</p>
+<div id="authority-candidates" style="max-height:200px;overflow-y:auto;font-size:.75rem"><em>Keine Kandidaten.</em></div>
+<button class="btn f" style="margin-top:.3rem" onclick="commitAuthority()">✓ Akzeptierte übernehmen</button>
+<button class="btn sm s" style="margin-top:.3rem" onclick="loadAuthorityCandidates()">🔄 Aktualisieren</button>
 </div>
 
 <div>
@@ -371,6 +397,7 @@
 <div style="display:flex;gap:.5rem;margin-bottom:.5rem;flex-wrap:wrap">
 <button class="btn sm" onclick="exportDict('')">⬇️ Alle exportieren (JSON)</button>
 <button class="btn sm s" onclick="exportDictTyped()">⬇️ Nach Typ exportieren</button>
+<button class="btn sm" style="background:var(--info)" onclick="exportDictTarget()">⬇️ Zielformat exportieren</button>
 </div>
 <div id="dict-list-empty" class="em" style="font-size:.75rem;padding:1rem">Noch keine Einträge.</div>
 <div id="dict-list" class="scroll-box" style="max-height:500px"></div>

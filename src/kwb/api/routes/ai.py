@@ -740,6 +740,73 @@ async def image_review_batch(request: dict):
     ws.save(workspace_dir() / safe_filename(ws.name))
     return {"updated": updated, "status": status.value}
 
+@router.post("/api/images/review/sample")
+async def image_review_sample(request: dict):
+    """Return a spot-check sample of pending OCR results for review."""
+    ws = get_workspace()
+    sample_size = min(request.get("sample_size", 10), 100)
+    strategy = request.get("strategy", "random")
+
+    pending = [
+        r for r in ws.image_analyses
+        if r.review_status == ImageReviewStatus.PENDING and r.analyzed
+    ]
+    total_pending = len(pending)
+
+    if strategy == "low_confidence":
+        pending.sort(key=lambda r: r.confidence)
+    else:
+        import random
+        random.shuffle(pending)
+
+    sample = pending[:sample_size]
+    return {
+        "sample": [r.to_dict() for r in sample],
+        "total_pending": total_pending,
+        "sample_size": len(sample),
+        "strategy": strategy,
+    }
+
+
+@router.post("/api/images/review/auto-accept")
+async def image_review_auto_accept(request: dict):
+    """Auto-accept all OCR results with confidence >= min_confidence."""
+    ws = get_workspace()
+    min_confidence = float(request.get("min_confidence", 0.85))
+
+    auto_accepted = 0
+    for analysis in ws.image_analyses:
+        if analysis.review_status != ImageReviewStatus.PENDING:
+            continue
+        if not analysis.analyzed:
+            continue
+        if analysis.confidence >= min_confidence:
+            analysis.update_review(
+                status=ImageReviewStatus.ACCEPTED,
+                comment=f"Auto-accepted (confidence {analysis.confidence:.2f} >= {min_confidence})",
+                reviewer="auto",
+            )
+            # Also update in-memory image index
+            img = _uploaded_images.get(analysis.image_id)
+            if img:
+                img["review_status"] = "accepted"
+                img["review_comment"] = analysis.review_comment
+                img["reviewed_at"] = analysis.reviewed_at
+            auto_accepted += 1
+
+    remaining = sum(
+        1 for r in ws.image_analyses
+        if r.review_status == ImageReviewStatus.PENDING
+    )
+
+    ws.save(workspace_dir() / safe_filename(ws.name))
+    return {
+        "auto_accepted": auto_accepted,
+        "remaining_pending": remaining,
+        "min_confidence": min_confidence,
+    }
+
+
 @router.delete("/api/images")
 async def images_clear():
     """Clear all uploaded images from memory and disk."""
