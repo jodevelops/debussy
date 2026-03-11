@@ -27,6 +27,8 @@ Model forwarding:
 
 import io
 import json
+import re
+import subprocess
 import sys
 import unittest
 from pathlib import Path
@@ -123,6 +125,29 @@ class TestHealthEndpoints(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         self.assertIn("text/html", r.headers.get("content-type", ""))
         self.assertIn("Debussy", r.text)
+
+    def test_dashboard_js_syntax_valid(self):
+        """Assembled dashboard JS must be free of syntax errors (issue #50)."""
+        import tempfile, os
+        r = self.client.get("/")
+        m = re.search(r"<script>(.*?)</script>", r.text, re.DOTALL)
+        self.assertIsNotNone(m, "No <script> block found in dashboard HTML")
+        js = m.group(1)
+        self.assertGreater(len(js), 100, "JS block looks too small")
+        fd, path = tempfile.mkstemp(suffix=".js")
+        try:
+            os.write(fd, js.encode())
+            os.close(fd)
+            result = subprocess.run(
+                ["node", "--check", path],
+                capture_output=True, text=True, timeout=10,
+            )
+            self.assertEqual(
+                result.returncode, 0,
+                f"Dashboard JS has syntax errors:\n{result.stderr[:500]}",
+            )
+        finally:
+            os.unlink(path)
 
     def test_gpu_status_no_config(self):
         r = self.client.get("/api/gpu/status")
