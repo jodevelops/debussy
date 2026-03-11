@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 199/316 Tests bestanden, 18 fehlgeschlagen, 99 übersprungen
+**Gesamtstatus:** 261/390 Tests bestanden, 29 fehlgeschlagen, 100 übersprungen
 
 ---
 
@@ -238,11 +238,14 @@
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
 | test_ai.py | 0/1 | 1 | 0 | ❌ |
-| test_api.py | 0/50 | 0 | 50 | ✅ |
+| test_api.py | 0/51 | 0 | 51 | ✅ |
+| test_authority_review.py | 9/9 | 0 | 0 | ✅ |
 | test_cli.py | 0/1 | 1 | 0 | ❌ |
 | test_comprehensive.py | 16/22 | 6 | 0 | ❌ |
 | test_core.py | 0/1 | 1 | 0 | ❌ |
+| test_dictionaries_mds_auth.py | 26/37 | 11 | 0 | ❌ |
 | test_edtf.py | 82/82 | 0 | 0 | ✅ |
+| test_geonames.py | 9/9 | 0 | 0 | ✅ |
 | test_gnd.py | 0/1 | 1 | 0 | ❌ |
 | test_gnd_enrich.py | 0/1 | 1 | 0 | ❌ |
 | test_goobi_api.py | 4/4 | 0 | 0 | ✅ |
@@ -254,12 +257,13 @@
 | test_ner_edtf.py | 0/1 | 1 | 0 | ❌ |
 | test_new_features.py | 0/1 | 1 | 0 | ❌ |
 | test_open_issues.py | 24/32 | 0 | 8 | ✅ |
+| test_pipeline.py | 18/18 | 0 | 0 | ✅ |
 | test_roadmap.py | 0/1 | 1 | 0 | ❌ |
 | test_services.py | 0/1 | 1 | 0 | ❌ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
 | test_workspace_export.py | 0/1 | 1 | 0 | ❌ |
-| **Gesamt** | **199/316** | **18** | **99** | **❌** |
+| **Gesamt** | **261/390** | **29** | **100** | **❌** |
 <!-- AUTO-TESTS-END -->
 
 ---
