@@ -74,6 +74,40 @@ function safeOpt(val,label){return '<option value="'+esc(val)+'">'+esc(label)+'<
 function dl(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
 
 // === NAV ===
+function bindNav(){
+  const nav=document.querySelector('.nav');
+  if(!nav)return;
+  nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))};
+}
+function bindTabs(el){if(!el)return;el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));el.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
+
+// === UPLOAD ===
+function bindUpload(){
+  const uz=$('uz'),fi=$('fi');
+  if(!uz||!fi)return;
+  fi.onchange=e=>hf(e.target.files,fi);
+  uz.ondragover=e=>{e.preventDefault();uz.classList.add('dr')};
+  uz.ondragleave=()=>uz.classList.remove('dr');
+  uz.ondrop=e=>{e.preventDefault();uz.classList.remove('dr');hf(e.dataTransfer.files,fi)};
+}
+function _splitExt(name){const i=name.lastIndexOf('.');if(i<=0)return[name,''];return[name.slice(0,i),name.slice(i)]}
+function _uniqueUploadName(name){
+  const existing=new Set(Object.values(ufiles).map(x=>x.uploadName));
+  if(!existing.has(name))return name;
+  const parts=_splitExt(name),base=parts[0],ext=parts[1];
+  let n=2,cand='';
+  do{cand=base+' ('+n+')'+ext;n++;}while(existing.has(cand));
+  return cand;
+}
+function hf(files,fiEl){
+  for(const f of files||[]){
+    const uploadName=_uniqueUploadName(f.name);
+    const id=uploadName+'__'+f.size+'__'+f.lastModified;
+    ufiles[id]={file:f,displayName:f.name,uploadName,size:f.size};
+  }
+  if(fiEl)fiEl.value='';
+  rfl();
+}
 function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
 function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));try{if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();loadAuthorityCandidates();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}catch(err){console.error('[nav:'+p+']',err)}}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
@@ -84,9 +118,15 @@ function initUpload(){const uz=$('uz'),fi=$('fi');if(fi)fi.onchange=e=>hf(e.targ
 function hf(files){for(const f of files)ufiles[f.name]=f;rfl()}
 function rfl(){
   const n=Object.keys(ufiles);$('fc').style.display=n.length?'block':'none';
-  $('fcl').innerHTML=n.map(x=>'<div class="ci"><input type="checkbox" checked value="'+esc(x)+'" class="fcb"><span>'+esc(x)+'</span><span class="m">'+(ufiles[x].size/1024).toFixed(0)+'KB</span></div>').join('');
+  $('fcl').innerHTML=n.map(id=>{
+    const f=ufiles[id];
+    const lbl=f.displayName===f.uploadName?esc(f.displayName):esc(f.displayName)+' <span class="m" title="Uploadname">→ '+esc(f.uploadName)+'</span>';
+    return '<div class="ci"><input type="checkbox" checked value="'+esc(id)+'" class="fcb"><span>'+lbl+'</span><span class="m">'+(f.size/1024).toFixed(0)+'KB</span></div>';
+  }).join('');
 }
 function populateDS(){
+  const n=Object.values(ufiles).map(f=>f.uploadName);
+  for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds']){
   const n=Object.keys(ufiles);
   for(const id of['ner-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds','dict-build-ds','mds-ds']){
     const s=$(id);if(!s)continue;
@@ -129,6 +169,7 @@ async function loadRecords(reset=false){
   }catch(e){}
 }
 function pageRecords(dir){recordOffset=Math.max(0,recordOffset+(dir*recordLimit));loadRecords(false)}
+const expDsEl=$('exp-ds');if(expDsEl)expDsEl.onchange=()=>loadRecords(true);
 function initPanels(){const expDs=$('exp-ds');if(expDs)expDs.onchange=()=>loadRecords(true)}
 
 // === FIELD MAPPING ===
@@ -145,6 +186,7 @@ async function loadFMCols(){
     // fmMeta keeps the full objects so saveFM() can preserve metadata not shown in the UI
     // fmMapping holds the UI state: {col_name: [label, goobi_type]}
     const ex=await(await fetch('/api/workspace/field-mapping')).json();
+    fmMapping=((ex.mappings||[]).reduce((acc,m)=>{acc[m.csv_column]=[m.label||m.goobi_type||'',m.goobi_type||''];return acc;},{}));
     fmMeta={};fmMapping={};
     (ex.mappings||[]).forEach(m=>{
       fmMeta[m.csv_column]=m;
@@ -232,6 +274,8 @@ async function saveFM(){
     }
   });
   try{
+    await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings:Object.entries(mapping).map(([csv_column,v])=>({csv_column,label:Array.isArray(v)?(v[0]||''):'',goobi_type:Array.isArray(v)?(v[1]||''):'',enabled:true}))})});
+    fmMapping=mapping;
     await fetch('/api/workspace/field-mapping',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({mappings})});
     // Update internal state from saved list
     fmMeta={};fmMapping={};
@@ -246,6 +290,8 @@ async function runStruct(){
   const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
   if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
+  const fd=new FormData();for(const id of sel){const it=ufiles[id];if(it)fd.append('files',it.file,it.uploadName)}
+  try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd})).json();
   _abortCtrl=new AbortController();
   const fd=new FormData();for(const n of sel)fd.append('files',ufiles[n]);
   try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd,signal:_abortCtrl.signal})).json();
@@ -865,8 +911,10 @@ let uploadedImages = [];
 let imgFilter = 'all';
 
 function applyImgPreset(){
-  const key = $('img-preset').value;
-  if(key !== 'custom') $('img-sp').value = PRESETS[key] || '';
+  const presetEl=$('img-preset'),spEl=$('img-sp');
+  if(!presetEl||!spEl)return;
+  const key=presetEl.value;
+  if(key!=='custom')spEl.value=PRESETS[key]||'';
 }
 
 async function uploadImages(){
@@ -1591,6 +1639,12 @@ async function fetchSSE(url,body,onProgress,onDone,onError){
 }
 
 // === INIT ===
+(function(){
+  try{bindNav();document.querySelectorAll('.tabs').forEach(bindTabs);bindUpload();}catch(e){console.error('[init-bind]',e)}
+  try{loadPreset();applyImgPreset();applyActionPreset('ner');applyActionPreset('scan');applyActionPreset('edtf');applyActionPreset('ocr');refreshReviewStats();}catch(e){console.error('[init-presets]',e)}
+  try{const t=$('cfg-tasks');if(t)t.innerHTML=Object.values(TASKS).map(x=>'<div class="ft"><span class="bg ac">'+esc(x.type||'')+'</span><div><strong>'+esc(x.name)+'</strong><br><span class="d">'+esc(x.description||'')+'</span></div></div>').join('');}catch(e){console.error('[init-tasks]',e)}
+  try{renderCatalog();}catch(e){console.error('[init-catalog]',e)}
+  try{chkGPU();updWS();loadImages();loadTermsDict();}catch(e){console.error('[init-async]',e)}
 function showInitError(label){const b=document.createElement('div');b.style.cssText='position:fixed;bottom:0;left:0;right:0;z-index:9999;background:#fee2e2;color:#991b1b;padding:.4rem 1rem;font-size:.78rem;border-top:2px solid #f87171';b.textContent='⚠ UI-Initialisierung fehlgeschlagen'+(label?': '+label:'')+' – bitte Konsole prüfen';document.body.appendChild(b)}
 (function(){
   const failed=[];
