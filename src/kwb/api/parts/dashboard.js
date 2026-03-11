@@ -72,6 +72,7 @@ function getModelHint(name){
 function esc(s){return s==null?'':String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
 function safeOpt(val,label){return '<option value="'+esc(val)+'">'+esc(label)+'</option>'}
 function dl(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
+function encPath(v){return encodeURIComponent(String(v==null?'':v))}
 
 // === NAV ===
 function bindNav(){
@@ -79,8 +80,6 @@ function bindNav(){
   if(!nav)return;
   nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p))};
 }
-function bindTabs(el){if(!el)return;el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));el.parentElement.querySelectorAll('[data-t].tp').forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-
 // === UPLOAD ===
 function bindUpload(){
   const uz=$('uz'),fi=$('fi');
@@ -108,8 +107,18 @@ function hf(files,fiEl){
   if(fiEl)fiEl.value='';
   rfl();
 }
-function bindTabs(el){const ps=[];let s=el.nextElementSibling;while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}el.onclick=e=>{if(!e.target.classList.contains('tab'))return;const t=e.target.dataset.t;el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t))}}
-function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{if(!e.target.classList.contains('nt'))return;const p=e.target.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));try{if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();loadAuthorityCandidates();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}catch(err){console.error('[nav:'+p+']',err)}}}catch(err){console.error('[initNav]',err)}}
+function bindTabs(el){
+  const ps=[];let s=el.nextElementSibling;
+  while(s&&s.classList.contains('tp')){ps.push(s);s=s.nextElementSibling}
+  el.onclick=e=>{
+    const tab=e.target.closest('.tab');
+    if(!tab||!el.contains(tab))return;
+    const t=tab.dataset.t;
+    el.querySelectorAll('.tab').forEach(x=>x.classList.toggle('a',x.dataset.t===t));
+    ps.forEach(x=>x.classList.toggle('a',x.dataset.t===t));
+  };
+}
+function initNav(){try{const nav=document.querySelector('.nav');if(!nav)return;nav.onclick=e=>{const nt=e.target.closest('.nt');if(!nt||!nav.contains(nt))return;const p=nt.dataset.p;document.querySelectorAll('.nt').forEach(t=>t.classList.toggle('a',t.dataset.p===p));document.querySelectorAll('.pg').forEach(x=>x.classList.toggle('a',x.dataset.p===p));try{if(p==='config'){loadGPUConfig();chkGPU();}if(p==='mapping')loadFMCols();if(p==='mds'){loadCustomMdsFields();loadTasks();}if(p==='dict'){loadDictEntries();loadDictTypes();loadAuthorityCandidates();}if(p==='catalog')renderCatalog();if(p==='images')loadImages();}catch(err){console.error('[nav:'+p+']',err)}}}catch(err){console.error('[initNav]',err)}}
 function initTabs(){try{document.querySelectorAll('.tabs').forEach(bindTabs)}catch(err){console.error('[initTabs]',err)}}
 
 // === UPLOAD ===
@@ -969,13 +978,13 @@ function renderImgGrid(){
   empty.style.display='none';
   empty.textContent='Noch keine Bilder hochgeladen.';
   grid.innerHTML = shown.map(function(img){
+    const imgUrl='/api/images/'+encPath(img.id)+'/data';
+    const info=(img.filename||'')+' — '+(img.width||'?')+'x'+(img.height||'?');
     const isTiff=(img.media_type||'').includes('tiff');
     const thumb=isTiff
-      ?'<div style="height:140px;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#888;font-size:.85rem;font-weight:600;cursor:pointer" onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+'\')">TIFF</div>'
-      :'<img src="/api/images/'+esc(img.id)+'/data" alt="'+esc(img.filename)+'"'
-      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer"'
-      +' onclick="openLightbox(\'/api/images/'+esc(img.id)+'/data\',\''+esc(img.filename)+' — '+(img.width||'?')+'x'+(img.height||'?')+'\')"'
-      +' onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'flex\'">'
+      ?'<div class="img-open" data-src="'+esc(imgUrl)+'" data-info="'+esc(img.filename||'')+'" style="height:140px;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#888;font-size:.85rem;font-weight:600;cursor:pointer">TIFF</div>'
+      :'<img class="img-thumb img-open" src="'+esc(imgUrl)+'" alt="'+esc(img.filename)+'" data-src="'+esc(imgUrl)+'" data-info="'+esc(info)+'"'
+      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer">'
       +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>';
     return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
       +thumb
@@ -983,6 +992,8 @@ function renderImgGrid(){
       +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
       +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
       +'</div>'}).join('');
+  grid.querySelectorAll('.img-open').forEach(el=>el.onclick=()=>openLightbox(el.dataset.src||'',el.dataset.info||''));
+  grid.querySelectorAll('.img-thumb').forEach(el=>el.onerror=()=>{el.style.display='none';if(el.nextElementSibling)el.nextElementSibling.style.display='flex'});
 }
 
 async function analyzeImages(){

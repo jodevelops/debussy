@@ -10,6 +10,7 @@ TEST-06: MockProvider Fehlerszenarien — ungültiges JSON, leere Antworten,
 from __future__ import annotations
 
 import io
+import os
 import json
 import sys
 import unittest
@@ -39,7 +40,10 @@ _JPEG_1PX = bytes([
 # ---------------------------------------------------------------------------
 # Conditional FastAPI import
 # ---------------------------------------------------------------------------
+_FORCE_NO_FASTAPI = os.environ.get("KWB_FORCE_NO_FASTAPI") == "1"
 try:
+    if _FORCE_NO_FASTAPI:
+        raise ImportError("FastAPI disabled for deterministic catalog checks")
     from fastapi.testclient import TestClient
     _FASTAPI_AVAILABLE = True
 except ImportError:

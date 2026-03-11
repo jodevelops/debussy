@@ -35,6 +35,8 @@ def run_suite(pytest_cmd: str, test_file: Path, repo_root: Path) -> SuiteResult:
         xml_path = Path(tmp.name)
 
     env = os.environ.copy()
+    # Keep catalog output deterministic across environments with/without optional API deps.
+    env["KWB_FORCE_NO_FASTAPI"] = "1"
     env["PYTHONPATH"] = str(repo_root / "src") + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
 
     cmd = [pytest_cmd, "-q", str(test_file), f"--junitxml={xml_path}"]

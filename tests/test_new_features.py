@@ -9,6 +9,7 @@ Tests für neue Features (F28, F30, F34, F35).
 from __future__ import annotations
 
 import io
+import os
 import json
 import sys
 import unittest
@@ -413,7 +414,10 @@ class TestJSONLDExport(unittest.TestCase):
 # F30: OCR API Endpoint (via TestClient)
 # ---------------------------------------------------------------------------
 
+_FORCE_NO_FASTAPI = os.environ.get("KWB_FORCE_NO_FASTAPI") == "1"
 try:
+    if _FORCE_NO_FASTAPI:
+        raise ImportError("FastAPI disabled for deterministic catalog checks")
     from fastapi.testclient import TestClient
     _FASTAPI_AVAILABLE = True
 except ImportError:

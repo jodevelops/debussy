@@ -13,13 +13,17 @@ The upload endpoint checks file extension and size only, not image validity.
 from __future__ import annotations
 
 import io
+import os
 import sys
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
+_FORCE_NO_FASTAPI = os.environ.get("KWB_FORCE_NO_FASTAPI") == "1"
 try:
+    if _FORCE_NO_FASTAPI:
+        raise ImportError("FastAPI disabled for deterministic catalog checks")
     from fastapi.testclient import TestClient
     _FASTAPI_AVAILABLE = True
 except ImportError:
