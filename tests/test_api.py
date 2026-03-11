@@ -128,7 +128,8 @@ class TestHealthEndpoints(unittest.TestCase):
 
     def test_dashboard_js_syntax_valid(self):
         """Assembled dashboard JS must be free of syntax errors (issue #50)."""
-        import tempfile, os
+        import os
+        import tempfile
         r = self.client.get("/")
         m = re.search(r"<script>(.*?)</script>", r.text, re.DOTALL)
         self.assertIsNotNone(m, "No <script> block found in dashboard HTML")
