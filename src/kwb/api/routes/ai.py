@@ -400,6 +400,9 @@ async def images_analyze(request: dict):
         model: str             — optional model override
         system_prompt: str     — optional system prompt override
         prompt_task: str       — image_description | person_face_visibility
+        boolean_params: list[str] — boolean yes/no questions to append
+            Default: ["Are there humans in the image?",
+                      "Are their faces recognizable?"]
     """
     from datetime import datetime
     from kwb.core.utils import try_parse_json
@@ -409,6 +412,7 @@ async def images_analyze(request: dict):
     mod = request.get("model", "")
     task = request.get("prompt_task", "image_description")
     syp = request.get("system_prompt", "")
+    bool_params = request.get("boolean_params", [])
 
     if not image_ids:
         return JSONResponse({"error": "Keine Bilder hochgeladen"}, 400)
@@ -430,9 +434,26 @@ async def images_analyze(request: dict):
             prompt_msgs = _vision_prompt_for_task(task, context=ctx)
             if syp:
                 prompt_msgs[0] = AIMessage.system(syp)
+
+            # Append boolean analysis parameters
+            bool_suffix = ""
+            if bool_params:
+                bool_suffix = (
+                    "\n\nAdditionally, answer each of the following "
+                    "questions with TRUE or FALSE:\n"
+                )
+                for bp in bool_params:
+                    bool_suffix += f"- {bp}\n"
+                bool_suffix += (
+                    '\nInclude a "boolean_analysis" object in your '
+                    "JSON with each question as key and true/false "
+                    "as value."
+                )
+
+            prompt_text = prompt_msgs[1].content + bool_suffix
             prompt_msgs[1] = AIMessage.user([
                 {"type": "image_url", "image_url": {"url": data_url}},
-                {"type": "text", "text": prompt_msgs[1].content},
+                {"type": "text", "text": prompt_text},
             ])
 
             resp = prov.complete(prompt_msgs, model=mod or None, max_tokens=900)

@@ -43,6 +43,7 @@ class EntityType(str, Enum):
     DAT = "DAT"
     ETH = "ETH"
     CON = "CON"
+    TOP = "TOP"
 
     @property
     def label_de(self) -> str:
@@ -51,7 +52,7 @@ class EntityType(str, Enum):
             "GPE": "Geo-politische Einheit", "FAC": "Bauwerk/Einrichtung",
             "EVT": "Ereignis", "WRK": "Werk/Publikation",
             "DAT": "Datum/Zeit", "ETH": "Ethnie/Kulturgruppe",
-            "CON": "Konzept/Thema",
+            "CON": "Konzept/Thema", "TOP": "Thema/Schlagwort",
         }[self.value]
 
 
@@ -203,6 +204,7 @@ Verwende diese Kategorien:
   DAT  — Datum/Zeitangabe
   ETH  — Ethnie/Kulturgruppe
   CON  — Konzept/Thema (allgemeine Sachbegriffe)
+  TOP  — Thema/Schlagwort (uebergeordnete Themen, generische Schlagwoerter)
 
 Antworte IMMER als valides JSON. Kein Markdown."""
 
@@ -222,7 +224,7 @@ def ner_llm(
                 f'Feld: {item.get("column", "")}\n'
                 f'Record: {item.get("record_id", "")}\n\n'
                 f'Antworte als JSON:\n'
-                f'{{"entities": [{{"text": "...", "type": "PER|ORG|LOC|GPE|FAC|EVT|WRK|DAT|ETH|CON", '
+                f'{{"entities": [{{"text": "...", "type": "PER|ORG|LOC|GPE|FAC|EVT|WRK|DAT|ETH|CON|TOP", '
                 f'"confidence": 0.0-1.0, "reasoning": "..."}}]}}'
             ),
         ]
