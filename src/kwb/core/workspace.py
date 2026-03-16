@@ -125,6 +125,7 @@ class DictionaryType(str, Enum):
             "CON": DictionaryType.CONCEPT,
             "ETH": DictionaryType.CONCEPT,
             "DAT": DictionaryType.OTHER,
+            "TOP": DictionaryType.CONCEPT,
         }
         return mapping.get(entity_type, DictionaryType.OTHER)
 
@@ -149,6 +150,8 @@ class DictionaryEntry:
     note: str = ""
     term_normalized: str = ""          # NFC + whitespace-collapsed form
     term_source: str = ""              # "ocr" | "metadata" | "manual"
+    model_source: str = ""             # AI model used (e.g. "qwen3-coder")
+    last_edited: str = ""              # ISO timestamp of last edit
 
     def __post_init__(self):
         if not self.entry_id:
@@ -187,6 +190,8 @@ class DictionaryEntry:
             "note": self.note,
             "term_normalized": self.term_normalized,
             "term_source": self.term_source,
+            "model_source": self.model_source,
+            "last_edited": self.last_edited,
         }
 
     @staticmethod

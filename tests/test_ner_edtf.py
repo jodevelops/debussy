@@ -11,7 +11,7 @@ from kwb.ai.mock import MockProvider
 
 class TestEntityTypes(unittest.TestCase):
     def test_all_types_exist(self):
-        expected = {"PER","ORG","LOC","GPE","FAC","EVT","WRK","DAT","ETH","CON"}
+        expected = {"PER","ORG","LOC","GPE","FAC","EVT","WRK","DAT","ETH","CON","TOP"}
         self.assertEqual({e.value for e in EntityType}, expected)
 
     def test_german_labels(self):

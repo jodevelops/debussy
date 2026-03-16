@@ -88,21 +88,19 @@ async def export_typed_dictionaries():
 
 @router.get("/api/dictionary/export-target")
 async def export_dictionary_target(entity_type: str = ""):
-    """Export dictionary in the target JSON format for downstream systems.
+    """Export dictionary in the pipeline Step 6 JSON format.
 
-    Target format per entry:
+    Each entry renders to:
     {
-        "id": "entry_id",
-        "category": "person",
-        "term_source": "Joh. Seb. Bach",
-        "term_normalized": "Johann Sebastian Bach",
-        "source": "ocr",
-        "authority": {
-            "wikidata_qid": "Q1339",
-            "gnd_id": "11850529X",
-            "geonames_id": null
-        },
-        "occurrences": [{"record_id": "rec_001"}]
+        "record_id": "rec_10482",
+        "entity_type": "PER",
+        "term_normalized": "Johann Wolfgang von Goethe",
+        "variants": ["J.W. Goethe", "Goethe"],
+        "authority": "Goethe, Johann Wolfgang von",
+        "authority_id": "GND: 118540238",
+        "source": "metadata",
+        "model": "qwen3-coder",
+        "last_edited": "2026-03-16T10:30:00Z"
     }
     """
     ws = get_workspace()
@@ -111,29 +109,53 @@ async def export_dictionary_target(entity_type: str = ""):
     else:
         entries = list(ws.dictionary)
 
+    def _format_authority_id(entry):
+        """Format authority ID from available sources."""
+        if entry.gnd_id:
+            return f"GND: {entry.gnd_id}"
+        if entry.wikidata_id:
+            return f"Wikidata: {entry.wikidata_id}"
+        if entry.geonames_id:
+            return f"GeoNames: {entry.geonames_id}"
+        return ""
+
     def _to_target(entry):
+        # Map entity_type back to uppercase NER code
+        ner_type = entry.entity_type.upper() if entry.entity_type else ""
+        type_map = {
+            "PLACE": "LOC", "PERSON": "PER",
+            "INSTITUTION": "ORG", "CONCEPT": "CON",
+            "EVENT": "EVT", "WORK": "WRK", "OTHER": "CON",
+        }
+        etype = type_map.get(ner_type, ner_type)
+
         return {
-            "id": entry.entry_id,
-            "category": entry.entity_type,
-            "term_source": entry.term,
-            "term_normalized": entry.term_normalized or entry.preferred_name or entry.term,
+            "record_id": entry.record_ids[0] if entry.record_ids else "",
+            "entity_type": etype,
+            "term_normalized": (
+                entry.term_normalized or entry.preferred_name or entry.term
+            ),
+            "variants": entry.alternatives,
+            "authority": entry.gnd_preferred or entry.preferred_name or "",
+            "authority_id": _format_authority_id(entry),
             "source": entry.term_source or entry.source,
-            "authority": {
-                "wikidata_qid": entry.wikidata_id or None,
-                "gnd_id": entry.gnd_id or None,
-                "geonames_id": entry.geonames_id or None,
-            },
-            "occurrences": [{"record_id": rid} for rid in entry.record_ids],
+            "model": entry.model_source,
+            "last_edited": entry.last_edited,
         }
 
     data = json.dumps(
         [_to_target(e) for e in entries], ensure_ascii=False, indent=2,
     )
-    filename = f"dictionary_target_{entity_type}.json" if entity_type else "dictionary_target.json"
+    filename = (
+        f"dictionary_target_{entity_type}.json" if entity_type
+        else "dictionary_target.json"
+    )
     return Response(
         content=data.encode("utf-8"),
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+        },
     )
 
 

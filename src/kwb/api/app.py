@@ -47,6 +47,7 @@ from kwb.api.routes.ai import router as ai_router
 from kwb.api.routes.dictionary import router as dictionary_router
 from kwb.api.routes.mds_tasks import router as mds_tasks_router
 from kwb.api.routes.auth import router as auth_router
+from kwb.api.routes.pipeline import router as pipeline_router
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -65,6 +66,7 @@ app.include_router(ai_router)
 app.include_router(dictionary_router)
 app.include_router(mds_tasks_router)
 app.include_router(auth_router)
+app.include_router(pipeline_router)
 
 # ---------------------------------------------------------------------------
 # UI data injected into the dashboard HTML template
@@ -140,7 +142,12 @@ CATALOG = [
     {"id": "A-06", "name": "Cross-File-Linkage",  "module": "Analyse",   "status": "done",    "note": ""},
     {"id": "A-07", "name": "GND-Abdeckung",       "module": "Analyse",   "status": "done",    "note": ""},
     # NER
-    {"id": "N-01", "name": "NER (LLM)",           "module": "NER",       "status": "done",    "note": "10 Entity-Typen"},
+    {"id": "I-04", "name": "XLSX-Import",       "module": "Ingest",    "status": "done",    "note": "openpyxl"},
+    {"id": "I-05", "name": "METS/MODS-Import",  "module": "Ingest",    "status": "done",    "note": "XML-Parser (stdlib)"},
+    {"id": "I-06", "name": "PDF-Import",         "module": "Ingest",    "status": "done",    "note": "base64-Konvertierung"},
+    {"id": "I-07", "name": "Pipeline-Stepper",   "module": "Pipeline",  "status": "done",    "note": "7-Schritte-Workflow"},
+    # Analysis
+    {"id": "N-01", "name": "NER (LLM)",           "module": "NER",       "status": "done",    "note": "11 Entity-Typen inkl. TOP"},
     {"id": "N-02", "name": "NER (SpaCy)",         "module": "NER",       "status": "done",    "note": "Optional"},
     {"id": "N-03", "name": "NER Hybrid",          "module": "NER",       "status": "done",    "note": "SpaCy+LLM, dedupliziert, _merge_entity_lists"},
     {"id": "N-04", "name": "Problematische Begriffe","module": "NER",    "status": "done",    "note": "LLM-basiert (NER-Tab)"},
@@ -179,7 +186,7 @@ CATALOG = [
     {"id": "R-03", "name": "Goobi Viewer API",    "module": "Export",    "status": "done",    "note": "REST Push via /api/goobi/*"},
     {"id": "R-04", "name": "METS/MODS Export",    "module": "Export",    "status": "planned", "note": ""},
     {"id": "R-05", "name": "GeoNames Lookup",     "module": "Enrich",    "status": "done",    "note": "GeoNames JSON API"},
-    {"id": "R-06", "name": "XML/PDF Ingest",      "module": "Ingest",    "status": "planned", "note": ""},
+    {"id": "R-06", "name": "XML/PDF Ingest",      "module": "Ingest",    "status": "done",    "note": "METS/MODS + PDF base64"},
     # Pipeline Review Gates
     {"id": "P-02", "name": "OCR Review-Gate",      "module": "Pipeline",  "status": "done",    "note": "Stichprobe, Auto-Accept, nur akzeptierte OCR → NER"},
     {"id": "P-03", "name": "NER Review-Gate",      "module": "Pipeline",  "status": "done",    "note": "Stichprobe, Auto-Accept, nur akzeptierte → Dictionary"},

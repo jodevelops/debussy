@@ -29,9 +29,11 @@ MAX_FILE_BYTES = 50 * 1024 * 1024       # 50 MB
 MAX_WORKSPACE_BYTES = 20 * 1024 * 1024  # 20 MB
 MAX_CSV_ROWS = 500_000
 MAX_CSV_COLS = 200
-ALLOWED_EXTENSIONS = {".csv", ".tsv"}
+ALLOWED_EXTENSIONS = {".csv", ".tsv", ".xlsx", ".xls", ".xml", ".pdf"}
 ALLOWED_WS_EXT = {".json"}
-ALLOWED_IMAGE_EXT = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp"}
+ALLOWED_IMAGE_EXT = {
+    ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".img",
+}
 MAX_IMAGE_FILES = 500  # folder upload can contain many files
 
 # ---------------------------------------------------------------------------

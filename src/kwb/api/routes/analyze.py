@@ -28,6 +28,8 @@ from kwb.api.deps import (
     MAX_UPLOAD_FILES, get_datasets, get_provider, get_workspace, get_state,
 )
 from kwb.ingest.csv_loader import ingest_csv
+from kwb.ingest.xlsx_loader import ingest_xlsx
+from kwb.ingest.xml_loader import ingest_xml
 from kwb.analyze.structural import analyze_datasets
 from kwb.analyze.ner import ner_hybrid, scan_problematic_terms
 from kwb.enrich.edtf import normalize_dates
@@ -220,7 +222,12 @@ async def analyze(files: list[UploadFile] = File(...)):
             tmp.write(content)
             tp = Path(tmp.name)
         try:
-            df, pr = ingest_csv(tp)
+            if suffix in {".xlsx", ".xls"}:
+                df, pr = ingest_xlsx(tp)
+            elif suffix == ".xml":
+                df, pr = ingest_xml(tp)
+            else:
+                df, pr = ingest_csv(tp)
             if len(df) > MAX_CSV_ROWS:
                 return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_ROWS:,} Zeilen"}, 400)
             if len(df.columns) > MAX_CSV_COLS:
