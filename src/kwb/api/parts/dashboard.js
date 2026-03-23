@@ -453,12 +453,33 @@ async function saveFM(){
 }
 
 // === STRUCTURAL ANALYSIS ===
+const _IMAGE_EXTS = new Set(['.jpg','.jpeg','.png','.tif','.tiff','.webp','.img']);
+function _fileExt(name){const i=(name||'').lastIndexOf('.');return i>=0?name.slice(i).toLowerCase():'';}
+
 async function runStruct(){
   const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
   if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
   sp('Strukturelle Analyse …',sel.length+' Datei(en)');
   _abortCtrl=new AbortController();
-  const fd=new FormData();for(const id of sel){const it=ufiles[id];if(it)fd.append('files',it.file,it.uploadName)}
+
+  const imgFiles=[], docFiles=[];
+  for(const id of sel){const it=ufiles[id];if(!it)continue;(_IMAGE_EXTS.has(_fileExt(it.uploadName))?imgFiles:docFiles).push(it);}
+
+  // Route image files to the image upload endpoint
+  if(imgFiles.length){
+    const fd=new FormData();for(const it of imgFiles)fd.append('files',it.file,it.uploadName);
+    try{
+      const r=await(await fetch('/api/images/upload',{method:'POST',body:fd,signal:_abortCtrl.signal})).json();
+      if(r.error)throw Error(r.error);
+      uploadedImages=(uploadedImages||[]).concat(r.images||[]);
+      renderImgGrid&&renderImgGrid();
+      if($('img-upload-status'))$('img-upload-status').textContent=(r.uploaded||imgFiles.length)+' Bild(er) hochgeladen.';
+    }catch(e){if(e.name!=='AbortError'){hp();alert(e.message);return;}}
+  }
+
+  if(!docFiles.length){hp();return;}
+
+  const fd=new FormData();for(const it of docFiles)fd.append('files',it.file,it.uploadName);
   try{const r=await(await fetch('/api/analyze',{method:'POST',body:fd,signal:_abortCtrl.signal})).json();
     if(r.error)throw Error(r.error);curRep=r;rrep(r);populateDS();updWS();
     // Show ID column bar for step 1c
