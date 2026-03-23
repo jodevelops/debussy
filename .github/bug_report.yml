@@ -1,0 +1,87 @@
+name: Bug report
+description: Report a reproducible bug in debussy
+title: "[Bug]: "
+labels:
+  - bug
+
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed behavior
+      description: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Provide a short reproducible sequence.
+      placeholder: |
+        1. Start the app
+        2. Upload file ...
+        3. Open tab ...
+        4. Click ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: samples
+    attributes:
+      label: Sample data / fixture
+      description: Which file, record, or fixture reproduces the issue?
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / traceback / console errors
+      description: Paste relevant logs if available.
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How do we know this is fixed?
+      placeholder: |
+        - [ ] Bug no longer occurs
+        - [ ] Relevant tests added or updated
+        - [ ] Local flow verified on localhost
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Ingest
+        - Analyse
+        - NER
+        - EDTF
+        - Enrichment
+        - Images / OCR
+        - Export
+        - Workspace
+        - Pipeline
+        - CLI
+        - CI / Tests
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-report checks
+      options:
+        - label: I reproduced the bug on the current branch
+        - label: I included sample data or a clear reproduction path
+        - label: I included logs, screenshots, or traceback where possible
