@@ -153,12 +153,14 @@ function skipStep(n){
 // === PROMPT QUALITY CHECKER ===
 const PROMPT_CRITERIA=[
   {id:'length',label:'Ausreichende Länge',check:s=>s.length>=30,hint:'Prompt sollte mindestens 30 Zeichen lang sein'},
-  {id:'specific',label:'Spezifische Anweisung',check:s=>/\b(beschreib|extrahier|identifizier|analys|erkenn|list|nenn|format|klassifizier|transkribier)\w*/i.test(s),hint:'Enthält eine klare Handlungsanweisung (beschreibe, extrahiere, etc.)'},
-  {id:'context',label:'Kontextbezug',check:s=>/\b(objekt|bild|dokument|metadat|sammlung|archiv|museum|bestand|quelle|datensatz|feld|spalte|record|image|photo|text)\w*/i.test(s),hint:'Bezieht sich auf den konkreten Datentyp (Objekt, Bild, Metadaten, etc.)'},
-  {id:'output',label:'Ausgabeformat',check:s=>/\b(json|csv|liste|tabelle|format|struktur|feld|array|xml|stichpunkt)\w*/i.test(s),hint:'Definiert das gewünschte Ausgabeformat (JSON, Liste, Tabelle, etc.)'},
+  {id:'specific',label:'Spezifische Anweisung',check:s=>/\b(beschreib|extrahier|identifizier|analys|erkenn|list|nenn|format|klassifizier|transkribier|normalisi|zuordn|prüf|vergleich|extract|classify|describe|identify|normalize)\w*/i.test(s),hint:'Enthält eine klare Handlungsanweisung (beschreibe, extrahiere, etc.)'},
+  {id:'context',label:'Fachkontext (GLAM)',check:s=>/\b(objekt|bild|dokument|metadat|sammlung|archiv|museum|bestand|quelle|datensatz|feld|spalte|record|image|photo|text|manuskript|fotograf|gemälde|brief|inventar|katalog|signatur)\w*/i.test(s),hint:'Bezieht sich auf GLAM-Datentypen (Objekt, Bild, Metadaten, Sammlung, etc.)'},
+  {id:'output',label:'Ausgabeformat',check:s=>/\b(json|csv|liste|tabelle|format|struktur|feld|array|xml|stichpunkt|markdown|key|value|schema)\w*/i.test(s),hint:'Definiert das gewünschte Ausgabeformat (JSON, Liste, Tabelle, etc.)'},
+  {id:'authority',label:'Normdaten-Bezug',check:s=>/\b(gnd|wikidata|viaf|geonames|aat|lido|dublin.?core|edtf|iso.?8601|mets|mods|normdaten|authority|thesaur|vokabular)\w*/i.test(s),hint:'Verweist auf Normdaten/Vokabulare (GND, Wikidata, EDTF, Dublin Core, etc.)'},
   {id:'language',label:'Sprache konsistent',check:s=>{const de=/[äöüß]|der|die|das|und|oder|mit|für/i.test(s);const en=/\b(the|and|with|for|from|this|that)\b/i.test(s);return !(de&&en);},hint:'Prompt ist in einer Sprache geschrieben (nicht gemischt DE/EN)'},
-  {id:'no_ambiguity',label:'Eindeutige Aufgabe',check:s=>!(/ oder /i.test(s)&&/ oder /gi.test(s)&&(s.match(/ oder /gi)||[]).length>2),hint:'Enthält nicht zu viele alternative Anweisungen'},
-  {id:'examples',label:'Beispiele vorhanden',check:s=>/beispiel|z\.?\s?b\.?|wie etwa|instance|example|e\.g\.|bsp\.|etwa:/i.test(s),hint:'Enthält Beispiele für bessere Ergebnisse (optional, empfohlen)'},
+  {id:'constraints',label:'Grenzen definiert',check:s=>/\b(nicht|kein|nur|maximal|mindestens|falls|wenn nicht|ausschließlich|do not|never|only|must not|null|leer|unbekannt|unsicher)\w*/i.test(s),hint:'Definiert Grenzen/Einschränkungen (nicht erfinden, nur wenn sicher, etc.)'},
+  {id:'examples',label:'Beispiele vorhanden',check:s=>/beispiel|z\.?\s?b\.?|wie etwa|instance|example|e\.g\.|bsp\.|etwa:|input.*output|eingabe.*ausgabe/i.test(s),hint:'Enthält Beispiele für bessere Ergebnisse (empfohlen)'},
+  {id:'atomic',label:'Atomare Aufgabe',check:s=>{const actions=(s.match(/\b(beschreib|extrahier|identifizier|analys|erkenn|klassifizier|normalisi|transkribier|übersetze|extract|classify|describe|normalize|translate)\w*/gi)||[]);return actions.length<=2;},hint:'Fokus auf eine Aufgabe (nicht mehrere unabhängige Aufgaben mischen)'},
 ];
 
 function checkPromptQuality(text,targetEl){
