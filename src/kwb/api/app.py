@@ -48,6 +48,7 @@ from kwb.api.routes.dictionary import router as dictionary_router
 from kwb.api.routes.mds_tasks import router as mds_tasks_router
 from kwb.api.routes.auth import router as auth_router
 from kwb.api.routes.pipeline import router as pipeline_router
+from kwb.api.routes.pdf import router as pdf_router
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -67,6 +68,7 @@ app.include_router(dictionary_router)
 app.include_router(mds_tasks_router)
 app.include_router(auth_router)
 app.include_router(pipeline_router)
+app.include_router(pdf_router)
 
 # ---------------------------------------------------------------------------
 # UI data injected into the dashboard HTML template

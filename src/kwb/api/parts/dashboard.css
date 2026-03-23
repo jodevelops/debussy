@@ -142,9 +142,10 @@ th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}
 /* Sub-steps */
 .sub-step{margin-bottom:.6rem}
 .sub-step h3{font-size:.82rem;font-weight:600;color:var(--ink);margin-bottom:.4rem}
-/* Two-column track layout for Step 2 */
-.track-cols{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem}
-@media(max-width:960px){.track-cols{grid-template-columns:1fr}}
+/* Three-column track layout for Step 2 */
+.track-cols{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+@media(max-width:1200px){.track-cols{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.track-cols{grid-template-columns:1fr}}
 .track-col .c h3{font-size:.82rem;margin-bottom:.4rem}
 /* Boolean parameters */
 .bool-param{display:flex;gap:.3rem;align-items:center;margin-bottom:.3rem}
@@ -158,3 +159,17 @@ th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}
 .etype-TOP{background:#f5f5f4;color:#57534e}
 /* Card style for image results */
 .card{border:1px solid var(--brd);border-radius:var(--r);padding:.6rem;background:#fff;box-shadow:0 1px 3px var(--shd)}
+/* Three-pane upload layout (Step 1) */
+.three-pane{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;margin-bottom:1rem}
+@media(max-width:1100px){.three-pane{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.three-pane{grid-template-columns:1fr}}
+.pane{display:flex;flex-direction:column;gap:.6rem}
+.pane-hdr{background:var(--ink);color:var(--paper);padding:.45rem .8rem;font-size:.78rem;font-weight:700;border-radius:var(--r) var(--r) 0 0;letter-spacing:.02em}
+/* PDF page list items */
+.pdf-page-item{display:flex;align-items:center;gap:.4rem;padding:.3rem .4rem;border-bottom:1px solid var(--paper);font-size:.75rem}
+.pdf-page-num{font-size:.62rem;font-weight:700;background:var(--ink);color:var(--paper);padding:.1rem .35rem;border-radius:3px;flex-shrink:0;min-width:26px;text-align:center}
+.pdf-status-pending{background:#f3f4f6;color:#6b7280;font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:10px;flex-shrink:0}
+.pdf-status-ok{background:#dcfce7;color:#065f46;font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:10px;flex-shrink:0}
+.pdf-status-err{background:#fee2e2;color:#8b0000;font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:10px;flex-shrink:0}
+/* Structured JSON output viewer */
+.json-out{background:#1e1e2e;color:#cdd6f4;font-family:'Courier New',monospace;font-size:.65rem;border-radius:var(--r);padding:.75rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border:1px solid var(--brd);margin-top:.4rem}
