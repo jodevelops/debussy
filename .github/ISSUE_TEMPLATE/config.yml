@@ -1,0 +1,6 @@
+blank_issues_enabled: false
+
+contact_links:
+  - name: Questions / discussion
+    url: https://github.com/jodevelops/debussy/discussions
+    about: Ask questions, discuss ideas, or clarify workflows outside formal issues.
