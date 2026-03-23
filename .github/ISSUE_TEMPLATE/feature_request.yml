@@ -1,0 +1,117 @@
+name: Feature request
+description: Propose a new feature or a meaningful enhancement for debussy
+title: "[Feature]: "
+labels:
+  - enhancement
+
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should the feature achieve?
+      placeholder: Describe the intended outcome in one or two short paragraphs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or need
+      description: Which user need, workflow gap, or pain point does this address?
+      placeholder: Explain why this feature is needed.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should debussy do?
+      placeholder: Describe the proposed behavior, workflow, UI element, or API capability.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and boundaries
+      description: What is explicitly in scope, and what is not?
+      placeholder: |
+        In scope:
+        - ...
+
+        Out of scope:
+        - ...
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How will we know the feature is complete and correct?
+      placeholder: |
+        - [ ] Feature is available in the intended workflow
+        - [ ] Relevant tests are added or updated
+        - [ ] UI/API behavior is documented where needed
+        - [ ] Local verification completed
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Ingest
+        - Analyse
+        - NER
+        - EDTF
+        - Enrichment
+        - Images / OCR
+        - Export
+        - Workspace
+        - Pipeline
+        - CLI
+        - CI / Tests
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: type
+    attributes:
+      label: Change type
+      options:
+        - New feature
+        - Enhancement
+        - Refactor with user-visible benefit
+        - UX / UI improvement
+        - API extension
+        - Performance improvement
+        - Developer workflow improvement
+    validations:
+      required: true
+
+  - type: textarea
+    id: samples
+    attributes:
+      label: Sample data / example workflow
+      description: Provide example files, records, user flows, or realistic cases if available.
+      placeholder: Describe a realistic example that should work with this feature.
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks / dependencies
+      description: Are there architectural constraints, external dependencies, or likely side effects?
+      placeholder: Note dependencies, known complexity, compatibility concerns, or migration needs.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Pre-request checks
+      options:
+        - label: I described the user need, not just the implementation idea
+        - label: I included acceptance criteria
+        - label: I added sample data or a realistic example where possible
