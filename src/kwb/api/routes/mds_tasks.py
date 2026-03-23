@@ -203,3 +203,119 @@ async def clear_done_tasks():
     ws.tasks = [t for t in ws.tasks if t.get("status") not in ("done", "skipped")]
     ws._touch()
     return {"removed": before - len(ws.tasks), "remaining": len(ws.tasks)}
+
+
+# ---------------------------------------------------------------------------
+# AI-powered MDS field mapping suggestions
+# ---------------------------------------------------------------------------
+
+@router.post("/api/mds/ai-suggest")
+async def mds_ai_suggest(request: dict):
+    """
+    Use AI to suggest mappings from CSV columns to MDS Pflicht-/Empfohlene Felder.
+
+    Request body:
+        dataset: str
+        columns: list[{name, fill_rate, sample_values}]
+        mds_fields: list[{mds, goobi, pflicht, note}]
+    """
+    from kwb.api.deps import get_provider
+
+    columns = request.get("columns", [])
+    mds_fields = request.get("mds_fields", [])
+
+    if not columns:
+        return JSONResponse({"error": "Keine Spalten"}, 400)
+
+    # Build a prompt for the AI
+    col_desc = "\n".join(
+        f"- {c['name']} (Füllgrad: {round(c.get('fill_rate', 0) * 100)}%, "
+        f"Beispiele: {', '.join(str(v) for v in (c.get('sample_values') or [])[:3])})"
+        for c in columns
+    )
+    mds_desc = "\n".join(
+        f"- {f['mds']} → Goobi-Typ: {f['goobi']} "
+        f"({'PFLICHT' if f.get('pflicht') else 'Empfohlen'}): {f.get('note', '')}"
+        for f in mds_fields
+    )
+
+    prompt = (
+        "Du bist ein Experte für Museumsdaten und den Minimaldatensatz (minimaldatensatz.de).\n\n"
+        "Hier sind die CSV-Spalten eines GLAM-Datensatzes:\n"
+        f"{col_desc}\n\n"
+        "Hier sind die Felder des Minimaldatensatz 1.1:\n"
+        f"{mds_desc}\n\n"
+        "Ordne jede CSV-Spalte dem passendsten MDS-Feld zu. "
+        "Priorisiere Pflichtfelder. Wenn keine gute Zuordnung möglich ist, überspringe die Spalte.\n\n"
+        'Antworte als JSON-Array: [{"csv_column":"...","mds_field":"...","goobi_type":"...","reason":"..."}]\n'
+        "Nur das JSON-Array, kein anderer Text."
+    )
+
+    try:
+        provider = get_provider()
+        from kwb.ai.provider import AIMessage
+        messages = [
+            AIMessage.system(
+                "Du bist ein Experte für GLAM-Metadaten und den deutschen Minimaldatensatz. "
+                "Antworte immer als valides JSON."
+            ),
+            AIMessage.user(prompt),
+        ]
+        response = provider.complete(messages, temperature=0.1, max_tokens=2048)
+        content = response.content.strip()
+
+        # Parse JSON from response (handle markdown code blocks)
+        import json as _json
+        if content.startswith("```"):
+            content = content.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+        suggestions = _json.loads(content)
+
+        # Validate suggestions
+        valid = []
+        col_names = {c["name"] for c in columns}
+        goobi_types = {f["goobi"] for f in mds_fields}
+        for s in suggestions:
+            if (
+                isinstance(s, dict)
+                and s.get("csv_column") in col_names
+                and s.get("goobi_type") in goobi_types
+            ):
+                valid.append(s)
+
+        return {"suggestions": valid, "model": response.model}
+    except Exception as e:
+        logger.exception("AI MDS suggestion failed")
+        # Fallback: heuristic-based suggestions
+        return _heuristic_mds_suggestions(columns, mds_fields)
+
+
+def _heuristic_mds_suggestions(
+    columns: list[dict], mds_fields: list[dict]
+) -> dict:
+    """Fallback heuristic when AI is not available."""
+    suggestions = []
+    col_names_lower = {c["name"]: c["name"] for c in columns}
+    for c in columns:
+        col_names_lower[c["name"].lower()] = c["name"]
+
+    for f in mds_fields:
+        candidates = [
+            f["mds"].lower(),
+            f["goobi"].lower(),
+            *f["mds"].lower().split("/"),
+        ]
+        for cand in candidates:
+            for col_lower, col_orig in col_names_lower.items():
+                if cand in col_lower or col_lower in cand:
+                    suggestions.append({
+                        "csv_column": col_orig,
+                        "mds_field": f["mds"],
+                        "goobi_type": f["goobi"],
+                        "reason": "Namensähnlichkeit (heuristisch)",
+                    })
+                    break
+            else:
+                continue
+            break
+
+    return {"suggestions": suggestions, "model": "heuristic"}

@@ -158,3 +158,25 @@ th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}
 .etype-TOP{background:#f5f5f4;color:#57534e}
 /* Card style for image results */
 .card{border:1px solid var(--brd);border-radius:var(--r);padding:.6rem;background:#fff;box-shadow:0 1px 3px var(--shd)}
+/* Swimlane tabs for Step 2 */
+.swimlane-tabs{display:flex;gap:0;border-bottom:3px solid var(--brd);margin-bottom:1rem}
+.swimlane-tab{padding:.6rem 1.2rem;font-size:.82rem;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-3px;color:#888;transition:.2s;display:flex;align-items:center;gap:.4rem}
+.swimlane-tab:hover{color:var(--ink);background:var(--pw)}
+.swimlane-tab.a{color:var(--ac);border-bottom-color:var(--ac);background:#fff}
+.swimlane{display:none}.swimlane.active{display:block}
+/* Image thumbnail grid */
+.img-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:.5rem;max-height:400px;overflow-y:auto}
+/* Prompt quality indicator */
+.pq-bar{display:flex;gap:.2rem;align-items:center;font-size:.7rem;margin-top:.3rem}
+.pq-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.pq-good{background:var(--ok)}.pq-warn{background:var(--warn)}.pq-bad{background:var(--crit)}
+.pq-item{display:flex;align-items:center;gap:.3rem;padding:.15rem .4rem;border-radius:3px;font-size:.68rem}
+.pq-item.pass{color:var(--ok)}.pq-item.fail{color:var(--crit)}
+/* AI pulse animation for settings button */
+@keyframes pulse-ai{0%,100%{box-shadow:0 0 0 0 rgba(139,69,19,.4)}50%{box-shadow:0 0 0 6px rgba(139,69,19,0)}}
+/* MDS field status badges */
+.mds-badge{display:inline-block;font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:3px;margin-left:.3rem}
+.mds-pflicht{background:#fee2e2;color:var(--crit)}.mds-empfohlen{background:#fef3c7;color:var(--warn)}.mds-mapped{background:#dcfce7;color:var(--ok)}
+/* AI suggestion cards */
+.ai-sug{display:flex;align-items:center;gap:.4rem;padding:.3rem .5rem;border-bottom:1px solid var(--paper);font-size:.75rem}
+.ai-sug:hover{background:var(--pw)}

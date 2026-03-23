@@ -14,7 +14,7 @@
 <button class="btn sm" id="login-btn" onclick="showLogin()" style="margin-top:0">&#128273; Login</button>
 <button class="btn sm s" id="logout-btn" onclick="doLogout()" style="margin-top:0;display:none">Abmelden</button>
 <span class="dot off" id="gd"></span><span id="gl">GPUStack &hellip;</span>
-<button class="btn sm" onclick="openSettings()" style="margin-top:0;margin-left:.5rem" title="KI-Einstellungen">&#9881;</button>
+<button class="btn sm" onclick="openSettings()" style="margin-top:0;margin-left:.5rem;background:var(--ac);animation:pulse-ai 2s ease-in-out 3" title="KI-Einstellungen">&#9881; KI</button>
 </div>
 </header>
 <div class="ws-bar" id="wsbar">
@@ -122,9 +122,16 @@
 <!-- ===== STEP 2: DATA EXTRACTION ===== -->
 <div class="step-panel" data-step="2">
 <h2>Schritt 2: Datenextraktion</h2>
-<div class="track-cols">
 
-<!-- Text Track: NER -->
+<!-- Swimlane tabs -->
+<div class="swimlane-tabs" id="swimlane-tabs">
+<div class="swimlane-tab a" data-lane="metadata" onclick="switchSwimlane('metadata',this)">&#128196; Metadaten-Extraktion (NER / EDTF)</div>
+<div class="swimlane-tab" data-lane="images" onclick="switchSwimlane('images',this)">&#128248; Bild-Extraktion (OCR / HTR / Analyse)</div>
+</div>
+
+<!-- ====== SWIMLANE: METADATA ====== -->
+<div class="swimlane active" id="swimlane-metadata" data-lane="metadata">
+<div class="track-cols">
 <div class="track-col">
 <div class="c">
 <h3>&#128196; Text-Metadaten: NER</h3>
@@ -155,11 +162,35 @@
 <button class="btn f" onclick="runPilot('ner')">&#129514; 2%-Testlauf (NER)</button>
 </div>
 </div>
-
-<!-- Image Track: OCR + Boolean -->
 <div class="track-col">
 <div class="c">
-<h3>&#128248; Bilder: OCR/HTR &amp; Analyse</h3>
+<h3>&#9881; KI-Konfiguration (Schnellzugriff)</h3>
+<div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.4rem">
+<span class="dot off" id="gd-step2"></span><span id="gl-step2" style="font-size:.75rem">GPUStack &hellip;</span>
+<button class="btn sm" onclick="openSettings()" style="margin-top:0">&#9881; Einstellungen &ouml;ffnen</button>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem">
+<div><label>Text-Modell</label><select id="cfg-mt-step2" onchange="syncModelFromStep2('text')" style="font-size:.72rem"></select></div>
+<div><label>Vision-Modell</label><select id="cfg-mv-step2" onchange="syncModelFromStep2('vision')" style="font-size:.72rem"></select></div>
+</div>
+<label>System-Prompt</label>
+<select id="cfg-preset-step2" onchange="loadPresetStep2()" style="font-size:.72rem">
+<option value="meta_de">Metadaten (DE)</option><option value="meta_en">Metadaten (EN)</option>
+<option value="ner_de">NER</option><option value="edtf_de">EDTF</option><option value="custom">Eigene</option>
+</select>
+<textarea id="cfg-sys-step2" rows="3" style="margin-top:.3rem;font-size:.72rem"></textarea>
+<div id="prompt-quality" style="margin-top:.4rem"></div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- ====== SWIMLANE: IMAGES ====== -->
+<div class="swimlane" id="swimlane-images" data-lane="images">
+<div class="track-cols">
+<div class="track-col">
+<div class="c">
+<h3>&#128248; Bilder hochladen</h3>
 <div style="margin-bottom:.5rem">
 <label>Bilder hochladen</label>
 <input type="file" id="img-files" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.img" style="font-size:.75rem;width:100%">
@@ -171,8 +202,27 @@
 <button class="btn f" onclick="uploadImages()">&#11014;&#65039; Hochladen</button>
 <div id="img-upload-status" class="em" style="margin-top:.4rem;font-size:.73rem"></div>
 
-<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
-<h3>Analyse-Aufgabe</h3>
+<!-- Image thumbnail grid -->
+<div style="margin-top:.6rem">
+<div style="display:flex;align-items:center;gap:.4rem;margin-bottom:.4rem">
+<h3 style="margin:0">Hochgeladene Bilder</h3>
+<span id="img-thumb-count" style="font-size:.7rem;color:#888"></span>
+<div class="fl" id="img-filters" style="margin-left:auto;margin-bottom:0">
+<div class="fb2 a" onclick="setImgFilter('all',this)">Alle</div>
+<div class="fb2" onclick="setImgFilter('no_analysis',this)">Ausstehend</div>
+<div class="fb2" onclick="setImgFilter('tiny',this)">Klein</div>
+<div class="fb2" onclick="setImgFilter('dup',this)">Duplikate</div>
+</div>
+</div>
+<div id="img-list-empty" class="em" style="font-size:.73rem">Noch keine Bilder hochgeladen.</div>
+<div id="img-grid" class="img-grid"></div>
+</div>
+</div>
+</div>
+
+<div class="track-col">
+<div class="c">
+<h3>&#128270; Analyse-Aufgabe</h3>
 <label>Modell</label>
 <select id="img-model" class="sel" style="width:100%"><option value="">Standard (aus Konfiguration)</option></select>
 <label>Aufgabe</label>
@@ -193,10 +243,17 @@
 <label>OCR Prompt</label>
 <select id="ocr-preset" class="sel" style="width:100%" onchange="applyActionPreset('ocr')"><option value="vision_de">Vision/OCR</option><option value="custom">Eigen</option></select>
 <textarea id="ocr-sp" class="ta" style="height:3rem;margin-top:.3rem"></textarea>
+<div id="ocr-prompt-quality" style="margin-top:.3rem"></div>
 <button class="btn f" style="background:var(--info)" onclick="runOCR()">&#128214; Text erkennen (OCR)</button>
 <button class="btn f" onclick="runPilotImages()" style="margin-top:.3rem">&#129514; 2%-Testlauf (Bilder)</button>
 </div>
 </div>
+</div>
+</div>
+
+<div style="margin-top:1rem;text-align:center;display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+<button class="btn s" onclick="skipStep(2)" style="padding:.5rem 1.5rem;font-size:.82rem">&#9193; Schritt &uuml;berspringen</button>
+<button class="btn" onclick="completeStep(2)" style="padding:.6rem 2rem;font-size:.85rem">&#10003; Extraktion abgeschlossen &mdash; Weiter zu Schritt 3</button>
 </div>
 </div>
 
@@ -243,7 +300,8 @@
 </div>
 </div>
 
-<div style="margin-top:1rem;text-align:center">
+<div style="margin-top:1rem;text-align:center;display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+<button class="btn s" onclick="skipStep(3)" style="padding:.5rem 1.5rem;font-size:.82rem">&#9193; Schritt &uuml;berspringen</button>
 <button class="btn" onclick="markTestReviewed()" style="padding:.6rem 2rem;font-size:.85rem">&#10003; Qualit&auml;tspr&uuml;fung abgeschlossen &mdash; Weiter zu Schritt 4</button>
 </div>
 </div>
@@ -267,7 +325,8 @@
 </div>
 </div>
 
-<div style="margin-top:1rem;text-align:center">
+<div style="margin-top:1rem;text-align:center;display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+<button class="btn s" onclick="skipStep(4)" style="padding:.5rem 1.5rem;font-size:.82rem">&#9193; Schritt &uuml;berspringen</button>
 <button class="btn" onclick="completeStep(4)" style="padding:.6rem 2rem;font-size:.85rem">&#10003; Gesamtlauf abgeschlossen &mdash; Weiter zu Schritt 5</button>
 </div>
 </div>
@@ -311,7 +370,8 @@
 </div>
 </div>
 
-<div style="margin-top:1rem;text-align:center">
+<div style="margin-top:1rem;text-align:center;display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+<button class="btn s" onclick="skipStep(5)" style="padding:.5rem 1.5rem;font-size:.82rem">&#9193; Schritt &uuml;berspringen</button>
 <button class="btn" onclick="completeStep(5)" style="padding:.6rem 2rem">&#10003; Anreicherung abgeschlossen &mdash; Weiter</button>
 </div>
 </div>
@@ -364,7 +424,8 @@
 </div>
 </div>
 
-<div style="margin-top:1rem;text-align:center">
+<div style="margin-top:1rem;text-align:center;display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+<button class="btn s" onclick="skipStep(6)" style="padding:.5rem 1.5rem;font-size:.82rem">&#9193; Schritt &uuml;berspringen</button>
 <button class="btn" onclick="completeStep(6)" style="padding:.6rem 2rem">&#10003; W&ouml;rterbuch fertig &mdash; Weiter zu Export</button>
 </div>
 </div>
@@ -382,16 +443,28 @@
 </div>
 
 <div class="c" style="margin-bottom:1rem">
-<h3>Feld-Mapping: CSV &rarr; Goobi</h3>
+<h3>Feld-Mapping: CSV &rarr; Minimaldatensatz / Goobi</h3>
 <div style="display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin-bottom:.6rem">
 <label style="margin:0;color:#555">Vorlage:</label>
 <button class="btn sm" onclick="applyMDSTemplate()">&#128203; Minimaldatensatz 1.1</button>
 <button class="btn sm s" onclick="applyGoobiTemplate()">&#128203; Goobi-Standard</button>
+<button class="btn sm" style="background:var(--info)" onclick="runAIMDSSuggestions()">&#129302; KI-Vorschl&auml;ge</button>
 <label style="margin:0;color:#555;margin-left:.5rem">Datensatz:</label>
 <select id="fm-ds" onchange="loadFMCols()" style="width:auto;margin-top:0;flex:1;min-width:160px"><option value="">&#8212;</option></select>
 </div>
+<div id="mds-ai-suggestions" style="display:none;margin-bottom:.8rem" class="c" style="background:#f0f7ff;border:1px solid #d0e3ff">
+<h3 style="color:var(--info)">&#129302; KI-Vorschl&auml;ge f&uuml;r Minimaldatensatz-Zuordnung</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.4rem">Die KI analysiert Ihre Spalten und schl&auml;gt Zuordnungen zu Pflicht- und empfohlenen Feldern vor.</p>
+<div id="mds-ai-result"></div>
+<div style="display:flex;gap:.3rem;margin-top:.5rem">
+<button class="btn sm" onclick="applyAIMDSSuggestions()">&#10003; Alle Vorschl&auml;ge &uuml;bernehmen</button>
+<button class="btn sm s" onclick="dismissAIMDS()">Schlie&szlig;en</button>
+</div>
+</div>
+<!-- MDS Pflichtfelder status -->
+<div id="mds-pflicht-status" style="margin-bottom:.6rem"></div>
 <div id="fm-table-wrap" style="display:none">
-<table class="fmtbl" id="fm-tbl"><thead><tr><th>CSV-Spalte</th><th>F&uuml;llgrad</th><th>Ziel-Feld / Label</th><th>Typ</th><th></th></tr></thead><tbody id="fm-body"></tbody></table>
+<table class="fmtbl" id="fm-tbl"><thead><tr><th>CSV-Spalte</th><th>F&uuml;llgrad</th><th>Ziel-Feld / Label</th><th>Typ</th><th>MDS</th><th></th></tr></thead><tbody id="fm-body"></tbody></table>
 <button class="btn sm" onclick="saveFM()" style="margin-top:.5rem">&#128190; Mapping speichern</button>
 <span id="fm-saved" style="font-size:.7rem;color:var(--ok);display:none">&#10003; Gespeichert</span>
 </div>

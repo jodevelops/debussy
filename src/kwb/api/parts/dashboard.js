@@ -132,12 +132,67 @@ function updateStepperUI(){
   });
 }
 
+// === SWIMLANE NAVIGATION (Step 2) ===
+function switchSwimlane(lane, btn){
+  document.querySelectorAll('.swimlane-tab').forEach(t=>t.classList.remove('a'));
+  document.querySelectorAll('.swimlane').forEach(s=>s.classList.remove('active'));
+  if(btn)btn.classList.add('a');
+  const el=$('swimlane-'+lane);if(el)el.classList.add('active');
+}
+
+// === SKIP STEP ===
+function skipStep(n){
+  if(!confirm('Schritt '+n+' wirklich überspringen? Sie können jederzeit hierher zurückkehren.'))return;
+  stepStates[n]='completed';
+  if(n<7)unlockStep(n+1);
+  updateStepperUI();
+  fetch('/api/pipeline/step/'+n+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({skipped:true})}).catch(()=>{});
+  if(n<7)goStep(n+1);
+}
+
+// === PROMPT QUALITY CHECKER ===
+const PROMPT_CRITERIA=[
+  {id:'length',label:'Ausreichende Länge',check:s=>s.length>=30,hint:'Prompt sollte mindestens 30 Zeichen lang sein'},
+  {id:'specific',label:'Spezifische Anweisung',check:s=>/\b(beschreib|extrahier|identifizier|analys|erkenn|list|nenn|format|klassifizier|transkribier)\w*/i.test(s),hint:'Enthält eine klare Handlungsanweisung (beschreibe, extrahiere, etc.)'},
+  {id:'context',label:'Kontextbezug',check:s=>/\b(objekt|bild|dokument|metadat|sammlung|archiv|museum|bestand|quelle|datensatz|feld|spalte|record|image|photo|text)\w*/i.test(s),hint:'Bezieht sich auf den konkreten Datentyp (Objekt, Bild, Metadaten, etc.)'},
+  {id:'output',label:'Ausgabeformat',check:s=>/\b(json|csv|liste|tabelle|format|struktur|feld|array|xml|stichpunkt)\w*/i.test(s),hint:'Definiert das gewünschte Ausgabeformat (JSON, Liste, Tabelle, etc.)'},
+  {id:'language',label:'Sprache konsistent',check:s=>{const de=/[äöüß]|der|die|das|und|oder|mit|für/i.test(s);const en=/\b(the|and|with|for|from|this|that)\b/i.test(s);return !(de&&en);},hint:'Prompt ist in einer Sprache geschrieben (nicht gemischt DE/EN)'},
+  {id:'no_ambiguity',label:'Eindeutige Aufgabe',check:s=>!(/ oder /i.test(s)&&/ oder /gi.test(s)&&(s.match(/ oder /gi)||[]).length>2),hint:'Enthält nicht zu viele alternative Anweisungen'},
+  {id:'examples',label:'Beispiele vorhanden',check:s=>/beispiel|z\.?\s?b\.?|wie etwa|instance|example|e\.g\.|bsp\.|etwa:/i.test(s),hint:'Enthält Beispiele für bessere Ergebnisse (optional, empfohlen)'},
+];
+
+function checkPromptQuality(text,targetEl){
+  if(!targetEl)return;
+  if(!text||text.length<5){targetEl.innerHTML='';return;}
+  const results=PROMPT_CRITERIA.map(c=>({...c,pass:c.check(text)}));
+  const score=results.filter(r=>r.pass).length;
+  const total=results.length;
+  const pct=Math.round(score/total*100);
+  const color=pct>=70?'var(--ok)':pct>=40?'var(--warn)':'var(--crit)';
+  targetEl.innerHTML='<div class="pq-bar"><strong style="color:'+color+'">Prompt-Qualität: '+pct+'%</strong> ('+score+'/'+total+')</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:.2rem;margin-top:.2rem">'
+    +results.map(r=>'<span class="pq-item '+(r.pass?'pass':'fail')+'" title="'+esc(r.hint)+'">'+(r.pass?'✓':'✗')+' '+esc(r.label)+'</span>').join('')
+    +'</div>';
+}
+
 // Settings overlay
 function openSettings(){
   $('settings-overlay').classList.add('a');
   loadGPUConfig();chkGPU();
 }
 function closeSettings(){$('settings-overlay').classList.remove('a')}
+
+// Sync Step 2 quick-access models with settings
+function syncModelFromStep2(type){
+  if(type==='text'){const v=$('cfg-mt-step2').value;if($('cfg-mt'))$('cfg-mt').value=v;}
+  if(type==='vision'){const v=$('cfg-mv-step2').value;if($('cfg-mv'))$('cfg-mv').value=v;}
+}
+function loadPresetStep2(){
+  const k=$('cfg-preset-step2').value;
+  $('cfg-sys-step2').value=PRESETS[k]||'';
+  if($('cfg-sys'))$('cfg-sys').value=PRESETS[k]||'';
+  checkPromptQuality($('cfg-sys-step2').value,$('prompt-quality'));
+}
 
 // Boolean analysis params
 function addBoolParam(){
@@ -380,15 +435,92 @@ function renderFMTable(){
     const mapped=fmMapping[c.name];
     const label=mapped?(Array.isArray(mapped)?mapped[0]:mapped):'';
     const type=mapped?(Array.isArray(mapped)?mapped[1]:''):'';
+    const mdsMatch=MDS_FIELDS.find(f=>f.goobi===type);
+    const mdsBadge=mdsMatch?(mdsMatch.pflicht?'<span class="mds-badge mds-pflicht">Pflicht</span>':'<span class="mds-badge mds-empfohlen">Empfohlen</span>'):'';
     return '<tr>'+
       '<td><strong>'+esc(c.name)+'</strong></td>'+
       '<td style="font-size:.68rem;color:#888">'+Math.round(c.fill_rate*100)+'%</td>'+
       '<td><input type="text" id="fm-lbl-'+esc(c.name)+'" value="'+esc(label)+'" placeholder="Label (optional)" style="width:130px"></td>'+
-      '<td><select id="fm-typ-'+esc(c.name)+'" style="width:220px">'+_fmTypeOpts(type)+'</select></td>'+
+      '<td><select id="fm-typ-'+esc(c.name)+'" style="width:220px" onchange="updateMDSStatus()">'+_fmTypeOpts(type)+'</select></td>'+
+      '<td>'+mdsBadge+'</td>'+
       '<td><button class="btn sm" onclick="clearFMRow(\''+esc(c.name)+'\')">✕</button></td>'+
     '</tr>';
   }).join('');
+  updateMDSStatus();
 }
+
+// MDS Pflichtfelder status overview
+function updateMDSStatus(){
+  const el=$('mds-pflicht-status');if(!el)return;
+  const pflicht=MDS_FIELDS.filter(f=>f.pflicht);
+  const empfohlen=MDS_FIELDS.filter(f=>!f.pflicht);
+  const mappedTypes=new Set();
+  fmCols.forEach(c=>{
+    const sel=$('fm-typ-'+c.name);
+    if(sel&&sel.value)mappedTypes.add(sel.value);
+  });
+  const pflichtMapped=pflicht.filter(f=>mappedTypes.has(f.goobi));
+  const empfohlenMapped=empfohlen.filter(f=>mappedTypes.has(f.goobi));
+  const pPct=pflicht.length?Math.round(pflichtMapped.length/pflicht.length*100):0;
+  el.innerHTML='<div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:.75rem;align-items:center">'
+    +'<div><strong>Pflichtfelder:</strong> <span style="color:'+(pPct===100?'var(--ok)':'var(--crit)')+'">'+pflichtMapped.length+'/'+pflicht.length+'</span>'
+    +' <div class="mds-bar" style="width:80px"><div class="mds-fill" style="width:'+pPct+'%"></div></div></div>'
+    +'<div><strong>Empfohlen:</strong> <span style="color:var(--info)">'+empfohlenMapped.length+'/'+empfohlen.length+'</span></div>'
+    +'<div style="font-size:.7rem;color:#888">'+pflicht.filter(f=>!mappedTypes.has(f.goobi)).map(f=>'<span class="mds-badge mds-pflicht" title="'+esc(f.note)+'">'+esc(f.mds)+'</span>').join(' ')+'</div>'
+    +'</div>';
+}
+
+// AI-powered MDS field mapping suggestions
+let _aiMDSSuggestions=[];
+async function runAIMDSSuggestions(){
+  const ds=$('fm-ds').value;
+  if(!ds){alert('Erst Datensatz im Mapping wählen.');return;}
+  if(!fmCols.length){alert('Keine Spalten geladen.');return;}
+  sp('KI analysiert Spalten für Minimaldatensatz…','');
+  try{
+    const body={
+      dataset:ds,
+      columns:fmCols.map(c=>({name:c.name,fill_rate:c.fill_rate,sample_values:(c.sample_values||[]).slice(0,3)})),
+      mds_fields:MDS_FIELDS,
+    };
+    const r=await(await fetch('/api/mds/ai-suggest',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();
+    if(r.error){alert('KI-Fehler: '+r.error);hp();return;}
+    _aiMDSSuggestions=r.suggestions||[];
+    renderAIMDSSuggestions();
+    $('mds-ai-suggestions').style.display='block';
+  }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
+function renderAIMDSSuggestions(){
+  const el=$('mds-ai-result');if(!el)return;
+  if(!_aiMDSSuggestions.length){el.innerHTML='<em>Keine Vorschläge.</em>';return;}
+  el.innerHTML=_aiMDSSuggestions.map((s,i)=>{
+    const mds=MDS_FIELDS.find(f=>f.goobi===s.goobi_type);
+    const badge=mds?(mds.pflicht?'<span class="mds-badge mds-pflicht">Pflicht</span>':'<span class="mds-badge mds-empfohlen">Empfohlen</span>'):'';
+    return '<div class="ai-sug">'
+      +'<input type="checkbox" checked id="ai-sug-'+i+'">'
+      +'<strong>'+esc(s.csv_column)+'</strong>'
+      +' <span style="color:var(--ac)">→</span> '
+      +'<span>'+esc(s.mds_field||s.goobi_type)+'</span>'
+      +badge
+      +'<span style="font-size:.68rem;color:#888;margin-left:auto">'+esc(s.reason||'')+'</span>'
+      +'</div>';
+  }).join('');
+}
+
+function applyAIMDSSuggestions(){
+  _aiMDSSuggestions.forEach((s,i)=>{
+    const cb=$('ai-sug-'+i);
+    if(!cb||!cb.checked)return;
+    const lbl=$('fm-lbl-'+s.csv_column);
+    const typ=$('fm-typ-'+s.csv_column);
+    if(lbl&&s.mds_field)lbl.value=s.mds_field;
+    if(typ&&s.goobi_type)typ.value=s.goobi_type;
+  });
+  updateMDSStatus();
+  dismissAIMDS();
+}
+function dismissAIMDS(){$('mds-ai-suggestions').style.display='none';}
 
 // Apply Minimaldatensatz 1.1 template — auto-map columns by heuristic
 function applyMDSTemplate(){
@@ -1014,6 +1146,7 @@ async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json()
     function setDot(cls,txt){
       $('gd').className='dot '+cls;$('gl').textContent=txt;
       if($('gd2'))$('gd2').className='dot '+cls;if($('gl2'))$('gl2').textContent=txt;
+      if($('gd-step2'))$('gd-step2').className='dot '+cls;if($('gl-step2'))$('gl-step2').textContent=txt;
     }
     if(!d.configured){
       setDot('mock','Testdaten-Modus');
@@ -1045,6 +1178,15 @@ async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json()
         $('img-model').innerHTML='<option value="">Standard (aus Konfiguration)</option>'+
           visionModels.map(m=>safeOpt(m,m+' [VISION]')).join('')+
           textModels.map(m=>safeOpt(m,m+' [TEXT]')).join('');
+      }
+      // Populate Step 2 quick-access model dropdowns
+      if($('cfg-mt-step2')){
+        $('cfg-mt-step2').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+        if(cfg.gpustack_model_text)$('cfg-mt-step2').value=cfg.gpustack_model_text;
+      }
+      if($('cfg-mv-step2')){
+        $('cfg-mv-step2').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+        if(cfg.gpustack_model_vision)$('cfg-mv-step2').value=cfg.gpustack_model_vision;
       }
     }else{
       setDot('off','GPUStack: nicht erreichbar');
@@ -1834,6 +1976,11 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
   try{const ct=$('cfg-tasks');if(ct)ct.innerHTML=Object.values(TASKS).map(t=>'<div class="ft"><span class="bg ac">'+esc(t.type||'')+'</span><div><strong>'+esc(t.name)+'</strong><br><span class="d">'+esc(t.description||'')+'</span></div></div>').join('');}catch(err){console.error('[init] cfg-tasks',err);failed.push('cfg-tasks')}
   try{if(typeof renderCatalog==='function')renderCatalog()}catch(err){console.error('[init] renderCatalog',err);failed.push('renderCatalog')}
   try{chkGPU()}catch(err){console.error('[init] chkGPU',err);failed.push('chkGPU')}
+  // Bind prompt quality checker to textareas
+  try{
+    const sysTA=$('cfg-sys-step2');if(sysTA)sysTA.addEventListener('input',()=>checkPromptQuality(sysTA.value,$('prompt-quality')));
+    const ocrTA=$('ocr-sp');if(ocrTA)ocrTA.addEventListener('input',()=>checkPromptQuality(ocrTA.value,$('ocr-prompt-quality')));
+  }catch(err){console.error('[init] promptQuality',err);failed.push('promptQuality')}
   try{updWS()}catch(err){console.error('[init] updWS',err);failed.push('updWS')}
   try{loadImages().catch(()=>{})}catch(err){console.error('[init] loadImages',err);failed.push('loadImages')}
   try{loadTermsDict()}catch(err){console.error('[init] loadTermsDict',err);failed.push('loadTermsDict')}
