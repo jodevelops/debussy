@@ -960,7 +960,7 @@ async function createArbeitspaket(){
   const d=ds[0];
   const dsName=d.source_name;
   const idCol=d.id_column||d.columns?.[0]?.name||'';
-  const fullName=Object.keys(ufiles).find(n=>n===dsName||n.startsWith(dsName+'.'))||Object.keys(ufiles).find(n=>n.includes(dsName))||Object.keys(ufiles)[0]||'';
+  const fullName=(Object.values(ufiles).find(f=>f.uploadName===dsName||f.uploadName.startsWith(dsName+'.'))||Object.values(ufiles).find(f=>f.uploadName.includes(dsName))||Object.values(ufiles)[0]||{uploadName:''}).uploadName;
   if(!fullName){alert('Datensatz nicht mehr verfügbar. Bitte Seite neu laden.');return;}
   sp('Arbeitspaket wird erstellt…','CSV Export');
   try{
@@ -1000,7 +1000,7 @@ function showIdColBar(reportData){
   cont.innerHTML=ds.map(d=>{
     const cols=d.columns||[];
     const detected=d.id_column||'';
-    const fname=Object.keys(ufiles).find(n=>n===d.source_name||n.startsWith(d.source_name+'.'))||Object.keys(ufiles).find(n=>n.includes(d.source_name))||'';
+    const fname=(Object.values(ufiles).find(f=>f.uploadName===d.source_name||f.uploadName.startsWith(d.source_name+'.'))||Object.values(ufiles).find(f=>f.uploadName.includes(d.source_name))||{uploadName:''}).uploadName;
     return '<div class="id-col-row">'+
       '<strong style="min-width:140px;font-size:.75rem">'+esc(d.source_name)+':</strong>'+
       '<select id="idcol-'+esc(d.source_name)+'" style="min-width:200px">'+
