@@ -864,6 +864,8 @@ async function loadGPUConfig(){
     if($('cfg-key'))$('cfg-key').placeholder=d.gpustack_key_masked
       ?'Aktuell: '+d.gpustack_key_masked+' (leer = unverändert)'
       :'sk-… (leer lassen = unverändert)';
+    if(d.gpustack_model_text&&$('cfg-mt'))$('cfg-mt').value=d.gpustack_model_text;
+    if(d.gpustack_model_vision&&$('cfg-mv'))$('cfg-mv').value=d.gpustack_model_vision;
   }catch(e){console.error('loadGPUConfig',e)}}
 
 function toggleKeyVis(){const inp=$('cfg-key');inp.type=inp.type==='password'?'text':'password';}

@@ -68,8 +68,9 @@ async def gpu_status():
         prov = GPUStackProvider(c.to_provider_config())
         available = prov.is_available()
         models = prov.list_models() if available else []
+        config = {"gpustack_model_text": c.gpustack_model_text, "gpustack_model_vision": c.gpustack_model_vision}
         return {"status": "ok" if available else "error",
-                "configured": True, "available": available, "models": models}
+                "configured": True, "available": available, "models": models, "config": config}
     except Exception as e:
         return {"status": "error", "configured": True, "message": str(e)}
 
