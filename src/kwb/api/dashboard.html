@@ -69,26 +69,25 @@
 <!-- ===== STEP 1: UPLOAD & PARSE ===== -->
 <div class="step-panel active" data-step="1">
 <h2>Schritt 1: Daten laden, parsen &amp; analysieren</h2>
-<div class="g2"><div class="sb">
+<div class="three-pane">
 
-<!-- 1a. Upload -->
-<div class="sub-step c">
-<h3>1a. Daten hochladen</h3>
+<!-- Pane 1: Metadata (CSV / XLSX / XML) -->
+<div class="pane">
+<div class="pane-hdr">&#128196; Metadaten</div>
+<div class="c">
+<h3>1a. Dateien hochladen</h3>
 <div class="uz" id="uz" onclick="document.getElementById('fi').click()">
-<input type="file" id="fi" accept=".csv,.tsv,.xlsx,.xls,.xml,.pdf,.tiff,.tif,.jpeg,.jpg,.png,.img,.webp" multiple>
-<p style="font-size:.8rem">&#128194; CSV / TSV / XLSX / METS-MODS XML / Bilder / PDF hierher ziehen oder klicken</p>
+<input type="file" id="fi" accept=".csv,.tsv,.xlsx,.xls,.xml" multiple>
+<p style="font-size:.8rem">&#128194; CSV / TSV / XLSX / METS-MODS XML</p>
 </div>
-<div class="c" id="fc" style="display:none;margin-top:.5rem"><h3>Dateien</h3><div class="cl" id="fcl"></div></div>
+<div id="fc" style="display:none;margin-top:.4rem"><div class="cl" id="fcl"></div></div>
 </div>
-
-<!-- 1b. Analyse -->
-<div class="sub-step c">
+<div class="c">
 <h3>1b. Strukturelle Analyse</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">7 Qualit&auml;tschecks: Fehlwerte, Duplikate, Encoding, Formate, Terme, Verkn&uuml;pfungen, GND-Abdeckung.</p>
 <button class="btn f" onclick="runStruct()">&#128300; Analyse starten</button>
 </div>
-
-<!-- 1c. ID Column -->
-<div class="sub-step c" id="id-col-bar" style="display:none">
+<div class="c" id="id-col-bar" style="display:none">
 <h3>1c. ID-Spalte festlegen</h3>
 <p style="font-size:.75rem;margin-bottom:.4rem">W&auml;hle die Spalte, die jeden Datensatz eindeutig identifiziert (UUID, Signatur, o.&auml;.).</p>
 <div id="id-col-datasets"></div>
@@ -96,10 +95,48 @@
 </div>
 </div>
 
-<div>
-<div id="de" class="em"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade Dateien hoch, starte die Analyse, und setze die ID-Spalte fest.</p>
+<!-- Pane 2: Images (JPG / PNG / TIFF / WEBP) -->
+<div class="pane">
+<div class="pane-hdr">&#128248; Bilder</div>
+<div class="c">
+<h3>Bilder hochladen</h3>
+<label>Einzelne Dateien</label>
+<input type="file" id="img-files" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.webp,.img" style="font-size:.75rem;width:100%">
+<label>Ordner <span style="font-weight:400;color:#888">(inkl. Unterordner)</span></label>
+<input type="file" id="img-folder" webkitdirectory multiple style="font-size:.75rem;width:100%">
+<button class="btn f" onclick="uploadImages()">&#11014;&#65039; Hochladen</button>
+<div id="img-upload-status" class="em" style="margin-top:.4rem;font-size:.73rem"></div>
+</div>
+<div class="c" id="img-pane1-info" style="display:none">
+<h3>Hochgeladene Bilder <span id="img-pane1-count" style="font-size:.7rem;color:#888"></span></h3>
+<div id="img-pane1-list" style="max-height:200px;overflow-y:auto"></div>
+</div>
+</div>
+
+<!-- Pane 3: PDF-Dokumente -->
+<div class="pane">
+<div class="pane-hdr">&#128209; PDF-Dokumente</div>
+<div class="c">
+<h3>PDF hochladen</h3>
+<div class="uz" id="uz-pdf" onclick="document.getElementById('fi-pdf').click()">
+<input type="file" id="fi-pdf" accept=".pdf" multiple>
+<p style="font-size:.8rem">&#128209; PDF-Dokumente hierher ziehen oder klicken</p>
+</div>
+<button class="btn f" onclick="uploadPDF()" style="margin-top:.5rem">&#11014;&#65039; Hochladen &amp; Seiten erkennen</button>
+<div id="pdf-upload-status" style="font-size:.73rem;margin-top:.4rem"></div>
+</div>
+<div class="c" id="pdf-pane1-info" style="display:none">
+<h3>Dokumente <span id="pdf-pane1-count" style="font-size:.7rem;color:#888"></span></h3>
+<div id="pdf-pane1-list" style="max-height:200px;overflow-y:auto"></div>
+</div>
+</div>
+
+</div><!-- /.three-pane -->
+
+<!-- Analysis Results (full width below panes) -->
+<div id="de" class="em" style="margin-top:1rem"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade Dateien hoch, starte die Analyse, und setze die ID-Spalte fest.</p>
 <div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Pipeline-Workflow:</strong><br>
-&#9312; Upload &amp; Parse &rarr; &#9313; Extraktion (NER + Bilder) &rarr; &#9314; Qualit&auml;tspr&uuml;fung &rarr; &#9315; Gesamtlauf &rarr; &#9316; Anreicherung &rarr; &#9317; W&ouml;rterbuch &rarr; &#9318; Export</div></div>
+&#9312; Upload &amp; Parse &rarr; &#9313; Extraktion (NER + Bilder + PDF) &rarr; &#9314; Qualit&auml;tspr&uuml;fung &rarr; &#9315; Gesamtlauf &rarr; &#9316; Anreicherung &rarr; &#9317; W&ouml;rterbuch &rarr; &#9318; Export</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
 <div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="cols">Spalten &amp; Profil</div><div class="tab" data-t="md">Markdown</div></div>
 <div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
@@ -110,12 +147,10 @@
 <div class="fb2 a" onclick="sortCols('name',this)">Name</div>
 <div class="fb2" onclick="sortCols('fill',this)">F&uuml;llgrad &darr;</div>
 <div class="fb2" onclick="sortCols('unique',this)">Unique &darr;</div>
-</div>
-</div>
+</div></div>
 <div id="colsarea"></div>
 </div>
 <div class="tp" data-t="md"><textarea id="mdx" readonly rows="18"></textarea><button class="btn sm s" style="margin-top:.3rem" onclick="navigator.clipboard.writeText($('mdx').value)">Kopieren</button></div>
-</div></div>
 </div></div>
 </div>
 
@@ -153,6 +188,10 @@
 <label>Samples</label><input type="number" id="ner-n" value="10000" min="1" max="500000">
 <label>Chunk-Gr&ouml;&szlig;e</label><input type="number" id="ner-chunk" value="200" min="10" max="2000">
 <button class="btn f" onclick="runPilot('ner')">&#129514; 2%-Testlauf (NER)</button>
+<hr style="border:none;border-top:1px solid var(--brd);margin:.5rem 0">
+<h3>Strukturierte JSON-Ausgabe</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">Exportiert NER-Ergebnisse als valides JSON mit Entity-Text, Typ, Konfidenz, Begr&uuml;ndung und Quellfeld.</p>
+<button class="btn sm" onclick="downloadNERJSON()">&#11015;&#65039; NER-Ergebnisse (JSON)</button>
 </div>
 </div>
 
@@ -197,6 +236,60 @@
 <button class="btn f" onclick="runPilotImages()" style="margin-top:.3rem">&#129514; 2%-Testlauf (Bilder)</button>
 </div>
 </div>
+
+<!-- PDF Track: Text Extraction & NER -->
+<div class="track-col">
+<div class="c">
+<h3>&#128209; PDF: Textextraktion &amp; NER</h3>
+<label>Dokument</label>
+<select id="pdf-ner-doc" onchange="onPdfDocChange()" style="width:100%"><option value="">&#8212; Bitte erst PDF hochladen &#8212;</option></select>
+<div id="pdf-doc-info" style="font-size:.73rem;color:#888;margin-top:.2rem"></div>
+<label>Modell (Vision/OCR)</label>
+<select id="pdf-model" style="width:100%"><option value="">Standard (aus Konfiguration)</option></select>
+<label>Max. Seiten f&uuml;r Extraktion</label>
+<input type="number" id="pdf-max-pages" value="20" min="1" max="200">
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3>1. Textextraktion (OCR)</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">Vision-Modell liest Text von jeder PDF-Seite. Ergebnis als strukturiertes JSON.</p>
+<button class="btn f" onclick="extractPDFText()">&#128269; Text extrahieren (OCR)</button>
+<div id="pdf-extract-status" style="font-size:.73rem;margin-top:.3rem"></div>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3>2. NER auf extrahiertem Text</h3>
+<label>Entity-Typen</label>
+<div id="pdf-ner-types" class="cl" style="max-height:140px">
+<div class="ci"><input type="checkbox" value="PER" class="pdf-ner-cb" checked><span class="etype etype-PER">PER</span><span>Personen</span></div>
+<div class="ci"><input type="checkbox" value="ORG" class="pdf-ner-cb" checked><span class="etype etype-ORG">ORG</span><span>Organisationen</span></div>
+<div class="ci"><input type="checkbox" value="LOC" class="pdf-ner-cb" checked><span class="etype etype-LOC">LOC</span><span>Orte</span></div>
+<div class="ci"><input type="checkbox" value="GPE" class="pdf-ner-cb" checked><span class="etype etype-GPE">GPE</span><span>Geo-politisch</span></div>
+<div class="ci"><input type="checkbox" value="DAT" class="pdf-ner-cb" checked><span class="etype etype-DAT">DAT</span><span>Datierung</span></div>
+<div class="ci"><input type="checkbox" value="TOP" class="pdf-ner-cb" checked><span class="etype etype-CON">TOP</span><span>Schlagworte</span></div>
+</div>
+<button class="btn f" onclick="runPDFNER()" style="margin-top:.4rem">&#129514; NER ausf&uuml;hren</button>
+<div id="pdf-ner-status" style="font-size:.73rem;margin-top:.3rem"></div>
+
+<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
+<h3>Strukturierte JSON-Ausgabe</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">Valides JSON: Textextraktion (Seite, Text, Konfidenz) oder Entities (Text, Typ, Konfidenz, Quelle).</p>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap">
+<button class="btn sm" onclick="downloadPDFExtractionJSON()">&#11015;&#65039; Textextraktion (JSON)</button>
+<button class="btn sm" onclick="downloadPDFNERJSON()">&#11015;&#65039; Entities (JSON)</button>
+</div>
+</div>
+
+<div id="pdf-extract-result" class="c" style="display:none;margin-top:.6rem">
+<h3>Extrahierter Text <span id="pdf-pages-count" style="font-size:.7rem;color:#888"></span></h3>
+<div id="pdf-extract-pages" class="scroll-box" style="max-height:260px"></div>
+</div>
+
+<div id="pdf-ner-result" class="c" style="display:none;margin-top:.6rem">
+<h3>Erkannte Entities <span id="pdf-ner-count" style="font-size:.7rem;color:#888"></span></h3>
+<div id="pdf-ner-summary" style="font-size:.72rem;color:#555;margin-bottom:.4rem;flex-wrap:wrap;display:flex;gap:.3rem"></div>
+<div class="scroll-box"><table class="etbl" id="pdf-ner-tbl"><thead><tr><th>Entity</th><th>Typ</th><th>Konf.</th><th>Seite</th></tr></thead><tbody id="pdf-ner-body"></tbody></table></div>
+</div>
+</div>
+
 </div>
 </div>
 
