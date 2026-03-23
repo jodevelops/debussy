@@ -13,22 +13,30 @@ const GOOBI_TYPES=[
   "SubjectPerson","SubjectCorporation","Custom",
 ];
 
-// Minimaldatensatz 1.1 fields (minimaldatensatz.de)
+// Minimaldatensatz v1.1 fields (minimaldatensatz.de / DDB Wiki)
+// pflicht: 'pflicht' | 'bedingt' | 'empfohlen'
 const MDS_FIELDS=[
-  {mds:"Identifikator",goobi:"CatalogIDDigital",pflicht:true,note:"Eindeutige ID (UUID, Signatur …)"},
-  {mds:"Titel",goobi:"TitleDocMain",pflicht:true,note:"Haupttitel des Objekts"},
-  {mds:"Objekttyp",goobi:"DocStruct",pflicht:true,note:"Art des Objekts (Gemälde, Brief …)"},
-  {mds:"Aufbewahrungsort",goobi:"PlaceOfPublication",pflicht:true,note:"Institution / Standort"},
-  {mds:"Rechtliche Informationen",goobi:"Rights",pflicht:true,note:"Lizenz oder Rechtehinweis"},
-  {mds:"Beschreibung",goobi:"Description",pflicht:false,note:"Inhaltliche Beschreibung"},
-  {mds:"Datierung",goobi:"DateCreated",pflicht:false,note:"Entstehungsdatum (EDTF-Format empfohlen)"},
-  {mds:"Abmessungen/Umfang",goobi:"Dimensions",pflicht:false,note:"Maße oder Seitenumfang"},
-  {mds:"Material/Technik",goobi:"MaterialDescription",pflicht:false,note:"Material und Herstellungstechnik"},
-  {mds:"Hersteller/Urheber",goobi:"Creator",pflicht:false,note:"Person oder Körperschaft"},
-  {mds:"Abbildungsnachweis",goobi:"Source",pflicht:false,note:"Bildquelle oder Fotograf"},
-  {mds:"Schlagwörter",goobi:"SubjectTopic",pflicht:false,note:"Thematische Schlagwörter"},
-  {mds:"Herstellungsort",goobi:"SubjectGeographic",pflicht:false,note:"Entstehungsort des Objekts"},
-  {mds:"Sammlung",goobi:"singleDigCollection",pflicht:false,note:"Sammlung oder Bestand"},
+  // --- Pflichtfelder (Erfassung) ---
+  {mds:"Objekttitel/-benennung",goobi:"TitleDocMain",pflicht:true,level:"pflicht",note:"Titel oder Benennung des Objekts"},
+  {mds:"Objekttyp/-bezeichnung",goobi:"DocStruct",pflicht:true,level:"pflicht",note:"Art des Objekts (Gemälde, Fotografie, Münze …)"},
+  {mds:"Inventarnummer",goobi:"CatalogIDDigital",pflicht:true,level:"pflicht",note:"Eindeutige Inventarnummer innerhalb der Institution"},
+  {mds:"Ereignistyp",goobi:"SubjectTopic",pflicht:true,level:"pflicht",note:"Art des Ereignisses in der Objektgeschichte (Herstellung, Fund …)"},
+  // --- Bedingt Pflicht (wenn bekannt) ---
+  {mds:"Person/Körperschaft",goobi:"Creator",pflicht:true,level:"bedingt",note:"Beteiligte Person/Körperschaft — Pflicht wenn bekannt"},
+  {mds:"Datierung",goobi:"DateCreated",pflicht:true,level:"bedingt",note:"Datierung des Ereignisses — Pflicht wenn bekannt (EDTF empfohlen)"},
+  {mds:"Ort",goobi:"SubjectGeographic",pflicht:true,level:"bedingt",note:"Ort des Ereignisses — Pflicht wenn bekannt"},
+  {mds:"Nutzungsrechte Mediendatei",goobi:"Rights",pflicht:true,level:"pflicht",note:"Lizenz der Mediendatei (CC-Lizenz oder Rechtehinweis)"},
+  // --- Pflichtfelder (Export) ---
+  {mds:"ID des Datensatzes",goobi:"CatalogIDDigital",pflicht:true,level:"pflicht",note:"Eindeutige Record-ID für Austausch/Publikation"},
+  {mds:"Sprache des Datensatzes",goobi:"DocLanguage",pflicht:true,level:"pflicht",note:"Sprache des Datensatzes (auch bei einsprachig DE)"},
+  // --- Empfohlene Felder ---
+  {mds:"Klassifikation",goobi:"SubjectTopic",pflicht:false,level:"empfohlen",note:"Systematische Klassifikation des Objekts"},
+  {mds:"Objektbeschreibung",goobi:"Description",pflicht:false,level:"empfohlen",note:"Inhaltliche Beschreibung (barrierefrei formuliert)"},
+  {mds:"Material",goobi:"MaterialDescription",pflicht:false,level:"empfohlen",note:"Material(ien) des Objekts (Öl auf Leinwand, Bronze …)"},
+  {mds:"Technik",goobi:"Technique",pflicht:false,level:"empfohlen",note:"Herstellungstechnik (Holzschnitt, Guss, Druck …)"},
+  {mds:"Maße",goobi:"Dimensions",pflicht:false,level:"empfohlen",note:"Abmessungen (Höhe, Breite, Tiefe, Gewicht …)"},
+  {mds:"Inhaltsschlagwort",goobi:"SubjectTopic",pflicht:false,level:"empfohlen",note:"Schlagwörter zum Inhalt (kontrolliertes Vokabular empfohlen)"},
+  {mds:"Sammlung/Bestand",goobi:"singleDigCollection",pflicht:false,level:"empfohlen",note:"Sammlung oder Bestand der Institution"},
 ];
 
 let ufiles={},curRep=null,gpuM=[],nerData=[],edtfData=[];
@@ -438,7 +446,7 @@ function renderFMTable(){
     const label=mapped?(Array.isArray(mapped)?mapped[0]:mapped):'';
     const type=mapped?(Array.isArray(mapped)?mapped[1]:''):'';
     const mdsMatch=MDS_FIELDS.find(f=>f.goobi===type);
-    const mdsBadge=mdsMatch?(mdsMatch.pflicht?'<span class="mds-badge mds-pflicht">Pflicht</span>':'<span class="mds-badge mds-empfohlen">Empfohlen</span>'):'';
+    const mdsBadge=mdsMatch?(mdsMatch.level==='pflicht'?'<span class="mds-badge mds-pflicht">Pflicht</span>':mdsMatch.level==='bedingt'?'<span class="mds-badge mds-bedingt">Bedingt</span>':'<span class="mds-badge mds-empfohlen">Empfohlen</span>'):'';
     return '<tr>'+
       '<td><strong>'+esc(c.name)+'</strong></td>'+
       '<td style="font-size:.68rem;color:#888">'+Math.round(c.fill_rate*100)+'%</td>'+
@@ -454,21 +462,28 @@ function renderFMTable(){
 // MDS Pflichtfelder status overview
 function updateMDSStatus(){
   const el=$('mds-pflicht-status');if(!el)return;
-  const pflicht=MDS_FIELDS.filter(f=>f.pflicht);
-  const empfohlen=MDS_FIELDS.filter(f=>!f.pflicht);
+  const pflicht=MDS_FIELDS.filter(f=>f.level==='pflicht');
+  const bedingt=MDS_FIELDS.filter(f=>f.level==='bedingt');
+  const empfohlen=MDS_FIELDS.filter(f=>f.level==='empfohlen');
   const mappedTypes=new Set();
   fmCols.forEach(c=>{
     const sel=$('fm-typ-'+c.name);
     if(sel&&sel.value)mappedTypes.add(sel.value);
   });
   const pflichtMapped=pflicht.filter(f=>mappedTypes.has(f.goobi));
+  const bedingtMapped=bedingt.filter(f=>mappedTypes.has(f.goobi));
   const empfohlenMapped=empfohlen.filter(f=>mappedTypes.has(f.goobi));
   const pPct=pflicht.length?Math.round(pflichtMapped.length/pflicht.length*100):0;
+  const bPct=bedingt.length?Math.round(bedingtMapped.length/bedingt.length*100):0;
   el.innerHTML='<div style="display:flex;gap:1rem;flex-wrap:wrap;font-size:.75rem;align-items:center">'
-    +'<div><strong>Pflichtfelder:</strong> <span style="color:'+(pPct===100?'var(--ok)':'var(--crit)')+'">'+pflichtMapped.length+'/'+pflicht.length+'</span>'
-    +' <div class="mds-bar" style="width:80px"><div class="mds-fill" style="width:'+pPct+'%"></div></div></div>'
+    +'<div><strong>Pflicht:</strong> <span style="color:'+(pPct===100?'var(--ok)':'var(--crit)')+'">'+pflichtMapped.length+'/'+pflicht.length+'</span>'
+    +' <div class="mds-bar" style="width:60px"><div class="mds-fill" style="width:'+pPct+'%"></div></div></div>'
+    +'<div><strong>Bedingt:</strong> <span style="color:'+(bPct===100?'var(--ok)':'var(--warn)')+'">'+bedingtMapped.length+'/'+bedingt.length+'</span>'
+    +' <div class="mds-bar" style="width:60px"><div class="mds-fill" style="width:'+bPct+'%;background:var(--warn)"></div></div></div>'
     +'<div><strong>Empfohlen:</strong> <span style="color:var(--info)">'+empfohlenMapped.length+'/'+empfohlen.length+'</span></div>'
-    +'<div style="font-size:.7rem;color:#888">'+pflicht.filter(f=>!mappedTypes.has(f.goobi)).map(f=>'<span class="mds-badge mds-pflicht" title="'+esc(f.note)+'">'+esc(f.mds)+'</span>').join(' ')+'</div>'
+    +'</div>'
+    +'<div style="font-size:.7rem;color:#888;margin-top:.3rem">'
+    +(pflicht.filter(f=>!mappedTypes.has(f.goobi)).length?'<span style="font-weight:600;color:var(--crit)">Fehlend:</span> '+pflicht.filter(f=>!mappedTypes.has(f.goobi)).map(f=>'<span class="mds-badge mds-pflicht" title="'+esc(f.note)+'">'+esc(f.mds)+'</span>').join(' '):'<span style="color:var(--ok)">Alle Pflichtfelder zugeordnet</span>')
     +'</div>';
 }
 

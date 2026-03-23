@@ -176,7 +176,7 @@ th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}
 @keyframes pulse-ai{0%,100%{box-shadow:0 0 0 0 rgba(139,69,19,.4)}50%{box-shadow:0 0 0 6px rgba(139,69,19,0)}}
 /* MDS field status badges */
 .mds-badge{display:inline-block;font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:3px;margin-left:.3rem}
-.mds-pflicht{background:#fee2e2;color:var(--crit)}.mds-empfohlen{background:#fef3c7;color:var(--warn)}.mds-mapped{background:#dcfce7;color:var(--ok)}
+.mds-pflicht{background:#fee2e2;color:var(--crit)}.mds-bedingt{background:#fef3c7;color:var(--warn)}.mds-empfohlen{background:#e0e7ff;color:var(--info)}.mds-mapped{background:#dcfce7;color:var(--ok)}
 /* AI suggestion cards */
 .ai-sug{display:flex;align-items:center;gap:.4rem;padding:.3rem .5rem;border-bottom:1px solid var(--paper);font-size:.75rem}
 .ai-sug:hover{background:var(--pw)}
