@@ -40,7 +40,6 @@ src/kwb/
 ## Architektur-Regeln
 
 - **Provider-Abstraktion**: Alle LLM-Aufrufe über `ai/provider.py`-Interface. GPUStack für Produktion, Mock für Tests.
-- **Modularer Aufbau**: Jedes GLAM-Institut nutzt nur, was es braucht.
 - **Sprache**: Code auf Englisch, UI/Doku auf Deutsch.
 - **Dependencies minimal halten**: Kern nur pandas + pydantic. Extras über optional-dependencies.
 - **Tests**: unittest-basiert. Jedes neue Feature braucht Tests.
