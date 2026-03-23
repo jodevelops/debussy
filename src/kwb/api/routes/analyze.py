@@ -155,6 +155,7 @@ def _report_json(report, markdown: str) -> dict:
     datasets = [
         {
             "source_name": dp.source_name,
+            "source_path": dp.source_path,
             "row_count": dp.row_count,
             "column_count": dp.column_count,
             "id_column": dp.id_column,
@@ -195,6 +196,27 @@ def _report_json(report, markdown: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+import re as _re
+
+_COMPOSITE_KEY_RE = _re.compile(r"__\d+__\d+$")
+
+
+def _normalize_upload_filename(filename: str) -> str:
+    """Strip composite frontend key suffix (``__size__lastModified``) if present.
+
+    The JS upload UI keys files internally as ``name__bytesize__lastModified``
+    (e.g. ``data.csv__11565356__1768907749964``).  In normal operation the
+    third argument of ``FormData.append`` ensures only the plain name reaches
+    the server, but as a defensive measure we strip any such suffix here so
+    that dataset lookups work regardless.
+    """
+    return _COMPOSITE_KEY_RE.sub("", filename)
+
+
+# ---------------------------------------------------------------------------
 # CSV Upload + Analyse
 # ---------------------------------------------------------------------------
 
@@ -211,12 +233,13 @@ async def analyze(files: list[UploadFile] = File(...)):
     datasets = []
 
     for u in files:
-        suffix = Path(u.filename or "").suffix.lower()
+        fname = _normalize_upload_filename(u.filename or "")
+        suffix = Path(fname).suffix.lower()
         if suffix not in ALLOWED_EXTENSIONS:
-            return JSONResponse({"error": f"'{u.filename}': Nur {', '.join(ALLOWED_EXTENSIONS)} erlaubt"}, 400)
+            return JSONResponse({"error": f"'{fname}': Nur {', '.join(ALLOWED_EXTENSIONS)} erlaubt"}, 400)
         content = await u.read()
         if len(content) > MAX_FILE_BYTES:
-            return JSONResponse({"error": f"'{u.filename}': Max {MAX_FILE_BYTES // (1024 * 1024)} MB"}, 400)
+            return JSONResponse({"error": f"'{fname}': Max {MAX_FILE_BYTES // (1024 * 1024)} MB"}, 400)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(content)
@@ -229,16 +252,16 @@ async def analyze(files: list[UploadFile] = File(...)):
             else:
                 df, pr = ingest_csv(tp)
             if len(df) > MAX_CSV_ROWS:
-                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_ROWS:,} Zeilen"}, 400)
+                return JSONResponse({"error": f"'{fname}': Max {MAX_CSV_ROWS:,} Zeilen"}, 400)
             if len(df.columns) > MAX_CSV_COLS:
-                return JSONResponse({"error": f"'{u.filename}': Max {MAX_CSV_COLS} Spalten"}, 400)
-            pr.source_name = Path(u.filename).stem
-            pr.source_path = u.filename
+                return JSONResponse({"error": f"'{fname}': Max {MAX_CSV_COLS} Spalten"}, 400)
+            pr.source_name = Path(fname).stem
+            pr.source_path = fname
             datasets.append((df, pr))
-            state["datasets"][u.filename] = (df, pr)
-            ws.source_files.append(u.filename)
+            state["datasets"][fname] = (df, pr)
+            ws.source_files.append(fname)
         except Exception as e:
-            return JSONResponse({"error": f"{u.filename}: {e}"}, 400)
+            return JSONResponse({"error": f"{fname}: {e}"}, 400)
         finally:
             tp.unlink(missing_ok=True)
 
