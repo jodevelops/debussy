@@ -170,6 +170,21 @@
 </div>
 <button class="btn f" onclick="uploadImages()">&#11014;&#65039; Hochladen</button>
 <div id="img-upload-status" class="em" style="margin-top:.4rem;font-size:.73rem"></div>
+<div class="img-overview" style="margin-top:.6rem">
+<h3>Bildübersicht</h3>
+<div id="img-filters" class="fl" style="margin-bottom:.4rem">
+<div class="fb2 a" onclick="setImgFilter('all',this)">Alle</div>
+<div class="fb2" onclick="setImgFilter('dup',this)">Duplikate</div>
+<div class="fb2" onclick="setImgFilter('tiny',this)">Sehr klein</div>
+<div class="fb2" onclick="setImgFilter('no_analysis',this)">Noch nicht analysiert</div>
+</div>
+<div id="img-view-mode" class="fl" style="margin-bottom:.3rem">
+<div class="fb2 a" onclick="setImgViewMode('grid',this)">Kacheln</div>
+<div class="fb2" onclick="setImgViewMode('list',this)">Liste</div>
+</div>
+<div id="img-list-empty" class="em" style="display:none;padding:.8rem;font-size:.74rem">Noch keine Bilder hochgeladen.</div>
+<div id="img-grid" class="img-grid"></div>
+</div>
 
 <hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
 <h3>Analyse-Aufgabe</h3>

@@ -1106,6 +1106,7 @@ async function runPilot(task){
 // === IMAGES ===
 let uploadedImages = [];
 let imgFilter = 'all';
+let imgViewMode = 'grid';
 
 function applyImgPreset(){
   const presetEl=$('img-preset'),spEl=$('img-sp');
@@ -1151,6 +1152,13 @@ function setImgFilter(filter, btn){
   renderImgGrid();
 }
 
+function setImgViewMode(mode, btn){
+  imgViewMode = mode === 'list' ? 'list' : 'grid';
+  document.querySelectorAll('#img-view-mode .fb2').forEach(x=>x.classList.remove('a'));
+  if(btn) btn.classList.add('a');
+  renderImgGrid();
+}
+
 function _filteredImages(){
   const hc = _imgHashCounts();
   if(imgFilter === 'tiny') return uploadedImages.filter(img=>{
@@ -1169,27 +1177,33 @@ function renderImgGrid(){
   const grid = $('img-grid');
   const empty = $('img-list-empty');
   if(!grid)return;
+  grid.classList.toggle('img-list',imgViewMode==='list');
+  grid.classList.toggle('img-grid',imgViewMode!=='list');
   if(!uploadedImages.length){if(empty)empty.style.display='block';grid.innerHTML='';return}
   const shown = _filteredImages();
   if(!shown.length){if(empty){empty.style.display='block';empty.textContent='Keine Bilder für den gewählten Filter.';}grid.innerHTML='';return}
   if(empty){empty.style.display='none';empty.textContent='Noch keine Bilder hochgeladen.';}
   grid.innerHTML = shown.map(function(img){
     const imgUrl='/api/images/'+encPath(img.id)+'/data';
-    const info=(img.filename||'')+' — '+(img.width||'?')+'x'+(img.height||'?');
+    const w=img.width||'?',h=img.height||'?';
+    const info=(img.filename||'')+' — '+w+'x'+h;
     const isTiff=(img.media_type||'').includes('tiff');
     const thumb=isTiff
-      ?'<div class="img-open" data-src="'+esc(imgUrl)+'" data-info="'+esc(img.filename||'')+'" style="height:140px;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#888;font-size:.85rem;font-weight:600;cursor:pointer">TIFF</div>'
+      ?'<div class="img-thumb-fallback show img-open" data-src="'+esc(imgUrl)+'" data-info="'+esc(img.filename||'')+'">TIFF</div>'
       :'<img class="img-thumb img-open" src="'+esc(imgUrl)+'" alt="'+esc(img.filename)+'" data-src="'+esc(imgUrl)+'" data-info="'+esc(info)+'"'
-      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer">'
-      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>';
-    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
+      +'>'
+      +'<div class="img-thumb-fallback">Vorschau n/v</div>';
+    return '<div class="img-item '+(imgViewMode==='list'?'list':'grid')+'">'
       +thumb
-      +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
-      +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
+      +'<div class="img-meta-line">'
+      +'<div class="img-fn" title="'+esc(img.filename)+'">'+esc(img.filename||img.id)+'</div>'
+      +'<div class="img-meta-details">'+esc(w+'×'+h)+' &middot; '+esc(img.media_type||'unbekannt')+'</div>'
+      +'<div class="img-meta-details">'+(Number(img.size_bytes||0)/1024).toFixed(1)+' KB</div>'
+      +'</div>'
       +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
       +'</div>'}).join('');
   grid.querySelectorAll('.img-open').forEach(el=>el.onclick=()=>openLightbox(el.dataset.src||'',el.dataset.info||''));
-  grid.querySelectorAll('.img-thumb').forEach(el=>el.onerror=()=>{el.style.display='none';if(el.nextElementSibling)el.nextElementSibling.style.display='flex'});
+  grid.querySelectorAll('.img-thumb').forEach(el=>el.onerror=()=>{el.style.display='none';if(el.nextElementSibling)el.nextElementSibling.classList.add('show')});
 }
 
 async function analyzeImages(){
