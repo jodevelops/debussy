@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 613/745 Tests bestanden, 0 fehlgeschlagen, 132 übersprungen
+**Gesamtstatus:** 307/440 Tests bestanden, 33 fehlgeschlagen, 100 übersprungen
 
 ---
 
@@ -237,38 +237,39 @@
 <!-- AUTO-TESTS-START -->
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
-| test_ai.py | 19/19 | 0 | 0 | ✅ |
+| test_ai.py | 0/1 | 1 | 0 | ❌ |
 | test_api.py | 0/51 | 0 | 51 | ✅ |
 | test_authority_review.py | 9/9 | 0 | 0 | ✅ |
-| test_cli.py | 8/8 | 0 | 0 | ✅ |
-| test_comprehensive.py | 22/22 | 0 | 0 | ✅ |
-| test_core.py | 18/18 | 0 | 0 | ✅ |
-| test_dictionaries_mds_auth.py | 37/37 | 0 | 0 | ✅ |
+| test_cli.py | 0/1 | 1 | 0 | ❌ |
+| test_comprehensive.py | 16/22 | 6 | 0 | ❌ |
+| test_core.py | 0/1 | 1 | 0 | ❌ |
+| test_dictionaries_mds_auth.py | 26/37 | 11 | 0 | ❌ |
 | test_edtf.py | 82/82 | 0 | 0 | ✅ |
 | test_geonames.py | 9/9 | 0 | 0 | ✅ |
-| test_gnd.py | 14/14 | 0 | 0 | ✅ |
-| test_gnd_enrich.py | 24/40 | 0 | 16 | ✅ |
+| test_gnd.py | 0/1 | 1 | 0 | ❌ |
+| test_gnd_enrich.py | 0/1 | 1 | 0 | ❌ |
 | test_goobi_api.py | 4/4 | 0 | 0 | ✅ |
-| test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
+| test_goobi_export.py | 0/1 | 1 | 0 | ❌ |
 | test_gpu_config_api.py | 0/10 | 0 | 10 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
 | test_image_upload.py | 0/31 | 0 | 31 | ✅ |
-| test_ner.py | 29/29 | 0 | 0 | ✅ |
-| test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
-| test_new_features.py | 29/41 | 0 | 12 | ✅ |
+| test_ner.py | 0/1 | 1 | 0 | ❌ |
+| test_ner_edtf.py | 0/1 | 1 | 0 | ❌ |
+| test_new_features.py | 0/1 | 1 | 0 | ❌ |
 | test_open_issues.py | 24/32 | 0 | 8 | ✅ |
 | test_pdf_loader.py | 3/3 | 0 | 0 | ✅ |
 | test_pipeline.py | 18/18 | 0 | 0 | ✅ |
-| test_pipeline_steps.py | 10/10 | 0 | 0 | ✅ |
-| test_quality_measures.py | 55/55 | 0 | 0 | ✅ |
-| test_roadmap.py | 8/8 | 0 | 0 | ✅ |
-| test_services.py | 20/20 | 0 | 0 | ✅ |
+| test_pipeline_steps.py | 0/1 | 1 | 0 | ❌ |
+| test_quality_analysis_report.py | 43/43 | 0 | 0 | ✅ |
+| test_quality_measures.py | 0/1 | 1 | 0 | ❌ |
+| test_roadmap.py | 0/1 | 1 | 0 | ❌ |
+| test_services.py | 0/1 | 1 | 0 | ❌ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
-| test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
-| test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
-| test_xml_loader.py | 8/8 | 0 | 0 | ✅ |
-| **Gesamt** | **613/745** | **0** | **132** | **✅** |
+| test_workspace_export.py | 0/1 | 1 | 0 | ❌ |
+| test_xlsx_loader.py | 0/1 | 1 | 0 | ❌ |
+| test_xml_loader.py | 0/1 | 1 | 0 | ❌ |
+| **Gesamt** | **307/440** | **33** | **100** | **❌** |
 <!-- AUTO-TESTS-END -->
 
 ---
