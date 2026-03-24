@@ -192,6 +192,7 @@ def _report_json(report, markdown: str) -> dict:
             for f in report.findings[:200]
         ],
         "markdown": markdown,
+        "quality_measures": report.quality_measures.to_dict_list() if report.quality_measures else [],
     }
 
 
