@@ -898,6 +898,7 @@ function rrep(d){
   const fs=d.findings||[];
   $('fbar').innerHTML='<div class="fb2 a" onclick="ff(\'all\',this)">Alle ('+fs.length+')</div><div class="fb2" onclick="ff(\'critical\',this)">Kritisch ('+(s.critical||0)+')</div><div class="fb2" onclick="ff(\'warning\',this)">Warnungen ('+(s.warnings||0)+')</div><div class="fb2" onclick="ff(\'info\',this)">Hinweise ('+(s.info||0)+')</div>';
   rfnd(fs);
+  rQM(d.quality_measures||[]);
   rCombinedCols(d.datasets||[]);
   if($('mdx'))$('mdx').value=d.markdown||'';
   // Show ID column selection bar
@@ -908,6 +909,35 @@ function rrep(d){
 function ff(f,b){document.querySelectorAll('#fbar .fb2').forEach(x=>x.classList.remove('a'));if(b)b.classList.add('a');rfnd(f==='all'?(curRep?.findings||[]):(curRep?.findings||[]).filter(x=>x.severity===f))}
 function rfnd(fs){if(!fs.length){$('flist').textContent='Keine Findings.';return}
   $('flist').innerHTML=fs.map(f=>'<div class="fd '+esc(f.severity)+'"><span class="sv '+esc(f.severity)+'">'+esc(f.severity)+'</span> <span style="font-size:.62rem;color:#888">'+esc(f.category)+'</span><div style="margin-top:.1rem">'+esc(f.message)+'</div>'+(f.column?'<div style="font-size:.68rem;color:#666">Spalte: '+esc(f.column)+'</div>':'')+(f.suggestion?'<div style="font-style:italic;color:var(--ac);font-size:.73rem">→ '+esc(f.suggestion)+'</div>':'')+'</div>').join('')}
+
+// === QUALITY MEASURES PANEL ===
+const QM_LABELS={completeness:'Vollständigkeit',uniqueness:'Eindeutigkeit',structural_validity:'Strukturelle Gültigkeit',consistency:'Konsistenz',semantic_correctness:'Semantische Korrektheit',normalization:'Normalisierung',clarity:'Klarheit',cross_field_coherence:'Feldzusammenhang',provenance:'Provenienz',fitness_for_use:'Nutzbarkeit',risk_severity:'Risiko / Schwere',actionability:'Handlungsrelevanz'};
+const QM_ICONS={good:'✅',needs_review:'⚠️',critical:'🔴',insufficient_data:'⬜'};
+const QM_COLORS={good:'var(--ok)',needs_review:'var(--warn)',critical:'var(--crit)',insufficient_data:'#aaa'};
+function rQM(ms){
+  const area=$('qmarea');if(!area)return;
+  if(!ms||!ms.length){area.innerHTML='<p style="font-size:.8rem;color:#888;padding:.5rem">Keine Qualitätsmaße verfügbar.</p>';return}
+  const rows=ms.map(m=>{
+    const lbl=QM_LABELS[m.measure]||m.measure;
+    const icon=QM_ICONS[m.status]||'';
+    const col=QM_COLORS[m.status]||'#666';
+    const sc=m.score!=null?m.score:'—';
+    const barW=m.score!=null?Math.round(m.score*0.6):0;
+    const actions=(m.recommended_actions||[]).map(a=>'<li>'+esc(a)+'</li>').join('');
+    const actBlock=actions?'<ul style="margin:.2rem 0 0 1rem;padding:0;font-size:.68rem;color:#555">'+actions+'</ul>':'';
+    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.5rem .6rem;margin-bottom:.4rem">'+
+      '<div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">'+
+      '<span style="font-weight:600;font-size:.8rem;min-width:180px">'+icon+' '+esc(lbl)+'</span>'+
+      '<span style="background:#eef;border-radius:10px;padding:.1rem .45rem;font-size:.7rem;font-weight:700;color:'+col+'">'+sc+(sc!=='—'?'/100':'')+'</span>'+
+      '<span class="fb0" style="width:'+barW+'px;background:'+col+'"></span>'+
+      '</div>'+
+      '<div style="font-size:.73rem;color:#444;margin-top:.25rem">'+esc(m.summary)+'</div>'+
+      (m.evidence_count?'<div style="font-size:.67rem;color:#888;margin-top:.15rem">'+m.evidence_count+' Belege</div>':'')+
+      actBlock+
+      '</div>';
+  });
+  area.innerHTML=rows.join('');
+}
 
 // === COMBINED COLUMNS TABLE (merged Profile + Spalten with sort) ===
 let _colsData=[];
