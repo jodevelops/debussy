@@ -131,3 +131,109 @@ class MockProvider(AIProvider):
                 "note": "llm-converted",
             })
         )
+
+    @staticmethod
+    def with_quality_check_responses(
+        cell_issue_type: str = "semantic_misplacement",
+        cell_severity: str = "warning",
+        cell_confidence: float = 0.88,
+    ) -> "MockProvider":
+        """
+        Convenience factory for LLM quality-check tests.
+
+        Returns deterministic structured responses for cell-, column-, record-
+        and dataset-level quality prompts based on keyword detection.
+        """
+        def _is_cell_check(msgs: list) -> bool:
+            last = msgs[-1].content if isinstance(msgs[-1].content, str) else ""
+            return "Zellwert" in last or "cell" in last.lower()
+
+        def _is_column_check(msgs: list) -> bool:
+            last = msgs[-1].content if isinstance(msgs[-1].content, str) else ""
+            return "Feldreinheit" in last or "field_purity_score" in last
+
+        def _is_record_check(msgs: list) -> bool:
+            last = msgs[-1].content if isinstance(msgs[-1].content, str) else ""
+            return "Datensatz-ID" in last or "overall_confidence" in last
+
+        def _is_dataset_check(msgs: list) -> bool:
+            last = msgs[-1].content if isinstance(msgs[-1].content, str) else ""
+            return "dominant_error_families" in last or "work_package_candidates" in last
+
+        cell_response = json.dumps({
+            "value": "Kutsche",
+            "field": "location_place_name",
+            "issue_type": cell_issue_type,
+            "severity": cell_severity,
+            "confidence": cell_confidence,
+            "reasoning": "Der Wert bezeichnet kein benanntes geografisches Objekt.",
+            "evidence": {"expected": "Toponym", "found": "Sachbegriff"},
+            "suggested_target_field": "subject_general",
+            "suggested_action": "move_or_review",
+            "review_required": True,
+        })
+
+        column_response = json.dumps({
+            "column": "location_place_name",
+            "field_purity_score": 62.0,
+            "dominant_issue_types": ["semantic_misplacement", "generic"],
+            "typical_problems": ["Sachbegriffe statt Ortsnamen", "generische Motivbegriffe"],
+            "affected_value_examples": ["Kutsche", "Eisenbahnbrücke", "Felder"],
+            "suggested_action": "Nicht-Toponyme in Subject-Feld verschieben",
+            "confidence": 0.85,
+            "reasoning": "Mehrere Werte sind keine benannten Orte.",
+            "review_required": True,
+        })
+
+        record_response = json.dumps({
+            "record_id": "obj-001",
+            "severity": "warning",
+            "conflicts": [
+                {
+                    "fields": ["date_created", "date_issued"],
+                    "description": "Herausgabedatum liegt vor dem Entstehungsdatum.",
+                    "confidence": 0.79,
+                }
+            ],
+            "overall_confidence": 0.79,
+            "reasoning": "Zeitliche Inkonsistenz zwischen Entstehungs- und Herausgabedatum.",
+            "review_required": True,
+        })
+
+        dataset_response = json.dumps({
+            "dominant_error_families": [
+                "Semantische Fehlplatzierung von Sachbegriffen in Ortsfeldern"
+            ],
+            "at_risk_columns": ["location_place_name"],
+            "issue_clusters": [
+                {
+                    "label": "Nicht-Toponyme in Ortsfeldern",
+                    "affected_columns": ["location_place_name"],
+                    "count": 12,
+                    "severity": "warning",
+                    "suggested_action": "In Subject-Feld verschieben",
+                }
+            ],
+            "work_package_candidates": [
+                {
+                    "title": "Semantische Umsortierung generischer Nicht-Toponyme",
+                    "description": "Sachbegriffe aus location_place_name in subject_general verschieben.",
+                    "priority": "warning",
+                    "affected_columns": ["location_place_name"],
+                    "estimated_records": 12,
+                    "action_type": "move_or_review",
+                }
+            ],
+            "risk_summary": "Ortsfeld enthält systematisch fehlplatzierte Sachbegriffe.",
+            "confidence": 0.87,
+        })
+
+        return MockProvider(
+            rules=[
+                (_is_dataset_check, dataset_response),
+                (_is_record_check, record_response),
+                (_is_column_check, column_response),
+                (_is_cell_check, cell_response),
+            ],
+            default_response=cell_response,
+        )
