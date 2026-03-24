@@ -299,7 +299,7 @@ class LlmQualityReport:
         )
 
         return QualityAnalysisReport(
-            dataset_profile=self.dataset_profile,
+            dataset_profiles=[self.dataset_profile] if self.dataset_profile else [],
             quality_measures=[],
             column_reports=col_reports_p1,
             record_reports=rec_reports_p1,
