@@ -13,6 +13,9 @@ from kwb.core.models import (
     AnalysisReport,
     DatasetProfile,
     Finding,
+    QualityMeasureReport,
+    QualityMeasureSummary,
+    QualityStatus,
     Severity,
 )
 
@@ -21,6 +24,28 @@ SEVERITY_ICONS = {
     Severity.CRITICAL: "🔴",
     Severity.WARNING: "🟡",
     Severity.INFO: "🔵",
+}
+
+STATUS_ICONS = {
+    QualityStatus.GOOD: "✅",
+    QualityStatus.NEEDS_REVIEW: "🟡",
+    QualityStatus.CRITICAL: "🔴",
+    QualityStatus.INSUFFICIENT_DATA: "⚪",
+}
+
+MEASURE_LABELS = {
+    "completeness": "Vollständigkeit",
+    "uniqueness": "Eindeutigkeit",
+    "structural_validity": "Strukturelle Gültigkeit",
+    "consistency": "Konsistenz",
+    "semantic_correctness": "Semantische Korrektheit",
+    "normalization": "Normalisierung",
+    "clarity": "Klarheit / Interpretierbarkeit",
+    "cross_field_coherence": "Feldzusammenhang",
+    "provenance": "Provenienz / Rückverfolgbarkeit",
+    "fitness_for_use": "Verwendbarkeit",
+    "risk_severity": "Risiko / Schweregrad",
+    "actionability": "Handlungsfähigkeit",
 }
 
 
@@ -73,6 +98,64 @@ def _render_finding(f: Finding) -> str:
     return "\n".join(lines)
 
 
+def _score_bar(score: int | None, width: int = 10) -> str:
+    """Render a compact ASCII progress bar for a 0-100 score."""
+    if score is None:
+        return "—"
+    filled = round(score / 100 * width)
+    return "█" * filled + "░" * (width - filled) + f" {score}/100"
+
+
+def _render_quality_measures(qm_report: QualityMeasureReport) -> str:
+    """Render the 12 core quality measures as a Markdown section."""
+    lines = [
+        "## 12 Kerndimensionen der Datenqualität",
+        "",
+        "Überblick über die harmonisierten Qualitätsmaßzahlen — abgeleitet aus den detaillierten Findings.",
+        "",
+        "| # | Maßzahl | Score | Status | Zusammenfassung |",
+        "|---|---|---|---|---|",
+    ]
+
+    for i, m in enumerate(qm_report.measures, 1):
+        label = MEASURE_LABELS.get(m.measure.value, m.measure.value)
+        icon = STATUS_ICONS.get(m.status, "⚪")
+        score_str = f"{m.score}/100" if m.score is not None else "—"
+        summary_escaped = m.summary.replace("|", "\\|")
+        lines.append(f"| {i} | **{label}** | {score_str} | {icon} {m.status.value} | {summary_escaped} |")
+
+    lines.append("")
+
+    # Detail blocks for measures that need attention
+    attention = [m for m in qm_report.measures if m.status in (QualityStatus.CRITICAL, QualityStatus.NEEDS_REVIEW)]
+    if attention:
+        lines.append("### Maßzahlen mit Handlungsbedarf")
+        lines.append("")
+        for m in attention:
+            label = MEASURE_LABELS.get(m.measure.value, m.measure.value)
+            icon = STATUS_ICONS.get(m.status, "⚪")
+            lines.append(f"#### {icon} {label}")
+            lines.append("")
+            lines.append(f"**Score:** {m.score}/100 — {m.summary}")
+            lines.append("")
+            if m.recommended_actions:
+                lines.append("**Empfohlene Maßnahmen:**")
+                lines.append("")
+                for action in m.recommended_actions:
+                    lines.append(f"- {action}")
+                lines.append("")
+            if m.top_examples:
+                lines.append("**Beispiele:**")
+                lines.append("")
+                for ex in m.top_examples[:3]:
+                    col = ex.get("column") or ex.get("category", "")
+                    detail = ex.get("message") or ex.get("summary") or str(ex)
+                    lines.append(f"- `{col}`: {detail}")
+                lines.append("")
+
+    return "\n".join(lines)
+
+
 def render_report(report: AnalysisReport) -> str:
     """Render a complete AnalysisReport as Markdown."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -100,6 +183,10 @@ def render_report(report: AnalysisReport) -> str:
         f"| **Findings gesamt** | **{s.get('total_findings', 0)}** |"
     )
     sections.append("")
+
+    # 12 core quality measures (rendered before detailed findings)
+    if report.quality_measures:
+        sections.append(_render_quality_measures(report.quality_measures))
 
     # Dataset profiles
     sections.append("## Datensatz-Profile")
