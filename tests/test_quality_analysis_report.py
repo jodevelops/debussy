@@ -82,6 +82,7 @@ class TestColumnQualityReport(unittest.TestCase):
     def test_to_dict_structure(self):
         cr = ColumnQualityReport(
             column="title",
+            source="ds1.csv",
             measure_summary={
                 "completeness": MeasureSummaryEntry(score=80, confidence=None, reasoning="")
             },
@@ -91,16 +92,23 @@ class TestColumnQualityReport(unittest.TestCase):
         )
         d = cr.to_dict()
         self.assertEqual(d["column"], "title")
+        self.assertEqual(d["source"], "ds1.csv")
         self.assertIn("completeness", d["measure_summary"])
         self.assertEqual(d["measure_summary"]["completeness"]["score"], 80)
         self.assertEqual(d["evidence"]["fill_rate"], 0.8)
         self.assertTrue(d["review_required"])
+
+    def test_source_defaults_to_empty_string(self):
+        cr = ColumnQualityReport(column="title")
+        self.assertEqual(cr.source, "")
+        self.assertEqual(cr.to_dict()["source"], "")
 
 
 class TestRecordQualityReport(unittest.TestCase):
     def test_to_dict_with_severity(self):
         rr = RecordQualityReport(
             record_id="rec_001",
+            source="ds1.csv",
             severity=Severity.WARNING,
             issues=["Missing title"],
             confidence=0.85,
@@ -109,6 +117,7 @@ class TestRecordQualityReport(unittest.TestCase):
         )
         d = rr.to_dict()
         self.assertEqual(d["record_id"], "rec_001")
+        self.assertEqual(d["source"], "ds1.csv")
         self.assertEqual(d["severity"], "warning")
         self.assertEqual(d["issues"], ["Missing title"])
         self.assertTrue(d["review_required"])
@@ -117,6 +126,11 @@ class TestRecordQualityReport(unittest.TestCase):
         rr = RecordQualityReport(record_id="rec_002")
         d = rr.to_dict()
         self.assertIsNone(d["severity"])
+
+    def test_source_defaults_to_empty_string(self):
+        rr = RecordQualityReport(record_id="rec_003")
+        self.assertEqual(rr.source, "")
+        self.assertEqual(rr.to_dict()["source"], "")
 
 
 class TestCellFinding(unittest.TestCase):
@@ -194,7 +208,7 @@ class TestQualityAnalysisReport(unittest.TestCase):
     def test_to_dict_empty(self):
         qar = QualityAnalysisReport()
         d = qar.to_dict()
-        self.assertIsNone(d["dataset_profile"])
+        self.assertEqual(d["dataset_profiles"], [])
         self.assertEqual(d["quality_measures"], [])
         self.assertEqual(d["column_reports"], [])
         self.assertEqual(d["record_reports"], [])
@@ -203,20 +217,30 @@ class TestQualityAnalysisReport(unittest.TestCase):
         self.assertEqual(d["work_package_candidates"], [])
         self.assertIsNone(d["analysis_provenance"])
 
-    def test_to_dict_with_profile(self):
+    def test_to_dict_with_single_profile(self):
         ds = _make_profile("demo.csv", rows=500, cols=10)
-        qar = QualityAnalysisReport(dataset_profile=ds)
+        qar = QualityAnalysisReport(dataset_profiles=[ds])
         d = qar.to_dict()
-        self.assertIsNotNone(d["dataset_profile"])
-        self.assertEqual(d["dataset_profile"]["source_name"], "demo.csv")
-        self.assertEqual(d["dataset_profile"]["row_count"], 500)
+        self.assertEqual(len(d["dataset_profiles"]), 1)
+        self.assertEqual(d["dataset_profiles"][0]["source_name"], "demo.csv")
+        self.assertEqual(d["dataset_profiles"][0]["row_count"], 500)
+
+    def test_to_dict_with_multiple_profiles(self):
+        ds1 = _make_profile("a.csv", rows=100, cols=3)
+        ds2 = _make_profile("b.csv", rows=200, cols=5)
+        qar = QualityAnalysisReport(dataset_profiles=[ds1, ds2])
+        d = qar.to_dict()
+        self.assertEqual(len(d["dataset_profiles"]), 2)
+        names = [p["source_name"] for p in d["dataset_profiles"]]
+        self.assertIn("a.csv", names)
+        self.assertIn("b.csv", names)
 
     def test_all_levels_present_in_schema(self):
         """The schema must have all required top-level keys."""
         qar = QualityAnalysisReport()
         d = qar.to_dict()
         required_keys = [
-            "dataset_profile",
+            "dataset_profiles",
             "quality_measures",
             "column_reports",
             "record_reports",
@@ -277,18 +301,31 @@ class TestBuildQualityAnalysisReport(unittest.TestCase):
         qar = build_quality_analysis_report(report)
         self.assertIsInstance(qar, QualityAnalysisReport)
 
-    def test_dataset_profile_mapped(self):
+    def test_all_dataset_profiles_preserved(self):
+        """All datasets must be retained — not just the first one."""
+        report = _make_report()
+        report.datasets = [
+            _make_profile("a.csv", rows=100),
+            _make_profile("b.csv", rows=200),
+        ]
+        qar = build_quality_analysis_report(report)
+        self.assertEqual(len(qar.dataset_profiles), 2)
+        names = {ds.source_name for ds in qar.dataset_profiles}
+        self.assertIn("a.csv", names)
+        self.assertIn("b.csv", names)
+
+    def test_single_dataset_profile_mapped(self):
         report = _make_report()
         profile = _make_profile("mydata.csv", rows=300)
         report.datasets = [profile]
         qar = build_quality_analysis_report(report)
-        self.assertIsNotNone(qar.dataset_profile)
-        self.assertEqual(qar.dataset_profile.source_name, "mydata.csv")
+        self.assertEqual(len(qar.dataset_profiles), 1)
+        self.assertEqual(qar.dataset_profiles[0].source_name, "mydata.csv")
 
-    def test_no_datasets_profile_is_none(self):
+    def test_no_datasets_profiles_empty(self):
         report = _make_report()
         qar = build_quality_analysis_report(report)
-        self.assertIsNone(qar.dataset_profile)
+        self.assertEqual(qar.dataset_profiles, [])
 
     def test_quality_measures_populated_from_report(self):
         report = self._make_full_report()
@@ -395,7 +432,14 @@ class TestBuildQualityAnalysisReport(unittest.TestCase):
         qar = build_quality_analysis_report(report)
         self.assertIsNotNone(qar.analysis_provenance)
         self.assertEqual(qar.analysis_provenance.analysis_mode, "rule_based")
-        self.assertEqual(qar.analysis_provenance.source_name, "sample.csv")
+        self.assertIn("sample.csv", qar.analysis_provenance.source_name)
+
+    def test_provenance_source_name_includes_all_datasets(self):
+        report = _make_report()
+        report.datasets = [_make_profile("a.csv"), _make_profile("b.csv")]
+        qar = build_quality_analysis_report(report)
+        self.assertIn("a.csv", qar.analysis_provenance.source_name)
+        self.assertIn("b.csv", qar.analysis_provenance.source_name)
 
     def test_to_dict_is_json_compatible(self):
         import json
@@ -405,6 +449,60 @@ class TestBuildQualityAnalysisReport(unittest.TestCase):
         # Should not raise
         serialized = json.dumps(d)
         self.assertIsInstance(serialized, str)
+
+    def test_column_reports_distinct_per_dataset_for_same_column_name(self):
+        """Same-named columns from different datasets must produce separate reports."""
+        from kwb.ingest.csv_loader import profile_column
+        import pandas as pd
+
+        def make_ds_with_col(source_name, col_name, values):
+            s = pd.Series(values, name=col_name)
+            col = profile_column(s)
+            ds = _make_profile(source_name)
+            ds.columns = [col]
+            return ds
+
+        report = _make_report()
+        report.datasets = [
+            make_ds_with_col("ds1.csv", "title", ["A", "B", "C"]),
+            make_ds_with_col("ds2.csv", "title", ["X", None, "Z"]),
+        ]
+        qar = build_quality_analysis_report(report)
+        title_reports = [cr for cr in qar.column_reports if cr.column == "title"]
+        # There must be one report per dataset, not one merged entry
+        self.assertEqual(len(title_reports), 2)
+        sources = {cr.source for cr in title_reports}
+        self.assertIn("ds1.csv", sources)
+        self.assertIn("ds2.csv", sources)
+
+    def test_issue_cluster_uses_evidence_count_over_record_ids(self):
+        """affected_records_count must use evidence fields, not capped record_ids."""
+        # Finding has only 2 record_ids in the sample but evidence says 500
+        finding = Finding(
+            category=FindingCategory.MISSING_VALUES,
+            severity=Severity.WARNING,
+            message="Viele fehlende Werte",
+            column="description",
+            record_ids=["r001", "r002"],  # capped sample
+            evidence={"missing_count": 500},  # true count
+        )
+        report = _make_report(finding, rows=1000)
+        qar = build_quality_analysis_report(report)
+        cluster = next(cl for cl in qar.issue_clusters if cl.category == FindingCategory.MISSING_VALUES)
+        self.assertEqual(cluster.affected_records_count, 500)
+
+    def test_issue_cluster_falls_back_to_record_ids_when_no_evidence_count(self):
+        finding = Finding(
+            category=FindingCategory.TERM_VARIANTS,
+            severity=Severity.INFO,
+            message="Term-Varianten",
+            record_ids=["r001", "r002", "r003"],
+            evidence={},  # no count fields
+        )
+        report = _make_report(finding)
+        qar = build_quality_analysis_report(report)
+        cluster = next(cl for cl in qar.issue_clusters if cl.category == FindingCategory.TERM_VARIANTS)
+        self.assertEqual(cluster.affected_records_count, 3)
 
     def test_empty_report_does_not_crash(self):
         report = AnalysisReport()
@@ -493,6 +591,14 @@ class TestRenderQualityAnalysisReport(unittest.TestCase):
         qar = self._build_qar()
         md = render_quality_analysis_report(qar)
         self.assertIn("rule_based", md)
+
+    def test_dataset_summary_shows_all_datasets(self):
+        ds1 = _make_profile("file1.csv", rows=100)
+        ds2 = _make_profile("file2.csv", rows=200)
+        qar = QualityAnalysisReport(dataset_profiles=[ds1, ds2])
+        md = render_quality_analysis_report(qar)
+        self.assertIn("file1.csv", md)
+        self.assertIn("file2.csv", md)
 
     def test_no_cell_findings_section_when_empty(self):
         qar = QualityAnalysisReport()

@@ -240,16 +240,14 @@ def render_quality_analysis_report(report: QualityAnalysisReport) -> str:
     sections.append(f"*Erstellt: {now}*")
     sections.append("")
 
-    # Dataset summary
-    ds = report.dataset_profile
-    if ds:
+    # Dataset summary (all analysed datasets)
+    if report.dataset_profiles:
         sections.append("## Datensatz-Zusammenfassung")
         sections.append("")
-        sections.append("| Eigenschaft | Wert |")
-        sections.append("|---|---|")
-        sections.append(f"| Datei | `{ds.source_name}` |")
-        sections.append(f"| Zeilen | {ds.row_count:,} |")
-        sections.append(f"| Spalten | {ds.column_count} |")
+        sections.append("| Datei | Zeilen | Spalten |")
+        sections.append("|---|---|---|")
+        for ds in report.dataset_profiles:
+            sections.append(f"| `{ds.source_name}` | {ds.row_count:,} | {ds.column_count} |")
         sections.append("")
 
     # Quality measures

@@ -192,9 +192,14 @@ class MeasureSummaryEntry:
 
 @dataclass
 class ColumnQualityReport:
-    """Quality report for a single dataset column."""
+    """Quality report for a single dataset column.
+
+    ``source`` identifies which dataset this column belongs to, enabling
+    distinct reports for same-named columns from different datasets.
+    """
 
     column: str
+    source: str = ""
     measure_summary: dict[str, MeasureSummaryEntry] = field(default_factory=dict)
     evidence: dict[str, Any] = field(default_factory=dict)
     suggested_action: str | None = None
@@ -203,6 +208,7 @@ class ColumnQualityReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "column": self.column,
+            "source": self.source,
             "measure_summary": {k: v.to_dict() for k, v in self.measure_summary.items()},
             "evidence": self.evidence,
             "suggested_action": self.suggested_action,
@@ -212,9 +218,14 @@ class ColumnQualityReport:
 
 @dataclass
 class RecordQualityReport:
-    """Quality report for a single dataset record."""
+    """Quality report for a single dataset record.
+
+    ``source`` identifies which dataset this record belongs to, preventing
+    same-ID records from different datasets from being conflated.
+    """
 
     record_id: str
+    source: str = ""
     severity: Severity | None = None
     issues: list[str] = field(default_factory=list)
     confidence: float | None = None
@@ -224,6 +235,7 @@ class RecordQualityReport:
     def to_dict(self) -> dict[str, Any]:
         return {
             "record_id": self.record_id,
+            "source": self.source,
             "severity": self.severity.value if self.severity else None,
             "issues": self.issues,
             "confidence": self.confidence,
@@ -337,9 +349,13 @@ class QualityAnalysisReport:
     the single source of truth for all downstream rendering (Markdown, GUI,
     JSON export).  Markdown and other output formats are derived from this
     structure rather than the other way around.
+
+    ``dataset_profiles`` holds metadata for *all* analysed datasets so that
+    multi-file analyses (cross-file linkage, orphan checks) are fully
+    represented without silently dropping files after the first one.
     """
 
-    dataset_profile: DatasetProfile | None = None
+    dataset_profiles: list[DatasetProfile] = field(default_factory=list)
     quality_measures: list[dict[str, Any]] = field(default_factory=list)
     column_reports: list[ColumnQualityReport] = field(default_factory=list)
     record_reports: list[RecordQualityReport] = field(default_factory=list)
@@ -349,15 +365,15 @@ class QualityAnalysisReport:
     analysis_provenance: AnalysisProvenance | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        ds = self.dataset_profile
         return {
-            "dataset_profile": {
-                "source_name": ds.source_name,
-                "row_count": ds.row_count,
-                "column_count": ds.column_count,
-            }
-            if ds
-            else None,
+            "dataset_profiles": [
+                {
+                    "source_name": ds.source_name,
+                    "row_count": ds.row_count,
+                    "column_count": ds.column_count,
+                }
+                for ds in self.dataset_profiles
+            ],
             "quality_measures": self.quality_measures,
             "column_reports": [r.to_dict() for r in self.column_reports],
             "record_reports": [r.to_dict() for r in self.record_reports],

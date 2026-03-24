@@ -58,9 +58,41 @@ _CATEGORY_ACTION_TEMPLATES: dict[FindingCategory, str] = {
     FindingCategory.FIELD_MISUSE: "Fehlplatzierte Werte in korrekte Felder verschieben",
 }
 
+# Evidence keys that hold explicit record/row counts per finding category.
+# Using these avoids relying on capped record_ids samples for cluster sizing.
+_COUNT_EVIDENCE_KEYS = (
+    "missing_count",
+    "duplicate_row_count",
+    "orphan_count",
+    "near_duplicate_count",
+    "affected_count",
+    "no_match_count",
+)
+
 
 def _highest_severity(severities: list[Severity]) -> Severity:
     return min(severities, key=lambda s: _SEVERITY_ORDER[s], default=Severity.INFO)
+
+
+def _estimate_affected_count(findings: list) -> int:
+    """Return the best available count of affected records for a group of findings.
+
+    Prefers explicit count evidence fields over ``len(record_ids)`` because
+    ``Finding.record_ids`` may be a capped sample and would systematically
+    undercount larger issues.
+    """
+    total = 0
+    has_explicit = False
+    for f in findings:
+        for key in _COUNT_EVIDENCE_KEYS:
+            if key in f.evidence:
+                total += int(f.evidence[key])
+                has_explicit = True
+                break
+    if has_explicit:
+        return total
+    # Fallback: deduplicated record_ids (may be a sample)
+    return len({rid for f in findings for rid in f.record_ids})
 
 
 # ---------------------------------------------------------------------------
@@ -69,32 +101,39 @@ def _highest_severity(severities: list[Severity]) -> Severity:
 
 
 def _build_column_reports(report: AnalysisReport) -> list[ColumnQualityReport]:
-    """Build per-column quality reports from findings and dataset profiles."""
-    # Collect column metadata from dataset profiles
-    col_meta: dict[str, dict] = {}
+    """Build per-column quality reports from findings and dataset profiles.
+
+    Columns are keyed by ``(source_name, col_name)`` so that identically-named
+    columns from different datasets get distinct reports.  Finding-only columns
+    (present in findings but absent from any profile) are stored under
+    ``source=""`` to avoid conflating them with profile-derived entries.
+    """
+    # Collect column metadata keyed by (source_name, col_name)
+    col_meta: dict[tuple[str, str], dict] = {}
     for ds in report.datasets:
         for col in ds.columns:
-            col_meta[col.name] = {
+            col_meta[(ds.source_name, col.name)] = {
                 "fill_rate": col.fill_rate,
                 "unique_count": col.unique_count,
                 "dtype": col.dtype,
             }
 
-    # Group findings by column
+    # Group findings by column name
     findings_by_col: dict[str, list] = {}
     for f in report.findings:
         if f.column:
             findings_by_col.setdefault(f.column, []).append(f)
 
-    # Also include columns from metadata that have no findings
-    all_columns = set(col_meta.keys()) | set(findings_by_col.keys())
+    # Column names that appear in at least one dataset profile
+    profile_col_names = {col_name for _, col_name in col_meta}
+    # Finding-only columns: present in findings but absent from all profiles
+    finding_only_cols = {
+        col_name for col_name in findings_by_col if col_name not in profile_col_names
+    }
 
     column_reports: list[ColumnQualityReport] = []
-    for col_name in sorted(all_columns):
-        col_findings = findings_by_col.get(col_name, [])
-        meta = col_meta.get(col_name, {})
 
-        # Derive measure summaries from findings for this column
+    def _make_report(col_name: str, source: str, meta: dict, col_findings: list) -> ColumnQualityReport:
         measure_summary: dict[str, MeasureSummaryEntry] = {}
 
         completeness_score: int | None = None
@@ -105,7 +144,6 @@ def _build_column_reports(report: AnalysisReport) -> list[ColumnQualityReport]:
             confidence=None,
             reasoning="",
         )
-
         # semantic_correctness placeholder — will be enriched in Phase 2
         measure_summary["semantic_correctness"] = MeasureSummaryEntry(
             score=None,
@@ -121,33 +159,40 @@ def _build_column_reports(report: AnalysisReport) -> list[ColumnQualityReport]:
         if "dtype" in meta:
             evidence["dtype"] = meta["dtype"]
 
-        # Determine suggested_action and review_required from findings
         suggested_action: str | None = None
         review_required = False
         if col_findings:
             severities = [f.severity for f in col_findings]
             if _highest_severity(severities) in (Severity.CRITICAL, Severity.WARNING):
                 review_required = True
-            # Pick suggestion from the most severe finding
             for f in sorted(col_findings, key=lambda x: _SEVERITY_ORDER[x.severity]):
                 if f.suggestion:
                     suggested_action = f.suggestion
                     break
-                # Fall back to category template
                 template = _CATEGORY_ACTION_TEMPLATES.get(f.category)
                 if template:
                     suggested_action = template
                     break
 
-        column_reports.append(
-            ColumnQualityReport(
-                column=col_name,
-                measure_summary=measure_summary,
-                evidence=evidence,
-                suggested_action=suggested_action,
-                review_required=review_required,
-            )
+        return ColumnQualityReport(
+            column=col_name,
+            source=source,
+            measure_summary=measure_summary,
+            evidence=evidence,
+            suggested_action=suggested_action,
+            review_required=review_required,
         )
+
+    # Profile-derived columns — one entry per (source_name, col_name)
+    for source_name, col_name in sorted(col_meta):
+        col_findings = findings_by_col.get(col_name, [])
+        column_reports.append(
+            _make_report(col_name, source_name, col_meta[(source_name, col_name)], col_findings)
+        )
+
+    # Finding-only columns — source stays empty
+    for col_name in sorted(finding_only_cols):
+        column_reports.append(_make_report(col_name, "", {}, findings_by_col[col_name]))
 
     return column_reports
 
@@ -158,7 +203,13 @@ def _build_column_reports(report: AnalysisReport) -> list[ColumnQualityReport]:
 
 
 def _build_record_reports(report: AnalysisReport) -> list[RecordQualityReport]:
-    """Derive per-record quality reports from findings that reference record IDs."""
+    """Derive per-record quality reports from findings that reference record IDs.
+
+    Records are keyed by ``record_id`` only in Phase 1 because ``Finding``
+    objects do not carry dataset-source context.  The ``source`` field on
+    ``RecordQualityReport`` is left empty and will be populated in Phase 2
+    once findings carry explicit source attribution.
+    """
     record_findings: dict[str, list] = {}
     for f in report.findings:
         for rid in f.record_ids:
@@ -173,6 +224,7 @@ def _build_record_reports(report: AnalysisReport) -> list[RecordQualityReport]:
         record_reports.append(
             RecordQualityReport(
                 record_id=record_id,
+                source="",  # Phase 1: Finding has no source attribution
                 severity=severity,
                 issues=issues,
                 confidence=None,
@@ -220,18 +272,30 @@ def _build_cell_findings(report: AnalysisReport) -> list[CellFinding]:
 
 
 def _build_issue_clusters(report: AnalysisReport) -> list[IssueCluster]:
-    """Group related findings by category into issue clusters."""
+    """Group related findings by category into issue clusters.
+
+    ``affected_records_count`` is derived from explicit evidence count fields
+    (e.g. ``missing_count``, ``duplicate_row_count``) when available, falling
+    back to ``len(record_ids)`` only when no explicit count exists.  This
+    avoids systematic undercounting caused by capped ``record_ids`` samples.
+    """
     by_cat: dict[FindingCategory, list] = {}
     for f in report.findings:
         by_cat.setdefault(f.category, []).append(f)
 
     clusters: list[IssueCluster] = []
     for idx, (cat, findings) in enumerate(
-        sorted(by_cat.items(), key=lambda x: (_SEVERITY_ORDER[_highest_severity([f.severity for f in x[1]])], x[0].value))
+        sorted(
+            by_cat.items(),
+            key=lambda x: (
+                _SEVERITY_ORDER[_highest_severity([f.severity for f in x[1]])],
+                x[0].value,
+            ),
+        )
     ):
         cols = sorted({f.column for f in findings if f.column})
-        record_ids = {rid for f in findings for rid in f.record_ids}
         severity = _highest_severity([f.severity for f in findings])
+        affected_count = _estimate_affected_count(findings)
 
         clusters.append(
             IssueCluster(
@@ -239,7 +303,7 @@ def _build_issue_clusters(report: AnalysisReport) -> list[IssueCluster]:
                 label=cat.value.replace("_", " ").title(),
                 category=cat,
                 affected_columns=cols,
-                affected_records_count=len(record_ids),
+                affected_records_count=affected_count,
                 severity=severity,
                 suggested_action=_CATEGORY_ACTION_TEMPLATES.get(cat),
             )
@@ -305,8 +369,8 @@ def build_quality_analysis_report(report: AnalysisReport) -> QualityAnalysisRepo
     Existing rule-based findings are mapped onto the hierarchical structure.
     In Phase 2, LLM-based checks will enrich the same structure.
     """
-    # dataset_profile: use first dataset
-    dataset_profile = report.datasets[0] if report.datasets else None
+    # dataset_profiles: preserve *all* analysed datasets (not just the first)
+    dataset_profiles = list(report.datasets)
 
     # quality_measures: transform QualityMeasureReport into plain dicts
     quality_measures: list[dict] = []
@@ -333,14 +397,15 @@ def build_quality_analysis_report(report: AnalysisReport) -> QualityAnalysisRepo
     issue_clusters = _build_issue_clusters(report)
     work_package_candidates = _build_work_packages(issue_clusters, report)
 
+    source_names = ", ".join(ds.source_name for ds in dataset_profiles) if dataset_profiles else ""
     provenance = AnalysisProvenance(
         analyzed_at=datetime.now(timezone.utc).isoformat(),
-        source_name=dataset_profile.source_name if dataset_profile else "",
+        source_name=source_names,
         analysis_mode="rule_based",
     )
 
     return QualityAnalysisReport(
-        dataset_profile=dataset_profile,
+        dataset_profiles=dataset_profiles,
         quality_measures=quality_measures,
         column_reports=column_reports,
         record_reports=record_reports,
