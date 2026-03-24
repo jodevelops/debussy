@@ -167,3 +167,204 @@ class QualityMeasureReport:
 
     def to_dict_list(self) -> list[dict[str, Any]]:
         return [m.to_dict() for m in self.measures]
+
+
+# ---------------------------------------------------------------------------
+# Structured Quality Analysis Report (Phase 1)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class MeasureSummaryEntry:
+    """Per-measure summary for a single column."""
+
+    score: int | None
+    confidence: float | None
+    reasoning: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "score": self.score,
+            "confidence": self.confidence,
+            "reasoning": self.reasoning,
+        }
+
+
+@dataclass
+class ColumnQualityReport:
+    """Quality report for a single dataset column."""
+
+    column: str
+    measure_summary: dict[str, MeasureSummaryEntry] = field(default_factory=dict)
+    evidence: dict[str, Any] = field(default_factory=dict)
+    suggested_action: str | None = None
+    review_required: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "column": self.column,
+            "measure_summary": {k: v.to_dict() for k, v in self.measure_summary.items()},
+            "evidence": self.evidence,
+            "suggested_action": self.suggested_action,
+            "review_required": self.review_required,
+        }
+
+
+@dataclass
+class RecordQualityReport:
+    """Quality report for a single dataset record."""
+
+    record_id: str
+    severity: Severity | None = None
+    issues: list[str] = field(default_factory=list)
+    confidence: float | None = None
+    reasoning: str = ""
+    review_required: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "record_id": self.record_id,
+            "severity": self.severity.value if self.severity else None,
+            "issues": self.issues,
+            "confidence": self.confidence,
+            "reasoning": self.reasoning,
+            "review_required": self.review_required,
+        }
+
+
+@dataclass
+class CellFinding:
+    """A quality finding at the individual cell level (record × column)."""
+
+    record_id: str
+    column: str
+    value: str | None = None
+    severity: Severity = Severity.INFO
+    category: FindingCategory = FindingCategory.MISSING_VALUES
+    message: str = ""
+    confidence: float | None = None
+    reasoning: str = ""
+    evidence: dict[str, Any] = field(default_factory=dict)
+    suggested_action: str | None = None
+    review_required: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "record_id": self.record_id,
+            "column": self.column,
+            "value": self.value,
+            "severity": self.severity.value,
+            "category": self.category.value,
+            "message": self.message,
+            "confidence": self.confidence,
+            "reasoning": self.reasoning,
+            "evidence": self.evidence,
+            "suggested_action": self.suggested_action,
+            "review_required": self.review_required,
+        }
+
+
+@dataclass
+class IssueCluster:
+    """A group of related quality issues across columns or records."""
+
+    cluster_id: str
+    label: str
+    category: FindingCategory
+    affected_columns: list[str] = field(default_factory=list)
+    affected_records_count: int = 0
+    severity: Severity = Severity.INFO
+    suggested_action: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cluster_id": self.cluster_id,
+            "label": self.label,
+            "category": self.category.value,
+            "affected_columns": self.affected_columns,
+            "affected_records_count": self.affected_records_count,
+            "severity": self.severity.value,
+            "suggested_action": self.suggested_action,
+        }
+
+
+@dataclass
+class WorkPackageCandidate:
+    """An actionable work package derived from issue clusters."""
+
+    title: str
+    description: str
+    priority: Severity
+    affected_columns: list[str] = field(default_factory=list)
+    estimated_records: int = 0
+    action_type: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "title": self.title,
+            "description": self.description,
+            "priority": self.priority.value,
+            "affected_columns": self.affected_columns,
+            "estimated_records": self.estimated_records,
+            "action_type": self.action_type,
+        }
+
+
+@dataclass
+class AnalysisProvenance:
+    """Metadata describing how and when a quality analysis was performed."""
+
+    analyzed_at: str
+    analyzer_version: str = "0.5.2"
+    analysis_mode: str = "rule_based"  # "rule_based" | "llm_assisted" | "hybrid"
+    source_name: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "analyzed_at": self.analyzed_at,
+            "analyzer_version": self.analyzer_version,
+            "analysis_mode": self.analysis_mode,
+            "source_name": self.source_name,
+        }
+
+
+@dataclass
+class QualityAnalysisReport:
+    """
+    Structured primary format for data quality analysis.
+
+    This is the machine-readable, hierarchical quality report that serves as
+    the single source of truth for all downstream rendering (Markdown, GUI,
+    JSON export).  Markdown and other output formats are derived from this
+    structure rather than the other way around.
+    """
+
+    dataset_profile: DatasetProfile | None = None
+    quality_measures: list[dict[str, Any]] = field(default_factory=list)
+    column_reports: list[ColumnQualityReport] = field(default_factory=list)
+    record_reports: list[RecordQualityReport] = field(default_factory=list)
+    cell_findings: list[CellFinding] = field(default_factory=list)
+    issue_clusters: list[IssueCluster] = field(default_factory=list)
+    work_package_candidates: list[WorkPackageCandidate] = field(default_factory=list)
+    analysis_provenance: AnalysisProvenance | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        ds = self.dataset_profile
+        return {
+            "dataset_profile": {
+                "source_name": ds.source_name,
+                "row_count": ds.row_count,
+                "column_count": ds.column_count,
+            }
+            if ds
+            else None,
+            "quality_measures": self.quality_measures,
+            "column_reports": [r.to_dict() for r in self.column_reports],
+            "record_reports": [r.to_dict() for r in self.record_reports],
+            "cell_findings": [f.to_dict() for f in self.cell_findings],
+            "issue_clusters": [c.to_dict() for c in self.issue_clusters],
+            "work_package_candidates": [w.to_dict() for w in self.work_package_candidates],
+            "analysis_provenance": self.analysis_provenance.to_dict()
+            if self.analysis_provenance
+            else None,
+        }

@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 613/745 Tests bestanden, 0 fehlgeschlagen, 132 übersprungen
+**Gesamtstatus:** 656/788 Tests bestanden, 0 fehlgeschlagen, 132 übersprungen
 
 ---
 
@@ -260,6 +260,7 @@
 | test_pdf_loader.py | 3/3 | 0 | 0 | ✅ |
 | test_pipeline.py | 18/18 | 0 | 0 | ✅ |
 | test_pipeline_steps.py | 10/10 | 0 | 0 | ✅ |
+| test_quality_analysis_report.py | 43/43 | 0 | 0 | ✅ |
 | test_quality_measures.py | 55/55 | 0 | 0 | ✅ |
 | test_roadmap.py | 8/8 | 0 | 0 | ✅ |
 | test_services.py | 20/20 | 0 | 0 | ✅ |
@@ -268,7 +269,7 @@
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 8/8 | 0 | 0 | ✅ |
-| **Gesamt** | **613/745** | **0** | **132** | **✅** |
+| **Gesamt** | **656/788** | **0** | **132** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
