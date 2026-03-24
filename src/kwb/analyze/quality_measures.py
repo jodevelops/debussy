@@ -433,10 +433,14 @@ def _compute_cross_field_coherence(report: AnalysisReport) -> QualityMeasureSumm
         return _no_data(QualityMeasureKey.CROSS_FIELD_COHERENCE, cats)
 
     orphan_count = sum(f.evidence.get("orphan_count", 0) for f in orphan_findings)
-    penalty = min(80, len(cfc_findings) * 15 + len(orphan_findings) * 10 + len(cfm_findings) * 5)
+    # INFO-level CROSS_FILE_MISMATCH means datasets share IDs (healthy linkage).
+    # Only WARNING/CRITICAL cross-file mismatches are real problems.
+    cfm_problem_findings = [f for f in cfm_findings if f.severity != Severity.INFO]
+    penalty = min(80, len(cfc_findings) * 15 + len(orphan_findings) * 10 + len(cfm_problem_findings) * 5)
     score = max(0, 100 - penalty)
 
-    if not all_findings:
+    problem_findings = cfc_findings + orphan_findings + cfm_problem_findings
+    if not problem_findings:
         summary = "Keine Feldzusammenhangsprobleme oder Verknüpfungsfehler erkannt."
     else:
         parts = []
@@ -444,8 +448,8 @@ def _compute_cross_field_coherence(report: AnalysisReport) -> QualityMeasureSumm
             parts.append(f"{len(cfc_findings)} Feldkonflikte")
         if orphan_findings:
             parts.append(f"{orphan_count} verwaiste Records")
-        if cfm_findings:
-            parts.append(f"{len(cfm_findings)} Datei-Verknüpfungsprobleme")
+        if cfm_problem_findings:
+            parts.append(f"{len(cfm_problem_findings)} Datei-Verknüpfungsprobleme")
         summary = ", ".join(parts) + " gefunden."
 
     top_examples = [
@@ -594,6 +598,11 @@ def _compute_risk_severity(report: AnalysisReport) -> QualityMeasureSummary:
     critical_ratio = len(critical_findings) / total_findings
     warning_ratio = len(warning_findings) / total_findings
     score = max(0, round(100 - critical_ratio * 80 - warning_ratio * 30))
+    # Any critical finding must result in at least CRITICAL status — ratio alone
+    # is insufficient because a single critical among many INFO findings can
+    # otherwise produce a near-100 score.
+    if critical_findings:
+        score = min(score, 49)
 
     if not critical_findings:
         summary = (

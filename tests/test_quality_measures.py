@@ -434,6 +434,25 @@ class TestRiskSeverityM(unittest.TestCase):
         critical_msgs = [ex["message"] for ex in m.top_examples]
         self.assertIn("Critical issue", critical_msgs)
 
+    def test_single_critical_among_many_info_is_critical_status(self):
+        # P1 regression: 1 critical + 99 info must not produce status=good
+        findings = [Finding(FindingCategory.DUPLICATE_RECORDS, Severity.CRITICAL, "Dupe")]
+        findings += [Finding(FindingCategory.MISSING_VALUES, Severity.INFO, f"Gap {i}") for i in range(99)]
+        report = _make_report_with_findings(*findings)
+        qmr = compute_quality_measures(report)
+        m = qmr.by_key(QualityMeasureKey.RISK_SEVERITY)
+        self.assertEqual(m.status, QualityStatus.CRITICAL)
+        self.assertLessEqual(m.score, 49)
+
+    def test_warnings_only_never_critical_status(self):
+        report = _make_report_with_findings(
+            Finding(FindingCategory.TERM_VARIANTS, Severity.WARNING, "Variants"),
+            Finding(FindingCategory.FORMAT_INCONSISTENCY, Severity.WARNING, "Format"),
+        )
+        qmr = compute_quality_measures(report)
+        m = qmr.by_key(QualityMeasureKey.RISK_SEVERITY)
+        self.assertNotEqual(m.status, QualityStatus.CRITICAL)
+
 
 # ---------------------------------------------------------------------------
 # Actionability measure
@@ -545,6 +564,36 @@ class TestCrossFieldCoherenceM(unittest.TestCase):
         qmr = compute_quality_measures(report)
         m = qmr.by_key(QualityMeasureKey.CROSS_FIELD_COHERENCE)
         self.assertLessEqual(m.score, 85)
+
+    def test_info_cross_file_mismatch_does_not_penalise(self):
+        # P2 regression: INFO CROSS_FILE_MISMATCH means shared IDs (healthy linkage)
+        # and must not reduce the coherence score.
+        report = _make_report_with_findings(
+            Finding(
+                category=FindingCategory.CROSS_FILE_MISMATCH,
+                severity=Severity.INFO,
+                message="'a' and 'b' share 20 record IDs",
+                evidence={"shared_count": 20, "only_in_a": 0, "only_in_b": 0},
+            )
+        )
+        qmr = compute_quality_measures(report)
+        m = qmr.by_key(QualityMeasureKey.CROSS_FIELD_COHERENCE)
+        self.assertEqual(m.score, 100)
+        self.assertEqual(m.status, QualityStatus.GOOD)
+        self.assertNotIn("Datei-Verknüpfungsprobleme", m.summary)
+
+    def test_warning_cross_file_mismatch_does_penalise(self):
+        report = _make_report_with_findings(
+            Finding(
+                category=FindingCategory.CROSS_FILE_MISMATCH,
+                severity=Severity.WARNING,
+                message="Unexpected cross-file mismatch",
+                evidence={"shared_count": 0, "only_in_a": 5, "only_in_b": 3},
+            )
+        )
+        qmr = compute_quality_measures(report)
+        m = qmr.by_key(QualityMeasureKey.CROSS_FIELD_COHERENCE)
+        self.assertLess(m.score, 100)
 
 
 # ---------------------------------------------------------------------------
