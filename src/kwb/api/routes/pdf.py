@@ -167,7 +167,18 @@ async def pdf_extract(request: dict):
     """
     doc_id = (request.get("doc_id") or "").strip()
     model = (request.get("model") or "").strip()
-    max_pages = min(int(request.get("max_pages") or 20), 200)
+    raw_max = request.get("max_pages")
+    try:
+        max_pages = int(raw_max) if raw_max is not None else 20
+    except (ValueError, TypeError):
+        return JSONResponse(
+            {"error": f"Ungültiger Wert für max_pages: {raw_max!r}"}, 422
+        )
+    if max_pages < 1:
+        return JSONResponse(
+            {"error": "max_pages muss mindestens 1 sein."}, 422
+        )
+    max_pages = min(max_pages, 200)
 
     doc = _pdf_store.get(doc_id)
     if not doc:
@@ -199,6 +210,10 @@ async def pdf_extract(request: dict):
 
     from kwb.ai.provider import AIMessage
     prov = get_provider(model)
+
+    # Clear prior extracted pages so a re-run with fewer max_pages
+    # does not leave stale entries that NER would process.
+    doc["extracted"] = {}
 
     extracted_pages = []
     for i, page in enumerate(pages_raw[:max_pages]):
@@ -274,6 +289,7 @@ async def pdf_ner(request: dict):
 
     prov = get_provider(model)
     all_entities: list[dict] = []
+    page_errors: list[dict] = []
 
     for page_num in sorted(extracted.keys()):
         text = extracted[page_num]
@@ -295,8 +311,12 @@ async def pdf_ner(request: dict):
             for e in result.to_dict_list(deduplicated=True):
                 e["source"] = f"page_{page_num}"
                 all_entities.append(e)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning(
+                "NER failed for page %s of %s: %s", page_num, doc_id, exc
+            )
+            page_errors.append({"page": page_num, "error": str(exc)})
 
     # Deduplicate across pages, keeping highest confidence
     seen: dict[str, dict] = {}
@@ -313,10 +333,13 @@ async def pdf_ner(request: dict):
 
     doc["entities"] = deduped
 
-    return {
+    response = {
         "document": doc["filename"],
         "doc_id": doc_id,
         "entities": deduped,
         "entity_count": len(deduped),
         "entity_types": type_counts,
     }
+    if page_errors:
+        response["page_errors"] = page_errors
+    return response
