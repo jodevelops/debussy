@@ -13,6 +13,7 @@ from kwb.core.models import (
     AnalysisReport,
     DatasetProfile,
     Finding,
+    QualityAnalysisReport,
     QualityMeasureReport,
     QualityStatus,
     Severity,
@@ -219,5 +220,156 @@ def render_report(report: AnalysisReport) -> str:
         )
         sections.append(f"- **{cat.value}** — {len(findings)} Findings {sev_summary}")
     sections.append("")
+
+    return "\n".join(sections)
+
+
+def render_quality_analysis_report(report: QualityAnalysisReport) -> str:
+    """Render a QualityAnalysisReport as Markdown.
+
+    This is the primary rendering path.  The structured report is the
+    single source of truth; this function derives human-readable Markdown
+    from it rather than building the narrative independently.
+    """
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    sections: list[str] = []
+
+    # Header
+    sections.append("# Datenqualitätsbericht")
+    sections.append("")
+    sections.append(f"*Erstellt: {now}*")
+    sections.append("")
+
+    # Dataset summary
+    ds = report.dataset_profile
+    if ds:
+        sections.append("## Datensatz-Zusammenfassung")
+        sections.append("")
+        sections.append("| Eigenschaft | Wert |")
+        sections.append("|---|---|")
+        sections.append(f"| Datei | `{ds.source_name}` |")
+        sections.append(f"| Zeilen | {ds.row_count:,} |")
+        sections.append(f"| Spalten | {ds.column_count} |")
+        sections.append("")
+
+    # Quality measures
+    if report.quality_measures:
+        sections.append("## 12 Kerndimensionen der Datenqualität")
+        sections.append("")
+        sections.append("| # | Maßzahl | Score | Status | Zusammenfassung |")
+        sections.append("|---|---|---|---|---|")
+        for i, m in enumerate(report.quality_measures, 1):
+            label = MEASURE_LABELS.get(m["measure"], m["measure"])
+            status_val = m.get("status", "insufficient_data")
+            try:
+                status = QualityStatus(status_val)
+            except ValueError:
+                status = QualityStatus.INSUFFICIENT_DATA
+            icon = STATUS_ICONS.get(status, "⚪")
+            score = m.get("score")
+            score_str = f"{score}/100" if score is not None else "—"
+            reasoning = (m.get("reasoning") or "").replace("|", "\\|")
+            sections.append(f"| {i} | **{label}** | {score_str} | {icon} {status_val} | {reasoning} |")
+        sections.append("")
+
+        # Attention blocks for needs_review / critical measures
+        attention = [
+            m for m in report.quality_measures
+            if m.get("status") in ("needs_review", "critical")
+        ]
+        if attention:
+            sections.append("### Maßzahlen mit Handlungsbedarf")
+            sections.append("")
+            for m in attention:
+                label = MEASURE_LABELS.get(m["measure"], m["measure"])
+                status_val = m.get("status", "insufficient_data")
+                try:
+                    status = QualityStatus(status_val)
+                except ValueError:
+                    status = QualityStatus.INSUFFICIENT_DATA
+                icon = STATUS_ICONS.get(status, "⚪")
+                score = m.get("score")
+                score_str = f"{score}/100" if score is not None else "—"
+                sections.append(f"#### {icon} {label}")
+                sections.append("")
+                sections.append(f"**Score:** {score_str} — {m.get('reasoning', '')}")
+                sections.append("")
+                evidence = m.get("evidence", {})
+                actions = evidence.get("recommended_actions", [])
+                if actions:
+                    sections.append("**Empfohlene Maßnahmen:**")
+                    sections.append("")
+                    for action in actions:
+                        sections.append(f"- {action}")
+                    sections.append("")
+
+    # Column reports
+    if report.column_reports:
+        review_cols = [r for r in report.column_reports if r.review_required]
+        if review_cols:
+            sections.append("## Spalten mit Handlungsbedarf")
+            sections.append("")
+            sections.append("| Spalte | Füllrate | Empfohlene Maßnahme |")
+            sections.append("|---|---|---|")
+            for cr in review_cols:
+                fill = cr.evidence.get("fill_rate")
+                fill_str = f"{fill:.0%}" if fill is not None else "—"
+                action = (cr.suggested_action or "—").replace("|", "\\|")
+                sections.append(f"| `{cr.column}` | {fill_str} | {action} |")
+            sections.append("")
+
+    # Issue clusters
+    if report.issue_clusters:
+        sections.append("## Issue-Cluster")
+        sections.append("")
+        sections.append("| Cluster | Schweregrad | Betroffene Spalten | Records | Empfehlung |")
+        sections.append("|---|---|---|---|---|")
+        for cl in report.issue_clusters:
+            icon = SEVERITY_ICONS.get(cl.severity, "⚪")
+            cols_str = ", ".join(f"`{c}`" for c in cl.affected_columns[:3])
+            if len(cl.affected_columns) > 3:
+                cols_str += " u.a."
+            action = (cl.suggested_action or "—").replace("|", "\\|")
+            sections.append(
+                f"| **{cl.label}** | {icon} {cl.severity.value} | {cols_str or '—'} "
+                f"| {cl.affected_records_count:,} | {action} |"
+            )
+        sections.append("")
+
+    # Work package candidates
+    if report.work_package_candidates:
+        sections.append("## Arbeitspakete (Kandidaten)")
+        sections.append("")
+        for i, wp in enumerate(report.work_package_candidates, 1):
+            icon = SEVERITY_ICONS.get(wp.priority, "⚪")
+            sections.append(f"### {i}. {icon} {wp.title}")
+            sections.append("")
+            sections.append(wp.description)
+            sections.append("")
+
+    # Cell findings (limit display for readability)
+    if report.cell_findings:
+        sections.append("## Zellbefunde (Auszug)")
+        sections.append("")
+        sections.append("| Record | Spalte | Schweregrad | Befund |")
+        sections.append("|---|---|---|---|")
+        for cf in report.cell_findings[:20]:
+            icon = SEVERITY_ICONS.get(cf.severity, "⚪")
+            msg = cf.message.replace("|", "\\|")
+            sections.append(f"| `{cf.record_id}` | `{cf.column}` | {icon} | {msg} |")
+        if len(report.cell_findings) > 20:
+            sections.append(f"| … | … | … | (+{len(report.cell_findings) - 20} weitere) |")
+        sections.append("")
+
+    # Provenance
+    if report.analysis_provenance:
+        p = report.analysis_provenance
+        sections.append("---")
+        sections.append("")
+        sections.append(
+            f"*Analysiert: {p.analyzed_at} · Modus: {p.analysis_mode} · "
+            f"Version: {p.analyzer_version}*"
+        )
+        sections.append("")
 
     return "\n".join(sections)
