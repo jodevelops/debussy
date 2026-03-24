@@ -1116,9 +1116,12 @@ function applyImgPreset(){
 
 async function uploadImages(){
   const imgExts = /\.(jpg|jpeg|png|tif|tiff|webp)$/i;
-  const fileFiles = [...($('img-files').files || [])];
-  const folderFiles = [...($('img-folder').files || [])].filter(f => imgExts.test(f.name));
-  const allFiles = [...fileFiles, ...folderFiles];
+  // Read from both Step 1 (p1) and Step 2 inputs — distinct IDs avoid conflicts
+  const s1Files = [...(($('img-files-p1')&&$('img-files-p1').files) || [])];
+  const s1Folder = [...(($('img-folder-p1')&&$('img-folder-p1').files) || [])].filter(f => imgExts.test(f.name));
+  const s2Files = [...(($('img-files')&&$('img-files').files) || [])];
+  const s2Folder = [...(($('img-folder')&&$('img-folder').files) || [])].filter(f => imgExts.test(f.name));
+  const allFiles = [...s1Files, ...s1Folder, ...s2Files, ...s2Folder];
   if(!allFiles.length){alert('Keine Bilddateien gewählt.');return}
   const fd = new FormData();
   for(const f of allFiles) fd.append('files', f, f.webkitRelativePath || f.name);
