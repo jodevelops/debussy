@@ -37,7 +37,6 @@ from kwb.analyze.llm_quality import (
     LlmQualityCheckMode,
     run_llm_quality_check,
 )
-from kwb.core.models import DatasetProfile, ColumnProfile
 
 router = APIRouter()
 
@@ -69,11 +68,7 @@ async def llm_quality_check(request: dict | None = None):
             },
         )
 
-    df = datasets[dataset_id]["df"]
-
-    # Reconstruct a minimal DatasetProfile from stored metadata
-    meta = datasets[dataset_id].get("meta", {})
-    profile = _build_profile(dataset_id, df, meta)
+    df, profile = datasets[dataset_id]
 
     # --- Parse options ---
     model: str | None = request.get("model") or None
@@ -190,31 +185,3 @@ async def quality_check_schema():
     }
 
 
-# ---------------------------------------------------------------------------
-# Internal helper
-# ---------------------------------------------------------------------------
-
-
-def _build_profile(dataset_id: str, df, meta: dict) -> DatasetProfile:
-    """Build a DatasetProfile from a stored dataset entry."""
-    columns = [
-        ColumnProfile(
-            name=col,
-            dtype=str(df[col].dtype),
-            total_count=len(df),
-            non_null_count=int(df[col].notna().sum()),
-            unique_count=int(df[col].nunique()),
-            fill_rate=round(float(df[col].notna().sum()) / len(df), 4) if len(df) > 0 else 0.0,
-            sample_values=[str(v) for v in df[col].dropna().head(5).tolist()],
-        )
-        for col in df.columns
-    ]
-    return DatasetProfile(
-        source_path=meta.get("source_path", dataset_id),
-        source_name=meta.get("source_name", dataset_id),
-        row_count=len(df),
-        column_count=len(df.columns),
-        columns=columns,
-        id_column=meta.get("id_column"),
-        encoding_detected=meta.get("encoding_detected"),
-    )

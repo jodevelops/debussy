@@ -338,6 +338,14 @@ _ISSUE_TYPE_TO_CATEGORY: dict[str, FindingCategory] = {
     "cross_field_conflict": FindingCategory.CROSS_FIELD_CONFLICT,
 }
 
+def _safe_float(value, default: float = 0.5) -> float:
+    """Convert *value* to float, returning *default* on any parse error."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 _SEVERITY_MAP: dict[str, Severity] = {
     "critical": Severity.CRITICAL,
     "warning": Severity.WARNING,
@@ -564,7 +572,7 @@ def run_llm_quality_check(
                         value=item["_val"],
                         issue_type=issue_type,
                         severity=sev,
-                        confidence=float(parsed.get("confidence", 0.5)),
+                        confidence=_safe_float(parsed.get("confidence"), 0.5),
                         reasoning=parsed.get("reasoning", ""),
                         evidence=parsed.get("evidence", {}),
                         suggested_target_field=parsed.get("suggested_target_field"),
@@ -599,12 +607,12 @@ def run_llm_quality_check(
                     LlmColumnReport(
                         column=col,
                         field_semantics=semantics,
-                        field_purity_score=float(parsed.get("field_purity_score", 50.0)),
+                        field_purity_score=_safe_float(parsed.get("field_purity_score"), 50.0),
                         dominant_issue_types=parsed.get("dominant_issue_types", []),
                         typical_problems=parsed.get("typical_problems", []),
                         affected_value_examples=parsed.get("affected_value_examples", []),
                         suggested_action=parsed.get("suggested_action", ""),
-                        confidence=float(parsed.get("confidence", 0.5)),
+                        confidence=_safe_float(parsed.get("confidence"), 0.5),
                         reasoning=parsed.get("reasoning", ""),
                         review_required=bool(parsed.get("review_required", False)),
                         model_used=used_model,
@@ -654,7 +662,7 @@ def run_llm_quality_check(
                         record_id=item["record_id"],
                         severity=sev,
                         conflicts=parsed.get("conflicts", []),
-                        confidence=float(parsed.get("overall_confidence", 0.5)),
+                        confidence=_safe_float(parsed.get("overall_confidence"), 0.5),
                         reasoning=parsed.get("reasoning", ""),
                         review_required=bool(parsed.get("review_required", False)),
                         model_used=res.response.model if res.response else model_used,
@@ -682,7 +690,7 @@ def run_llm_quality_check(
                 issue_clusters=parsed.get("issue_clusters", []),
                 work_package_candidates=parsed.get("work_package_candidates", []),
                 risk_summary=parsed.get("risk_summary", ""),
-                confidence=float(parsed.get("confidence", 0.5)),
+                confidence=_safe_float(parsed.get("confidence"), 0.5),
                 model_used=resp.model,
             )
         except Exception as exc:

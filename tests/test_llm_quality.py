@@ -32,7 +32,6 @@ from kwb.core.models import (
     DatasetProfile,
     FindingCategory,
     QualityAnalysisReport,
-    RecordQualityReport,
     Severity,
 )
 
@@ -655,7 +654,6 @@ class TestQualityAnalysisReportIntegration(unittest.TestCase):
 class TestLlmQualityApiEndpoint(unittest.TestCase):
 
     def setUp(self):
-        import pandas as pd
         try:
             from fastapi.testclient import TestClient
         except ImportError:
@@ -668,12 +666,9 @@ class TestLlmQualityApiEndpoint(unittest.TestCase):
         self.mock = MockProvider.with_quality_check_responses()
         deps._prov_override = self.mock
 
-        # Register a test dataset
+        # Register a test dataset — same tuple shape used by the upload path
         df = _sample_df()
-        deps._state["datasets"]["test_ds"] = {
-            "df": df,
-            "meta": {"source_name": "test_glam", "source_path": "test.csv"},
-        }
+        deps._state["datasets"]["test_ds"] = (df, _sample_profile(df))
 
     def tearDown(self):
         from kwb.api import deps
