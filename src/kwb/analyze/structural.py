@@ -2,6 +2,7 @@
 from __future__ import annotations
 import pandas as pd
 from kwb.core.models import AnalysisReport, Finding, FindingCategory, Severity
+from kwb.analyze.quality_measures import compute_quality_measures
 
 def _get_affected_ids(df, mask, id_col, limit=10):
     if not id_col or id_col not in df.columns: return []
@@ -154,4 +155,5 @@ def analyze_datasets(datasets):
         "warnings":len(by[Severity.WARNING]),"info":len(by[Severity.INFO]),
         "datasets_analyzed":len(datasets),"total_records":sum(p.row_count for p in report.datasets),
         "total_columns":sum(p.column_count for p in report.datasets)}
+    report.quality_measures = compute_quality_measures(report)
     return report
