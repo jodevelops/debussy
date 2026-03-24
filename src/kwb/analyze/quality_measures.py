@@ -106,13 +106,22 @@ def _compute_uniqueness(report: AnalysisReport) -> QualityMeasureSummary:
     dup_findings = report.findings_by_category.get(FindingCategory.DUPLICATE_RECORDS, [])
     near_dup_findings = report.findings_by_category.get(FindingCategory.NEAR_DUPLICATE_RECORDS, [])
     dup_count = sum(f.evidence.get("duplicate_row_count", 0) for f in dup_findings)
+    near_dup_count = sum(f.evidence.get("near_duplicate_count", len(f.record_ids)) for f in near_dup_findings)
 
-    score = max(0, round(100 - (dup_count / total_records * 100))) if dup_count else 100
+    penalty = (dup_count / total_records * 100) + (near_dup_count / total_records * 50)
+    score = max(0, round(100 - penalty)) if (dup_count or near_dup_count) else 100
 
-    if dup_count == 0:
+    if dup_count == 0 and near_dup_count == 0:
         summary = "Keine Duplikate gefunden. Alle Records eindeutig identifizierbar."
-    else:
+    elif dup_count > 0 and near_dup_count > 0:
+        summary = (
+            f"{dup_count} duplizierte Zeilen ({dup_count / total_records:.1%}), "
+            f"{near_dup_count} Near-Duplicate-Kandidaten."
+        )
+    elif dup_count > 0:
         summary = f"{dup_count} duplizierte Zeilen ({dup_count / total_records:.1%} der Records)."
+    else:
+        summary = f"{near_dup_count} Near-Duplicate-Kandidaten gefunden. Manuelle Prüfung empfohlen."
 
     top_examples = [
         {
@@ -207,16 +216,21 @@ def _compute_consistency(report: AnalysisReport) -> QualityMeasureSummary:
     fmt_findings = by_cat.get(FindingCategory.FORMAT_INCONSISTENCY, [])
 
     variant_groups = sum(f.evidence.get("variant_count", 0) for f in tv_findings)
-    penalty = min(80, variant_groups * 5 + len(cls_findings) * 10)
+    fmt_rows = sum(f.evidence.get("both_rows", f.evidence.get("whitespace_count", 0)) for f in fmt_findings)
+    penalty = min(80, variant_groups * 5 + len(cls_findings) * 10 + (10 if fmt_findings else 0))
     score = max(0, 100 - penalty)
 
-    if not tv_findings and not cls_findings:
-        summary = "Werte konsistent. Keine Term-Varianten oder Klassifikationsinkonsistenzen."
+    if not tv_findings and not cls_findings and not fmt_findings:
+        summary = "Werte konsistent. Keine Term-Varianten, Format- oder Klassifikationsinkonsistenzen."
     else:
-        summary = (
-            f"{variant_groups} Term-Variantengruppen, "
-            f"{len(cls_findings)} Klassifikationsinkonsistenzen."
-        )
+        parts = []
+        if variant_groups:
+            parts.append(f"{variant_groups} Term-Variantengruppen")
+        if cls_findings:
+            parts.append(f"{len(cls_findings)} Klassifikationsinkonsistenzen")
+        if fmt_findings:
+            parts.append(f"{len(fmt_findings)} Format-Inkonsistenzen")
+        summary = ", ".join(parts) + "."
 
     top_examples = []
     for f in tv_findings[:2]:
@@ -242,7 +256,7 @@ def _compute_consistency(report: AnalysisReport) -> QualityMeasureSummary:
         status=_status_from_score(score),
         summary=summary,
         mapped_finding_categories=cats,
-        evidence_count=variant_groups + len(cls_findings),
+        evidence_count=variant_groups + len(cls_findings) + len(fmt_findings),
         top_examples=top_examples,
         recommended_actions=actions,
     )
