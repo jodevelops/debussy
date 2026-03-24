@@ -14,7 +14,6 @@ from kwb.core.models import (
     DatasetProfile,
     Finding,
     QualityMeasureReport,
-    QualityMeasureSummary,
     QualityStatus,
     Severity,
 )
