@@ -32,6 +32,7 @@ from kwb.ingest.xlsx_loader import ingest_xlsx
 from kwb.ingest.xml_loader import ingest_xml
 from kwb.analyze.structural import analyze_datasets
 from kwb.analyze.ner import ner_hybrid, scan_problematic_terms
+from kwb.analyze.quality_report import build_quality_analysis_report
 from kwb.enrich.edtf import normalize_dates
 from kwb.report.markdown import render_report
 from kwb.ai.prompts import PROMPT_VERSIONS
@@ -268,7 +269,10 @@ async def analyze(files: list[UploadFile] = File(...)):
 
     report = analyze_datasets(datasets)
     state["report"] = report
+    quality_report = build_quality_analysis_report(report)
     result = _report_json(report, render_report(report))
+    # Structured Phase-1 quality analysis for GUI rendering
+    result["quality_analysis"] = quality_report.to_dict()
     # Include auto-detected id_column candidates per dataset
     id_cols = {}
     for dp in report.datasets:

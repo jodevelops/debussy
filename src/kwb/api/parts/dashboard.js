@@ -297,11 +297,12 @@ function rfl(){
 }
 function populateDS(){
   const names=Object.values(ufiles).map(f=>f.uploadName);
-  for(const id of['ner-ds','ner-full-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds','dict-build-ds','mds-ds','enrich-ds']){
+  for(const id of['ner-ds','ner-full-ds','scan-ds','edtf-ds','exp-ds','exp-csv-ds','exp-ld-ds','fm-ds','terms-ds','dict-build-ds','mds-ds','enrich-ds','llmq-ds']){
     const s=$(id);if(!s)continue;
     s.innerHTML=names.map((x,i)=>'<option value="'+esc(x)+'"'+(i===0?' selected':'')+'>'+esc(x)+'</option>').join('')}
   if(names.length>0){
     loadCols('ner-ds','ner-cols');loadCols('dict-build-ds','dict-build-cols');loadDateCols();loadRecords();loadFMCols();
+    if($('llmq-ds')&&$('llmq-ds').value)loadCols('llmq-ds','llmq-cols');
     ['ner-hint','edtf-hint','exp-hint'].forEach(id=>{const el=$(id);if(el)el.style.display='none'})
   }
 }
@@ -899,10 +900,17 @@ function rrep(d){
   $('fbar').innerHTML='<div class="fb2 a" onclick="ff(\'all\',this)">Alle ('+fs.length+')</div><div class="fb2" onclick="ff(\'critical\',this)">Kritisch ('+(s.critical||0)+')</div><div class="fb2" onclick="ff(\'warning\',this)">Warnungen ('+(s.warnings||0)+')</div><div class="fb2" onclick="ff(\'info\',this)">Hinweise ('+(s.info||0)+')</div>';
   rfnd(fs);
   rQM(d.quality_measures||[]);
+  rQualityAnalysis(d.quality_analysis||{});
   rCombinedCols(d.datasets||[]);
   if($('mdx'))$('mdx').value=d.markdown||'';
   // Show ID column selection bar
   showIdColBar(d);
+  // Show LLM quality control panel (section 1d)
+  if($('llm-quality-ctrl'))$('llm-quality-ctrl').style.display='block';
+  // Reset LLM quality results to placeholder state for new dataset
+  if($('llmq-placeholder'))$('llmq-placeholder').style.display='block';
+  if($('llmq-result'))$('llmq-result').style.display='none';
+  if($('llmq-run-status'))$('llmq-run-status').textContent='';
   // Unlock step 2 since analysis is done
   unlockStep(2);
 }
@@ -937,6 +945,255 @@ function rQM(ms){
       '</div>';
   });
   area.innerHTML=rows.join('');
+}
+
+// === PHASE-1 QUALITY ANALYSIS REPORT (Issue-Cluster, Arbeitspakete, Provenienz) ===
+const _SEV_COLORS={critical:'var(--crit)',warning:'var(--warn)',info:'var(--info)'};
+
+function rQualityAnalysis(qa){
+  rIssueClusters(qa.issue_clusters||[]);
+  rWorkPackages(qa.work_package_candidates||[]);
+  rProvenance(qa.analysis_provenance||null);
+}
+
+function rIssueClusters(clusters){
+  const area=$('qm-clusters-area');if(!area)return;
+  if(!clusters.length){area.innerHTML='';return}
+  area.innerHTML='<h4 style="font-size:.78rem;font-weight:700;margin:.2rem 0 .4rem;color:#444;border-top:1px solid var(--brd);padding-top:.4rem">Befund-Cluster</h4>'+
+    clusters.map(cl=>{
+      const sev=cl.severity||'info';const col=_SEV_COLORS[sev]||'#bbb';
+      return '<div style="border-left:3px solid '+col+';padding:.35rem .6rem;margin-bottom:.3rem;background:#fff;border-radius:0 4px 4px 0;font-size:.77rem">'+
+        '<span style="font-weight:700">'+esc(cl.label||cl.cluster_id||'Cluster')+'</span>'+
+        ' <span class="sv '+esc(sev)+'" style="color:'+col+'">'+esc(sev)+'</span>'+
+        (cl.affected_records_count?' <span style="color:#888;font-size:.68rem">'+cl.affected_records_count+' Records</span>':'')+
+        (cl.affected_columns&&cl.affected_columns.length?'<div style="font-size:.68rem;color:#666;margin-top:.1rem">Spalten: '+cl.affected_columns.slice(0,6).map(c=>'<code>'+esc(c)+'</code>').join(', ')+(cl.affected_columns.length>6?' u.a.':'')+'</div>':'')+
+        (cl.suggested_action?'<div style="font-size:.7rem;color:var(--ac);font-style:italic;margin-top:.1rem">&rarr; '+esc(cl.suggested_action)+'</div>':'')+
+      '</div>';
+    }).join('');
+}
+
+function rWorkPackages(wps){
+  const area=$('qm-wps-area');if(!area)return;
+  if(!wps.length){area.innerHTML='';return}
+  area.innerHTML='<h4 style="font-size:.78rem;font-weight:700;margin:.2rem 0 .4rem;color:#444;border-top:1px solid var(--brd);padding-top:.4rem">Arbeitspakete</h4>'+
+    wps.map((wp,i)=>{
+      const prio=wp.priority||'info';const col=_SEV_COLORS[prio]||'#bbb';
+      return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem .6rem;margin-bottom:.3rem;font-size:.77rem;background:#fff">'+
+        '<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">'+
+        '<span style="font-weight:700;flex:1">'+esc(wp.title||'Arbeitspaket '+(i+1))+'</span>'+
+        '<span class="sv '+esc(prio)+'" style="color:'+col+'">'+esc(prio)+'</span>'+
+        (wp.estimated_records?'<span style="font-size:.68rem;color:#888">~'+wp.estimated_records+' Records</span>':'')+
+        '</div>'+
+        (wp.description?'<div style="font-size:.7rem;color:#555;margin-top:.15rem">'+esc(wp.description)+'</div>':'')+
+        (wp.affected_columns&&wp.affected_columns.length?'<div style="font-size:.68rem;color:#666;margin-top:.1rem">Spalten: '+wp.affected_columns.slice(0,5).map(c=>'<code>'+esc(c)+'</code>').join(', ')+(wp.affected_columns.length>5?' u.a.':'')+'</div>':'')+
+      '</div>';
+    }).join('');
+}
+
+function rProvenance(prov){
+  const area=$('qm-provenance-area');if(!area)return;
+  if(!prov){area.innerHTML='';return}
+  area.innerHTML='<div style="font-size:.67rem;color:#aaa;padding:.3rem 0 0;border-top:1px solid var(--brd);margin-top:.2rem">'+
+    'Analyse: <strong>'+esc(prov.analysis_mode||'')+'</strong>'+
+    (prov.analyzer_version?' &middot; v'+esc(prov.analyzer_version):'')+
+    (prov.analyzed_at?' &middot; '+esc(prov.analyzed_at.substring(0,19).replace('T',' '))+' UTC':'')+
+    (prov.source_name?' &middot; Quelle: '+esc(prov.source_name):'')+
+  '</div>';
+}
+
+// === PHASE-2 KI-QUALITÄTSPRÜFUNG ===
+function llmqToggleSampleRow(){
+  const pilot=document.querySelector('input[name="llmq-mode"]:checked')?.value==='pilot';
+  const row=$('llmq-sample-row');
+  if(row)row.style.display=pilot?'block':'none';
+}
+
+function llmqSelectAllCols(checked){
+  document.querySelectorAll('#llmq-cols .ci input[type="checkbox"]').forEach(cb=>cb.checked=checked);
+}
+
+async function runLLMQuality(){
+  const dsEl=$('llmq-ds');
+  if(!dsEl||!dsEl.value){alert('Bitte einen Datensatz w\u00e4hlen.');return}
+  const dataset_id=dsEl.value;
+  const model=($('llmq-model')?.value)||null;
+  const levels=[...document.querySelectorAll('#llm-quality-ctrl input[id^="llmq-lvl-"]:checked')].map(cb=>cb.value);
+  if(!levels.length){alert('Mindestens eine Analyseebene w\u00e4hlen.');return}
+  const mode=document.querySelector('input[name="llmq-mode"]:checked')?.value||'pilot';
+  const sample_size=parseInt($('llmq-sample')?.value||'50')||50;
+  const selCols=[...document.querySelectorAll('#llmq-cols .ci input[type="checkbox"]:checked')].map(cb=>cb.value);
+  const columns=selCols.length?selCols:null;
+
+  const status=$('llmq-run-status');
+  if(status)status.textContent='';
+  sp('KI-Qualit\u00e4tspr\u00fcfung l\u00e4uft\u2026',mode==='pilot'?'Pilotlauf ('+sample_size+' Zeilen)':'Vollanalyse \u2014 '+levels.join(', '));
+  _abortCtrl=new AbortController();
+
+  try{
+    const r=await(await fetch('/api/ai/quality-check',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      signal:_abortCtrl.signal,
+      body:JSON.stringify({dataset_id,model:model||null,columns,levels,mode,sample_size})
+    })).json();
+
+    if(r.status==='error'){
+      if(status)status.textContent='\u2717 '+(r.message||'Unbekannter Fehler');
+      hp();return;
+    }
+
+    const sum=r.summary||{};
+    if(status)status.innerHTML=
+      '\u2713 Fertig &mdash; '+
+      (sum.total_cell_findings||0)+' Zell-Befunde &middot; '+
+      (sum.total_column_reports||0)+' Spalten-Berichte'+
+      (r.model_used?' &middot; Modell: <code>'+esc(r.model_used)+'</code>':'');
+
+    renderLLMQualityResults(r);
+    // Switch to the KI-Qualitätsprüfung tab
+    const tab=document.querySelector('#dt .tab[data-t="llmq"]');
+    if(tab)tab.click();
+  }catch(e){
+    if(e.name!=='AbortError'&&status)status.textContent='\u2717 '+e.message;
+  }finally{hp()}
+}
+
+function renderLLMQualityResults(data){
+  const report=data.report||{};
+  const summary=data.summary||{};
+
+  if($('llmq-placeholder'))$('llmq-placeholder').style.display='none';
+  const resultEl=$('llmq-result');
+  if(resultEl)resultEl.style.display='block';
+
+  // Summary metrics bar
+  const sb=$('llmq-summary-bar');
+  if(sb){
+    sb.innerHTML=
+      '<div class="mt"><div class="v">'+(data.analyzed_columns||[]).length+'</div><div class="l">Spalten</div></div>'+
+      '<div class="mt cr"><div class="v">'+(summary.total_cell_findings||0)+'</div><div class="l">Zell-Befunde</div></div>'+
+      '<div class="mt wr"><div class="v">'+(summary.total_column_reports||0)+'</div><div class="l">Spalten-Berichte</div></div>'+
+      '<div class="mt in"><div class="v">'+(summary.total_record_reports||0)+'</div><div class="l">Record-Berichte</div></div>'+
+      '<div class="mt su" style="font-size:.65rem"><div class="v" style="font-size:.8rem;word-break:break-all">'+esc(data.model_used||'Mock')+'</div><div class="l">Modell</div></div>';
+  }
+
+  // --- Cell findings ---
+  const cellEl=$('llmq-cell-content');
+  if(cellEl){
+    const findings=report.cell_findings||[];
+    if(!findings.length){
+      cellEl.innerHTML='<p style="font-size:.8rem;color:#888;padding:.5rem">Keine Zell-Befunde (alle gepr\u00fcften Zellen korrekt oder keine Zell-Ebene aktiviert).</p>';
+    }else{
+      cellEl.innerHTML=
+        '<div class="scroll-box"><table class="etbl"><thead><tr>'+
+        '<th>Record</th><th>Spalte</th><th>Wert</th><th>Problem-Typ</th><th>Schwere</th><th>Konf.</th><th>Begr\u00fcndung</th><th>Empfehlung</th>'+
+        '</tr></thead><tbody>'+
+        findings.map(f=>{
+          const sev=f.severity||'info';const sc=_SEV_COLORS[sev]||'#888';
+          return '<tr>'+
+            '<td style="font-size:.65rem;max-width:90px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(f.record_id)+'">'+esc(f.record_id)+'</td>'+
+            '<td><code style="font-size:.68rem">'+esc(f.column)+'</code></td>'+
+            '<td style="max-width:110px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.7rem" title="'+esc(f.value||'')+'">'+esc((f.value||'').substring(0,40))+'</td>'+
+            '<td><span style="font-size:.62rem;font-weight:700;font-family:monospace;padding:.1rem .35rem;border-radius:3px;background:#f3f4f6;color:#374151">'+esc(f.issue_type||'')+'</span></td>'+
+            '<td><span class="sv '+esc(sev)+'" style="color:'+sc+'">'+esc(sev)+'</span></td>'+
+            '<td style="white-space:nowrap">'+Math.round((f.confidence||0)*100)+'%</td>'+
+            '<td style="font-size:.7rem;max-width:190px">'+esc(f.reasoning||'')+'</td>'+
+            '<td style="font-size:.7rem">'+esc(f.suggested_action||'')+
+              (f.suggested_target_field?'<br><span style="color:var(--ac);font-size:.65rem">&rarr; '+esc(f.suggested_target_field)+'</span>':'')+
+            '</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table></div>'+
+        '<p style="font-size:.68rem;color:#888;margin-top:.3rem">'+findings.length+' Befunde &mdash; korrekte Zellen ausgeblendet</p>';
+    }
+  }
+
+  // --- Column reports ---
+  const colEl=$('llmq-col-content');
+  if(colEl){
+    const cols=report.column_reports||[];
+    if(!cols.length){
+      colEl.innerHTML='<p style="font-size:.8rem;color:#888;padding:.5rem">Keine Spalten-Berichte (Spalten-Ebene nicht aktiviert oder keine Daten).</p>';
+    }else{
+      colEl.innerHTML=
+        '<table class="etbl"><thead><tr>'+
+        '<th>Spalte</th><th>Feldreinheit</th><th>Konf.</th><th>Dominante Probleme</th><th>Begr\u00fcndung</th><th>Empfehlung</th>'+
+        '</tr></thead><tbody>'+
+        cols.map(c=>{
+          const score=c.field_purity_score||0;
+          const bar=Math.round(score*0.5);
+          const col=score>70?'var(--ok)':score>40?'var(--warn)':'var(--crit)';
+          return '<tr>'+
+            '<td><code>'+esc(c.column)+'</code></td>'+
+            '<td style="white-space:nowrap"><span class="fb0" style="width:'+bar+'px;background:'+col+'"></span>'+score.toFixed(0)+'%</td>'+
+            '<td style="white-space:nowrap">'+Math.round((c.confidence||0)*100)+'%</td>'+
+            '<td style="font-size:.7rem">'+esc((c.dominant_issue_types||[]).join(', '))+'</td>'+
+            '<td style="font-size:.7rem;max-width:180px">'+esc(c.reasoning||'')+'</td>'+
+            '<td style="font-size:.7rem">'+esc(c.suggested_action||'')+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table>';
+    }
+  }
+
+  // --- Record reports ---
+  const recEl=$('llmq-rec-content');
+  if(recEl){
+    const recs=report.record_reports||[];
+    if(!recs.length){
+      recEl.innerHTML='<p style="font-size:.8rem;color:#888;padding:.5rem">Keine Record-Berichte (Record-Ebene nicht aktiviert oder keine Konflikte gefunden).</p>';
+    }else{
+      recEl.innerHTML=
+        '<div class="scroll-box"><table class="etbl"><thead><tr>'+
+        '<th>Record</th><th>Schwere</th><th>Konf.</th><th>Konflikte / Begr\u00fcndung</th><th>Review</th>'+
+        '</tr></thead><tbody>'+
+        recs.map(r=>{
+          const sev=r.severity||'info';const sc=_SEV_COLORS[sev]||'#888';
+          const conflictTxt=(r.conflicts||[]).map(c=>esc(typeof c==='string'?c:(c.description||JSON.stringify(c)))).join('; ')||esc(r.reasoning||'');
+          return '<tr>'+
+            '<td><code style="font-size:.68rem">'+esc(r.record_id)+'</code></td>'+
+            '<td><span class="sv '+esc(sev)+'" style="color:'+sc+'">'+esc(sev)+'</span></td>'+
+            '<td>'+Math.round((r.confidence||0)*100)+'%</td>'+
+            '<td style="font-size:.7rem;max-width:260px">'+conflictTxt+'</td>'+
+            '<td>'+(r.review_required?'<span style="color:var(--warn);font-weight:700">\u2713</span>':'&mdash;')+'</td>'+
+          '</tr>';
+        }).join('')+
+        '</tbody></table></div>';
+    }
+  }
+
+  // --- Dataset report ---
+  const dsEl=$('llmq-ds-content');
+  if(dsEl){
+    const ds=report.dataset_report;
+    if(!ds){
+      dsEl.innerHTML='<p style="font-size:.8rem;color:#888;padding:.5rem">Kein Datensatz-Bericht (Datensatz-Ebene nicht aktiviert).</p>';
+    }else{
+      let html='';
+      if(ds.risk_summary)html+='<div style="padding:.5rem .6rem;background:#fff8f0;border:1px solid var(--warn);border-radius:4px;font-size:.78rem;margin-bottom:.6rem"><strong>Risikobewertung:</strong> '+esc(ds.risk_summary)+'</div>';
+      if((ds.dominant_error_families||[]).length)html+='<h4 style="font-size:.78rem;margin:.4rem 0 .2rem">Dominante Fehlerfamilien</h4><ul style="font-size:.75rem;margin-left:1.2rem;margin-bottom:.5rem">'+ds.dominant_error_families.map(e=>'<li>'+esc(e)+'</li>').join('')+'</ul>';
+      if((ds.issue_clusters||[]).length)html+='<h4 style="font-size:.78rem;margin:.4rem 0 .2rem">Issue-Cluster</h4>'+
+        ds.issue_clusters.map(cl=>'<div style="border:1px solid var(--brd);border-radius:4px;padding:.35rem .6rem;margin-bottom:.3rem;font-size:.75rem">'+
+          '<strong>'+esc(cl.label||'Cluster')+'</strong>'+
+          (cl.severity?' <span class="sv '+esc(cl.severity)+'" style="color:'+((_SEV_COLORS[cl.severity])||'#888')+'">'+esc(cl.severity)+'</span>':'')+
+          (cl.count?' &mdash; '+cl.count+' Records':'')+
+          (cl.suggested_action?'<div style="font-size:.7rem;color:var(--ac);margin-top:.12rem">&rarr; '+esc(cl.suggested_action)+'</div>':'')+
+        '</div>').join('');
+      if((ds.work_package_candidates||[]).length)html+='<h4 style="font-size:.78rem;margin:.4rem 0 .2rem">Arbeitspakete</h4>'+
+        ds.work_package_candidates.map(wp=>'<div style="border:1px solid var(--brd);border-radius:4px;padding:.35rem .6rem;margin-bottom:.3rem;font-size:.75rem">'+
+          '<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap"><span style="font-weight:700;flex:1">'+esc(wp.title||'Arbeitspaket')+'</span>'+
+          (wp.priority?'<span class="sv '+esc(wp.priority)+'" style="color:'+(_SEV_COLORS[wp.priority]||'#888')+'">'+esc(wp.priority)+'</span>':'')+
+          (wp.estimated_records?'<span style="font-size:.68rem;color:#888">~'+wp.estimated_records+' Records</span>':'')+
+          '</div>'+
+          (wp.description?'<div style="font-size:.7rem;color:#555;margin-top:.12rem">'+esc(wp.description)+'</div>':'')+
+        '</div>').join('');
+      dsEl.innerHTML=html||'<p style="font-size:.8rem;color:#888">Keine strukturierten Daten im Datensatz-Bericht.</p>';
+    }
+  }
+
+  // Re-bind inner tabs (needed after dynamic show)
+  const innerTabs=$('llmq-tabs');
+  if(innerTabs)bindTabs(innerTabs);
 }
 
 // === COMBINED COLUMNS TABLE (merged Profile + Spalten with sort) ===
@@ -1082,6 +1339,7 @@ async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json()
       const visionModels=gpuM.filter(m=>{const h=getModelHint(m);return h.type==='vision'||h.type==='unknown';});
       $('cfg-mt').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
       $('cfg-mv').innerHTML=gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
+      if($('llmq-model'))$('llmq-model').innerHTML='<option value="">Standard (aus Konfiguration)</option>'+gpuM.map(m=>{const h=getModelHint(m);return '<option value="'+esc(m)+'">'+esc(m)+(h.type!=='unknown'?' ['+h.type.toUpperCase()+']':'')+'</option>';}).join('');
       // Pre-select configured models
       if(cfg.gpustack_model_text)$('cfg-mt').value=cfg.gpustack_model_text;
       if(cfg.gpustack_model_vision)$('cfg-mv').value=cfg.gpustack_model_vision;
