@@ -175,3 +175,181 @@ def prompt_normalize_term(term, field_name="", language="de"):
 
 def prompt_ocr_analysis(additional_context="", language="de"):
     return prompt_ocr_transcription_quality(additional_context=additional_context, language=language)
+
+
+# ---------------------------------------------------------------------------
+# LLM-gestützte Qualitätsprüfung (Phase 2)
+# ---------------------------------------------------------------------------
+
+_SYSTEM_QUALITY_EXPERT_DE = (
+    "Du bist ein Experte fuer die Qualitaetspruefung von Metadaten in GLAM-Institutionen "
+    "(Galerien, Bibliotheken, Archive, Museen). Du kennst GND, Dublin Core, LIDO und METS/MODS. "
+    "Antworte IMMER als valides JSON. Kein Markdown, keine Erklaerungen ausserhalb des JSON."
+)
+
+
+def prompt_cell_quality_check(
+    field_name: str,
+    field_semantics: str,
+    value: str,
+    record_context: dict,
+    dataset_profile: dict,
+    language: str = "de",
+) -> list:
+    """
+    Field-sensitive cell-level quality check prompt.
+
+    Checks whether *value* is semantically appropriate for *field_name*,
+    using record context and dataset profile for grounding.
+    """
+    system = _SYSTEM_QUALITY_EXPERT_DE if language == "de" else SYSTEM_METADATA_EXPERT_EN
+    semantics_line = f"Erwartete Feldsemantik: {field_semantics}\n" if field_semantics else ""
+    ctx_lines = ""
+    if record_context:
+        ctx_pairs = "; ".join(f"{k}: {v}" for k, v in list(record_context.items())[:8])
+        ctx_lines = f"Andere Felder desselben Datensatzes: {ctx_pairs}\n"
+    ds_cols = ", ".join(dataset_profile.get("columns", [])[:20])
+    ds_line = (
+        f"Datensatzprofil: Quelle={dataset_profile.get('source_name','')}, "
+        f"Zeilen={dataset_profile.get('row_count','')}, Felder={ds_cols}\n"
+    )
+    user = (
+        f"Aufgabe: Pruefe semantische Qualitaet des Zellwerts im Kontext seines Feldes.\n\n"
+        f"Feld: {field_name}\n"
+        + semantics_line
+        + f"Zellwert: {value}\n"
+        + ctx_lines
+        + ds_line
+        + "\nJSON-Schema (genau dieses Format, alle Felder Pflicht):\n"
+        + "{\n"
+        + '  "value": "...",\n'
+        + '  "field": "...",\n'
+        + '  "issue_type": "likely_correct|semantic_misplacement|ambiguous|generic|'
+        + 'encoding_artifact|review_required",\n'
+        + '  "severity": "critical|warning|info",\n'
+        + '  "confidence": 0.0,\n'
+        + '  "reasoning": "...",\n'
+        + '  "evidence": {},\n'
+        + '  "suggested_target_field": null,\n'
+        + '  "suggested_action": "accept|move_or_review|flag_for_review|correct",\n'
+        + '  "review_required": false\n'
+        + "}"
+    )
+    return [AIMessage.system(system), AIMessage.user(user)]
+
+
+def prompt_column_quality_check(
+    field_name: str,
+    field_semantics: str,
+    sample_values: list,
+    non_empty_count: int,
+    total_count: int,
+    language: str = "de",
+) -> list:
+    """
+    Column-level field-purity assessment prompt.
+
+    Evaluates how well the sample values match the expected field semantics
+    and reports a purity score with dominant issue types.
+    """
+    system = _SYSTEM_QUALITY_EXPERT_DE if language == "de" else SYSTEM_METADATA_EXPERT_EN
+    semantics_line = f"Erwartete Feldsemantik: {field_semantics}\n" if field_semantics else ""
+    vals_repr = ", ".join(f'"{v}"' for v in sample_values[:30])
+    user = (
+        f"Aufgabe: Bewerte die semantische Feldqualitaet (Feldreinheit) der Spalte.\n\n"
+        f"Spalte: {field_name}\n"
+        + semantics_line
+        + f"Nicht-leere Werte: {non_empty_count} von {total_count}\n"
+        + f"Stichprobe (bis 30 Werte): [{vals_repr}]\n"
+        + "\nJSON-Schema (genau dieses Format, alle Felder Pflicht):\n"
+        + "{\n"
+        + '  "column": "...",\n'
+        + '  "field_purity_score": 0.0,\n'
+        + '  "dominant_issue_types": [],\n'
+        + '  "typical_problems": [],\n'
+        + '  "affected_value_examples": [],\n'
+        + '  "suggested_action": "...",\n'
+        + '  "confidence": 0.0,\n'
+        + '  "reasoning": "...",\n'
+        + '  "review_required": false\n'
+        + "}"
+    )
+    return [AIMessage.system(system), AIMessage.user(user)]
+
+
+def prompt_record_quality_check(
+    record_id: str,
+    fields: dict,
+    language: str = "de",
+) -> list:
+    """
+    Record-level cross-field coherence check prompt.
+
+    Detects contradictions and semantic inconsistencies between fields
+    within a single record.
+    """
+    system = _SYSTEM_QUALITY_EXPERT_DE if language == "de" else SYSTEM_METADATA_EXPERT_EN
+    fields_repr = "\n".join(f"  {k}: {v}" for k, v in fields.items())
+    user = (
+        f"Aufgabe: Pruefe Kohaerenz und Widersprueche innerhalb eines Metadaten-Datensatzes.\n\n"
+        f"Datensatz-ID: {record_id}\n"
+        f"Felder:\n{fields_repr}\n"
+        + "\nJSON-Schema (genau dieses Format, alle Felder Pflicht):\n"
+        + "{\n"
+        + '  "record_id": "...",\n'
+        + '  "severity": "critical|warning|info|ok",\n'
+        + '  "conflicts": [\n'
+        + '    {"fields": [], "description": "...", "confidence": 0.0}\n'
+        + "  ],\n"
+        + '  "overall_confidence": 0.0,\n'
+        + '  "reasoning": "...",\n'
+        + '  "review_required": false\n'
+        + "}"
+    )
+    return [AIMessage.system(system), AIMessage.user(user)]
+
+
+def prompt_dataset_quality_summary(
+    source_name: str,
+    row_count: int,
+    column_count: int,
+    analyzed_columns: list,
+    issue_summary: dict,
+    language: str = "de",
+) -> list:
+    """
+    Dataset-level quality synthesis prompt.
+
+    Aggregates cell/column findings into dominant error families,
+    issue clusters, and actionable work-package candidates.
+    """
+    system = _SYSTEM_QUALITY_EXPERT_DE if language == "de" else SYSTEM_METADATA_EXPERT_EN
+    cols_repr = ", ".join(analyzed_columns[:20])
+    total_findings = issue_summary.get("total_findings", 0)
+    issue_counts = issue_summary.get("issue_type_counts", {})
+    purity_scores = issue_summary.get("column_purity_scores", {})
+    counts_repr = "; ".join(f"{k}={v}" for k, v in issue_counts.items())
+    purity_repr = "; ".join(f"{k}={v:.0f}" for k, v in purity_scores.items())
+    user = (
+        f"Aufgabe: Fasse die KI-Qualitaetsbefunde des gesamten Datensatzes zusammen.\n\n"
+        f"Datensatz: {source_name} ({row_count} Zeilen, {column_count} Spalten)\n"
+        f"Analysierte Spalten: {cols_repr}\n"
+        f"Gesamtbefunde: {total_findings}\n"
+        f"Befundtypen: {counts_repr}\n"
+        f"Feldreinheit (Spalte=Score): {purity_repr}\n"
+        + "\nJSON-Schema (genau dieses Format, alle Felder Pflicht):\n"
+        + "{\n"
+        + '  "dominant_error_families": [],\n'
+        + '  "at_risk_columns": [],\n'
+        + '  "issue_clusters": [\n'
+        + '    {"label":"...","affected_columns":[],"count":0,"severity":"warning","suggested_action":"..."}\n'
+        + "  ],\n"
+        + '  "work_package_candidates": [\n'
+        + '    {"title":"...","description":"...","priority":"warning","affected_columns":[],'
+        + '"estimated_records":0,"action_type":"review"}\n'
+        + "  ],\n"
+        + '  "risk_summary": "...",\n'
+        + '  "confidence": 0.0\n'
+        + "}"
+    )
+    return [AIMessage.system(system), AIMessage.user(user)]
