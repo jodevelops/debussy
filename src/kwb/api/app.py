@@ -182,6 +182,11 @@ CATALOG = [
     {"id": "K-04", "name": "System-Prompts",      "module": "KI",        "status": "done",    "note": "6 Presets"},
     {"id": "K-05", "name": "Modell-Auswahl",      "module": "KI",        "status": "done",    "note": "Alle Endpoints"},
     {"id": "K-06", "name": "Bild-Analyse (API)",  "module": "KI",        "status": "done",    "note": "/api/images/analyze, Ergebnisse in Workspace persistiert"},
+    # Structured Quality Analysis (Phase 1 & 2)
+    {"id": "Q-01", "name": "Strukturiertes Qualitätsmodell (Phase 1)", "module": "Analyse", "status": "done",
+     "note": "QualityAnalysisReport: Dataset-, Spalten-, Record-, Zellebene; IssueCluster, WorkPackageCandidate, AnalysisProvenance; GUI: Tab Qualitätsbericht"},
+    {"id": "Q-02", "name": "LLM-Qualitätsprüfung (Phase 2)", "module": "Analyse", "status": "done",
+     "note": "POST /api/ai/quality-check; Zell-/Spalten-/Record-/Datensatz-Ebene; Modellwahl, Pilot/Vollanalyse, Scope; GUI: 1d + Tab KI-Qualitätsprüfung"},
     # Report
     {"id": "P-01", "name": "Markdown-Report",     "module": "Report",    "status": "done",    "note": ""},
     # Geplant

@@ -93,6 +93,39 @@
 <div id="id-col-datasets"></div>
 <button class="btn f" onclick="completeStep(1)" style="margin-top:.5rem">&#10003; Schritt 1 abschlie&szlig;en &rarr; Weiter</button>
 </div>
+
+<div class="c" id="llm-quality-ctrl" style="display:none">
+<h3>1d. KI-Qualit&auml;tspr&uuml;fung <span style="font-size:.66rem;color:var(--info);font-weight:400">(Phase 2)</span></h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.4rem">Semantische Qualit&auml;tspr&uuml;fung via LLM auf Zell-, Spalten-, Record- und Datensatz-Ebene.</p>
+<label>Datensatz</label>
+<select id="llmq-ds" onchange="loadCols('llmq-ds','llmq-cols')" style="width:100%"><option value="">&#8212;</option></select>
+<label>Modell</label>
+<select id="llmq-model" style="width:100%"><option value="">Standard (aus Konfiguration)</option></select>
+<label>Analyseebenen</label>
+<div class="cl" style="max-height:none">
+<div class="ci"><input type="checkbox" id="llmq-lvl-cell" value="cell" checked><span>Zell-Ebene &mdash; <span style="color:#888;font-size:.68rem">semantische Pr&uuml;fung einzelner Zellwerte</span></span></div>
+<div class="ci"><input type="checkbox" id="llmq-lvl-col" value="column" checked><span>Spalten-Ebene &mdash; <span style="color:#888;font-size:.68rem">Feldreinheit und typische Fehler</span></span></div>
+<div class="ci"><input type="checkbox" id="llmq-lvl-rec" value="record"><span>Record-Ebene &mdash; <span style="color:#888;font-size:.68rem">Koh&auml;renz und Widerspr&uuml;che</span></span></div>
+<div class="ci"><input type="checkbox" id="llmq-lvl-ds" value="dataset"><span>Datensatz-Ebene &mdash; <span style="color:#888;font-size:.68rem">dominante Qualit&auml;tsmuster &amp; Arbeitspakete</span></span></div>
+</div>
+<label>Modus</label>
+<div class="cl" style="max-height:none">
+<div class="ci"><input type="radio" name="llmq-mode" id="llmq-mode-pilot" value="pilot" checked onchange="llmqToggleSampleRow()"><label for="llmq-mode-pilot" style="display:inline;font-weight:400;margin-top:0">Pilotlauf (Stichprobe)</label></div>
+<div class="ci"><input type="radio" name="llmq-mode" id="llmq-mode-full" value="full" onchange="llmqToggleSampleRow()"><label for="llmq-mode-full" style="display:inline;font-weight:400;margin-top:0">Vollanalyse (alle nicht-leeren Zellen)</label></div>
+</div>
+<div id="llmq-sample-row">
+<label>Stichprobengr&ouml;&szlig;e</label>
+<input type="number" id="llmq-sample" value="50" min="5" max="2000">
+</div>
+<label>Spalten <span style="font-size:.65rem;color:#888;font-weight:400">(keine Auswahl = alle)</span></label>
+<div style="display:flex;gap:.3rem;margin:.3rem 0">
+<button class="btn sm" onclick="llmqSelectAllCols(true)" style="margin-top:0">Alle</button>
+<button class="btn sm s" onclick="llmqSelectAllCols(false)" style="margin-top:0">Keine</button>
+</div>
+<div id="llmq-cols" class="cl"><p style="font-size:.73rem;color:#888">Datensatz w&auml;hlen</p></div>
+<button class="btn f" onclick="runLLMQuality()" style="margin-top:.6rem">&#129520; KI-Analyse starten</button>
+<div id="llmq-run-status" style="font-size:.73rem;color:#555;margin-top:.35rem"></div>
+</div>
 </div>
 
 <!-- Pane 2: Images (JPG / PNG / TIFF / WEBP) -->
@@ -138,9 +171,33 @@
 <div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Pipeline-Workflow:</strong><br>
 &#9312; Upload &amp; Parse &rarr; &#9313; Extraktion (NER + Bilder + PDF) &rarr; &#9314; Qualit&auml;tspr&uuml;fung &rarr; &#9315; Gesamtlauf &rarr; &#9316; Anreicherung &rarr; &#9317; W&ouml;rterbuch &rarr; &#9318; Export</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
-<div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="qm">Qualit&auml;tsma&szlig;e</div><div class="tab" data-t="cols">Spalten &amp; Profil</div><div class="tab" data-t="md">Markdown</div></div>
+<div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="qm">Qualit&auml;tsbericht</div><div class="tab" data-t="llmq">KI-Qualit&auml;tspr&uuml;fung</div><div class="tab" data-t="cols">Spalten &amp; Profil</div><div class="tab" data-t="md">Markdown</div></div>
 <div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
-<div class="tp" data-t="qm"><div id="qmarea"></div></div>
+<div class="tp" data-t="qm">
+<div id="qmarea"></div>
+<div id="qm-clusters-area" style="margin-top:.6rem"></div>
+<div id="qm-wps-area" style="margin-top:.6rem"></div>
+<div id="qm-provenance-area" style="margin-top:.4rem"></div>
+</div>
+<div class="tp" data-t="llmq">
+<div id="llmq-placeholder" style="padding:.5rem;font-size:.8rem;color:#888">
+<p>KI-Qualit&auml;tspr&uuml;fung noch nicht gestartet.</p>
+<p style="margin-top:.3rem">Konfiguriere die Analyse im Abschnitt <strong>1d</strong> (linkes Panel) und klicke auf <em>&raquo;KI-Analyse starten&laquo;</em>.</p>
+</div>
+<div id="llmq-result" style="display:none">
+<div id="llmq-summary-bar" class="sg" style="margin-bottom:.5rem"></div>
+<div class="tabs" id="llmq-tabs">
+<div class="tab a" data-t="llmq-cell">Zell-Befunde</div>
+<div class="tab" data-t="llmq-col">Spalten-Berichte</div>
+<div class="tab" data-t="llmq-rec">Record-Berichte</div>
+<div class="tab" data-t="llmq-ds">Datensatz-Bericht</div>
+</div>
+<div class="tp a" data-t="llmq-cell"><div id="llmq-cell-content"></div></div>
+<div class="tp" data-t="llmq-col"><div id="llmq-col-content"></div></div>
+<div class="tp" data-t="llmq-rec"><div id="llmq-rec-content"></div></div>
+<div class="tp" data-t="llmq-ds"><div id="llmq-ds-content"></div></div>
+</div>
+</div>
 <div class="tp" data-t="cols">
 <div style="display:flex;gap:.5rem;align-items:center;margin-bottom:.5rem;flex-wrap:wrap">
 <div class="fl" style="margin-bottom:0" id="col-sort-bar">
