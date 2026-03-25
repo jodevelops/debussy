@@ -68,6 +68,11 @@ _state: dict[str, Any] = {
     "report": None,
     "config": None,
     "workspace": Workspace(name="default"),
+    # Phase 3 — Review
+    "review_queue": None,       # ReviewQueue | None
+    "work_packages": [],        # list[WorkPackage]
+    "changelog": [],            # list[AppliedChangeLog]
+    "suggestions": {},          # dict[suggestion_id, RemediationSuggestion]
 }
 
 

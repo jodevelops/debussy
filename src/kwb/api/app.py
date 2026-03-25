@@ -50,6 +50,7 @@ from kwb.api.routes.auth import router as auth_router
 from kwb.api.routes.pipeline import router as pipeline_router
 from kwb.api.routes.pdf import router as pdf_router
 from kwb.api.routes.llm_quality import router as llm_quality_router
+from kwb.api.routes.review import router as review_router
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -71,6 +72,7 @@ app.include_router(auth_router)
 app.include_router(pipeline_router)
 app.include_router(pdf_router)
 app.include_router(llm_quality_router)
+app.include_router(review_router)
 
 # ---------------------------------------------------------------------------
 # UI data injected into the dashboard HTML template
@@ -189,6 +191,21 @@ CATALOG = [
      "note": "POST /api/ai/quality-check; Zell-/Spalten-/Record-/Datensatz-Ebene; Modellwahl, Pilot/Vollanalyse, Scope; GUI: 1d + Tab KI-Qualitätsprüfung"},
     # Report
     {"id": "P-01", "name": "Markdown-Report",     "module": "Report",    "status": "done",    "note": ""},
+    # Phase 3 — Review Queues, Work Packages, Remediation
+    {"id": "V-01", "name": "Review-Queues (Phase 3)", "module": "Review", "status": "done",
+     "note": "GET /api/review/items; Filter: Severity, Spalte, Kategorie, Status, Confidence"},
+    {"id": "V-02", "name": "Review-Item-Status (Phase 3)", "module": "Review", "status": "done",
+     "note": "PATCH /api/review/items/{id}/status: pending|accepted|rejected|needs_expert_review|applied"},
+    {"id": "V-03", "name": "Work-Package-Generierung (Phase 3)", "module": "Review", "status": "done",
+     "note": "POST /api/review/work-packages/generate; Cluster → priorisierte Work Packages"},
+    {"id": "V-04", "name": "Bereinigungsvorschläge (Phase 3)", "module": "Review", "status": "done",
+     "note": "POST /api/review/suggestions; move_value_to_field, normalize_label, flag_for_authority_lookup etc."},
+    {"id": "V-05", "name": "Kontrollierte Anwendung (Phase 3)", "module": "Review", "status": "done",
+     "note": "POST /api/review/apply; nur ACCEPTED-Vorschläge, protokolliert in AppliedChangeLog"},
+    {"id": "V-06", "name": "Änderungsprotokoll (Phase 3)", "module": "Review", "status": "done",
+     "note": "GET /api/review/changelog; Originalwert, neuer Wert, Zeitstempel, Bearbeiter"},
+    {"id": "V-07", "name": "Review-Export (Phase 3)", "module": "Review", "status": "done",
+     "note": "GET /api/review/export; Review-Status + Work Packages + Changelog als JSON"},
     # Geplant
     {"id": "R-01", "name": "Wikidata",            "module": "Enrich",    "status": "planned", "note": "SPARQL"},
     {"id": "R-02", "name": "OCR/HTR",             "module": "Analyse",   "status": "planned", "note": ""},

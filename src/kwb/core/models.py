@@ -340,6 +340,200 @@ class AnalysisProvenance:
         }
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 — Review Queues, Work Packages, Remediation
+# ---------------------------------------------------------------------------
+
+
+class ReviewStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
+    NEEDS_EXPERT_REVIEW = "needs_expert_review"
+    APPLIED = "applied"
+
+
+class RemediationActionType(str, Enum):
+    MOVE_VALUE_TO_FIELD = "move_value_to_field"
+    SPLIT_MULTI_VALUE = "split_multi_value"
+    NORMALIZE_LABEL = "normalize_label"
+    FLAG_FOR_AUTHORITY_LOOKUP = "flag_for_authority_lookup"
+    LEAVE_UNCHANGED_MARK_UNCERTAIN = "leave_unchanged_mark_uncertain"
+    APPLY_SUGGESTED_VALUE = "apply_suggested_value"
+
+
+@dataclass
+class ReviewItem:
+    """A single quality finding ready for curatorial review."""
+
+    item_id: str
+    source: str
+    record_id: str | None
+    column: str | None
+    original_value: str | None
+    category: FindingCategory
+    severity: Severity
+    confidence: float | None
+    message: str
+    reasoning: str
+    suggested_action: str | None
+    status: ReviewStatus = ReviewStatus.PENDING
+    reviewer: str | None = None
+    reviewed_at: str | None = None
+    source_issue_ids: list[str] = field(default_factory=list)
+    is_ai_based: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "item_id": self.item_id,
+            "source": self.source,
+            "record_id": self.record_id,
+            "column": self.column,
+            "original_value": self.original_value,
+            "category": self.category.value,
+            "severity": self.severity.value,
+            "confidence": self.confidence,
+            "message": self.message,
+            "reasoning": self.reasoning,
+            "suggested_action": self.suggested_action,
+            "status": self.status.value,
+            "reviewer": self.reviewer,
+            "reviewed_at": self.reviewed_at,
+            "source_issue_ids": self.source_issue_ids,
+            "is_ai_based": self.is_ai_based,
+        }
+
+
+@dataclass
+class ReviewDecision:
+    """A curatorial decision on a ReviewItem."""
+
+    item_id: str
+    decision: ReviewStatus
+    reviewed_at: str
+    reviewer: str | None = None
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "item_id": self.item_id,
+            "decision": self.decision.value,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.note,
+        }
+
+
+@dataclass
+class WorkPackage:
+    """An actionable work package bundling related quality findings."""
+
+    package_id: str
+    title: str
+    description: str
+    scope: str
+    issue_family: str
+    priority: Severity
+    affected_columns: list[str]
+    estimated_records: int
+    action_type: str
+    automation_potential: str  # "high" | "medium" | "low"
+    recommended_strategy: str
+    source_cluster_ids: list[str] = field(default_factory=list)
+    item_ids: list[str] = field(default_factory=list)
+    status: ReviewStatus = ReviewStatus.PENDING
+    created_at: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "package_id": self.package_id,
+            "title": self.title,
+            "description": self.description,
+            "scope": self.scope,
+            "issue_family": self.issue_family,
+            "priority": self.priority.value,
+            "affected_columns": self.affected_columns,
+            "estimated_records": self.estimated_records,
+            "action_type": self.action_type,
+            "automation_potential": self.automation_potential,
+            "recommended_strategy": self.recommended_strategy,
+            "source_cluster_ids": self.source_cluster_ids,
+            "item_ids": self.item_ids,
+            "status": self.status.value,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass
+class RemediationSuggestion:
+    """A structured suggestion for correcting a specific quality issue."""
+
+    suggestion_id: str
+    action_type: RemediationActionType
+    original_value: str | None
+    suggested_value: str | None
+    reasoning: str
+    item_id: str | None = None
+    package_id: str | None = None
+    target_field: str | None = None
+    confidence: float | None = None
+    status: ReviewStatus = ReviewStatus.PENDING
+    is_ai_based: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "suggestion_id": self.suggestion_id,
+            "action_type": self.action_type.value,
+            "original_value": self.original_value,
+            "suggested_value": self.suggested_value,
+            "reasoning": self.reasoning,
+            "item_id": self.item_id,
+            "package_id": self.package_id,
+            "target_field": self.target_field,
+            "confidence": self.confidence,
+            "status": self.status.value,
+            "is_ai_based": self.is_ai_based,
+        }
+
+
+@dataclass
+class AppliedChangeLog:
+    """An immutable log entry for a change applied to dataset metadata."""
+
+    change_id: str
+    dataset_id: str
+    record_id: str
+    column: str
+    original_value: str | None
+    new_value: str | None
+    action_type: RemediationActionType
+    applied_at: str
+    reviewer: str | None = None
+    suggestion_id: str | None = None
+    item_id: str | None = None
+    package_id: str | None = None
+    is_ai_based: bool = False
+    note: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "change_id": self.change_id,
+            "dataset_id": self.dataset_id,
+            "record_id": self.record_id,
+            "column": self.column,
+            "original_value": self.original_value,
+            "new_value": self.new_value,
+            "action_type": self.action_type.value,
+            "applied_at": self.applied_at,
+            "reviewer": self.reviewer,
+            "suggestion_id": self.suggestion_id,
+            "item_id": self.item_id,
+            "package_id": self.package_id,
+            "is_ai_based": self.is_ai_based,
+            "note": self.note,
+        }
+
+
 @dataclass
 class QualityAnalysisReport:
     """
