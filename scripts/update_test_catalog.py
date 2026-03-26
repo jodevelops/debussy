@@ -39,7 +39,7 @@ def run_suite(pytest_cmd: str, test_file: Path, repo_root: Path) -> SuiteResult:
     env["KWB_FORCE_NO_FASTAPI"] = "1"
     env["PYTHONPATH"] = str(repo_root / "src") + (os.pathsep + env["PYTHONPATH"] if env.get("PYTHONPATH") else "")
 
-    cmd = [pytest_cmd, "-q", str(test_file), f"--junitxml={xml_path}"]
+    cmd = pytest_cmd.split() + ["-q", str(test_file), f"--junitxml={xml_path}"]
     proc = subprocess.run(cmd, cwd=repo_root, env=env, capture_output=True, text=True)
 
     if not xml_path.exists():
@@ -155,7 +155,7 @@ def check_catalog(catalog_path: Path, expected_table: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Aggregiert pytest-Ergebnisse pro tests/test_*.py und aktualisiert docs/FUNKTIONSKATALOG.md")
-    parser.add_argument("--pytest", default="pytest", help="Pfad/Befehl für pytest")
+    parser.add_argument("--pytest", default=None, help="Pfad/Befehl für pytest (Standard: sys.executable -m pytest)")
     parser.add_argument("--repo-root", default=".", help="Repository-Wurzel")
     parser.add_argument("--update-doc", action="store_true", help="docs/FUNKTIONSKATALOG.md automatisch aktualisieren")
     parser.add_argument("--check-doc", action="store_true", help="prüft, ob docs/FUNKTIONSKATALOG.md zur aktuellen Testlage passt")
@@ -167,7 +167,10 @@ def main() -> int:
         print("Keine tests/test_*.py gefunden", file=sys.stderr)
         return 2
 
-    results = [run_suite(args.pytest, t, repo_root) for t in tests]
+    # Default: use the same Python that's running this script so that installed
+    # packages are identical between the driver and the test subprocess.
+    pytest_cmd = args.pytest or f"{sys.executable} -m pytest"
+    results = [run_suite(pytest_cmd, t, repo_root) for t in tests]
     table = build_table(results)
 
     if args.update_doc:
