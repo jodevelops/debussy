@@ -26,40 +26,35 @@
 <label class="btn sm s" style="cursor:pointer;margin-top:0">&#128193; Laden<input type="file" accept=".json" style="display:none" onchange="loadWS(this.files[0])"></label></span>
 </div>
 
-<!-- ===== PIPELINE STEPPER ===== -->
+<!-- ===== PHASE NAVIGATOR (6 non-blocking phases) ===== -->
 <div class="stepper" id="stepper">
 <div class="step active" data-step="1" onclick="goStep(1)">
 <div class="step-num">1</div>
-<div class="step-lbl">Upload &amp; Parse</div>
+<div class="step-lbl">Upload &amp; Analyse</div>
 </div>
 <div class="step-conn"></div>
-<div class="step locked" data-step="2" onclick="goStep(2)">
+<div class="step no-data" data-step="2" onclick="goStep(2)">
 <div class="step-num">2</div>
+<div class="step-lbl">Bereinigung</div>
+</div>
+<div class="step-conn"></div>
+<div class="step no-data" data-step="3" onclick="goStep(3)">
+<div class="step-num">3</div>
 <div class="step-lbl">Extraktion</div>
 </div>
 <div class="step-conn"></div>
-<div class="step locked" data-step="3" onclick="goStep(3)">
-<div class="step-num">3</div>
-<div class="step-lbl">Qualit&auml;tspr&uuml;fung</div>
-</div>
-<div class="step-conn"></div>
-<div class="step locked" data-step="4" onclick="goStep(4)">
+<div class="step no-data" data-step="4" onclick="goStep(4)">
 <div class="step-num">4</div>
-<div class="step-lbl">Gesamtlauf</div>
-</div>
-<div class="step-conn"></div>
-<div class="step locked" data-step="5" onclick="goStep(5)">
-<div class="step-num">5</div>
 <div class="step-lbl">Anreicherung</div>
 </div>
 <div class="step-conn"></div>
-<div class="step locked" data-step="6" onclick="goStep(6)">
-<div class="step-num">6</div>
+<div class="step no-data" data-step="5" onclick="goStep(5)">
+<div class="step-num">5</div>
 <div class="step-lbl">W&ouml;rterbuch</div>
 </div>
 <div class="step-conn"></div>
-<div class="step locked" data-step="7" onclick="goStep(7)">
-<div class="step-num">7</div>
+<div class="step" data-step="6" onclick="goStep(6)">
+<div class="step-num">6</div>
 <div class="step-lbl">Export</div>
 </div>
 </div>
@@ -69,10 +64,19 @@
 <!-- ===== STEP 1: UPLOAD & PARSE ===== -->
 <div class="step-panel active" data-step="1">
 <h2>Schritt 1: Daten laden, parsen &amp; analysieren</h2>
-<div class="three-pane">
+<!-- Material context selector -->
+<div class="mat-ctx-bar" id="mat-ctx-bar">
+<span style="font-size:.72rem;font-weight:600;color:#555">Materialart:</span>
+<div class="mat-ctx-pill active" data-ctx="table" onclick="setMatCtx('table')">&#128202; Metadaten</div>
+<div class="mat-ctx-pill" data-ctx="images" onclick="setMatCtx('images')">&#128248; Bilder</div>
+<div class="mat-ctx-pill" data-ctx="pdf" onclick="setMatCtx('pdf')">&#128209; PDF</div>
+<div class="mat-ctx-pill" data-ctx="mixed" onclick="setMatCtx('mixed')">&#10564; Gemischt</div>
+<span id="mat-auto-hint" style="font-size:.62rem;color:#1d4ed8;margin-left:.3rem;display:none">&#8592; automatisch erkannt</span>
+</div>
+<div class="mat-workspace mat-ctx-table" id="mat-workspace">
 
-<!-- Pane 1: Metadata (CSV / XLSX / XML) -->
-<div class="pane">
+<!-- Section: Metadata (CSV / XLSX / XML) -->
+<div class="mat-section" data-ctx="table">
 <div class="pane-hdr">&#128196; Metadaten</div>
 <div class="c">
 <h3>1a. Dateien hochladen</h3>
@@ -128,8 +132,8 @@
 </div>
 </div>
 
-<!-- Pane 2: Images (JPG / PNG / TIFF / WEBP) -->
-<div class="pane">
+<!-- Section: Images (JPG / PNG / TIFF / WEBP) -->
+<div class="mat-section" data-ctx="images">
 <div class="pane-hdr">&#128248; Bilder</div>
 <div class="c">
 <h3>Bilder hochladen</h3>
@@ -138,7 +142,7 @@
 <label>Ordner <span style="font-weight:400;color:#888">(inkl. Unterordner)</span></label>
 <input type="file" id="img-folder-p1" webkitdirectory multiple style="font-size:.75rem;width:100%">
 <button class="btn f" onclick="uploadImages()">&#11014;&#65039; Hochladen</button>
-<div id="img-upload-status" class="em" style="margin-top:.4rem;font-size:.73rem"></div>
+<div id="img-upload-status-p1" class="em" style="margin-top:.4rem;font-size:.73rem"></div>
 </div>
 <div class="c" id="img-pane1-info" style="display:none">
 <h3>Hochgeladene Bilder <span id="img-pane1-count" style="font-size:.7rem;color:#888"></span></h3>
@@ -146,8 +150,8 @@
 </div>
 </div>
 
-<!-- Pane 3: PDF-Dokumente -->
-<div class="pane">
+<!-- Section: PDF-Dokumente -->
+<div class="mat-section" data-ctx="pdf">
 <div class="pane-hdr">&#128209; PDF-Dokumente</div>
 <div class="c">
 <h3>PDF hochladen</h3>
@@ -164,12 +168,12 @@
 </div>
 </div>
 
-</div><!-- /.three-pane -->
+</div><!-- /.mat-workspace -->
 
 <!-- Analysis Results (full width below panes) -->
 <div id="de" class="em" style="margin-top:1rem"><h3>Willkommen bei Debussy</h3><p style="font-size:.8rem">Lade Dateien hoch, starte die Analyse, und setze die ID-Spalte fest.</p>
-<div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Pipeline-Workflow:</strong><br>
-&#9312; Upload &amp; Parse &rarr; &#9313; Extraktion (NER + Bilder + PDF) &rarr; &#9314; Qualit&auml;tspr&uuml;fung &rarr; &#9315; Gesamtlauf &rarr; &#9316; Anreicherung &rarr; &#9317; W&ouml;rterbuch &rarr; &#9318; Export</div></div>
+<div style="margin-top:.6rem;padding:.5rem;background:#f0f7ff;border:1px solid #d0e3ff;border-radius:4px;font-size:.75rem;line-height:1.5"><strong>Werkbank-Phasen:</strong><br>
+&#9312; Upload &amp; Analyse &rarr; &#9313; Bereinigung (Review-Queue, Arbeitspakete) &rarr; &#9314; Extraktion (NER + Bilder + PDF) &rarr; &#9315; Anreicherung &rarr; &#9316; W&ouml;rterbuch &rarr; &#9317; Export (jederzeit verf&uuml;gbar)</div></div>
 <div id="dr" style="display:none"><div class="sg" id="dsg"></div>
 <div class="c"><div class="tabs" id="dt"><div class="tab a" data-t="find">Findings</div><div class="tab" data-t="qm">Qualit&auml;tsbericht</div><div class="tab" data-t="llmq">KI-Qualit&auml;tspr&uuml;fung</div><div class="tab" data-t="cols">Spalten &amp; Profil</div><div class="tab" data-t="md">Markdown</div></div>
 <div class="tp a" data-t="find"><div class="fl" id="fbar"></div><div id="flist"></div></div>
@@ -212,9 +216,139 @@
 </div></div>
 </div>
 
-<!-- ===== STEP 2: DATA EXTRACTION ===== -->
+<!-- ===== PHASE 2: BEREINIGUNG ===== -->
 <div class="step-panel" data-step="2">
-<h2>Schritt 2: Datenextraktion</h2>
+<h2>Phase 2: Bereinigung</h2>
+<p style="font-size:.78rem;color:#666;margin-bottom:.8rem">Review-Queue, Arbeitspakete und strukturierte Bereinigung auf Basis der Qualit&auml;tsanalyse (Phase 1 + KI). Reinigung des Datenmaterials <em>vor</em> der Extraktion f&uuml;hrt zu besseren NER-Ergebnissen.</p>
+
+<div class="tabs" id="rev-tabs">
+<div class="tab a" data-t="rev-overview">&#128202; &Uuml;berblick</div>
+<div class="tab" data-t="rev-queue">&#128203; Review-Queue</div>
+<div class="tab" data-t="rev-wp">&#128218; Arbeitspakete</div>
+<div class="tab" data-t="rev-sug">&#128161; Vorschl&auml;ge</div>
+<div class="tab" data-t="rev-log">&#128196; Protokoll</div>
+</div>
+
+<!-- Tab: Überblick -->
+<div class="tp a" data-t="rev-overview">
+<div class="g2">
+<div class="sb">
+<div class="c">
+<h3>Review-Queue aufbauen</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.4rem">Erzeugt Review-Items aus dem letzten Qualit&auml;tsbericht (Zellbefunde, Record-Berichte, Issue-Cluster).</p>
+<label>Quelle <span style="font-weight:400;color:#888">(optional)</span></label>
+<input type="text" id="rev-source" placeholder="z.B. phase1-analyse">
+<label style="display:flex;align-items:center;gap:.4rem;margin-top:.4rem"><input type="checkbox" id="rev-is-ai" style="width:auto;margin-top:0"> KI-basiert markieren</label>
+<button class="btn f" onclick="buildRevQueue()" style="margin-top:.5rem">&#128260; Queue aufbauen</button>
+<div id="rev-build-status" style="font-size:.73rem;color:var(--ok);margin-top:.3rem"></div>
+</div>
+<div class="c">
+<h3>Arbeitspakete generieren</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.4rem">Gruppiert Issue-Cluster aus dem Bericht zu priorisierten Arbeitspaketen mit Automatisierungspotenzial.</p>
+<button class="btn f" onclick="generateWorkPackages()">&#128230; Arbeitspakete generieren</button>
+<div id="rev-wp-status" style="font-size:.73rem;color:var(--ok);margin-top:.3rem"></div>
+</div>
+</div>
+<div>
+<h3 style="font-size:.82rem;margin-bottom:.5rem">&#128202; Status-&Uuml;bersicht</h3>
+<div class="sg" id="rev-summary-bar" style="margin-bottom:.6rem"></div>
+<button class="btn sm s" onclick="loadRevSummary()">&#128260; Aktualisieren</button>
+</div>
+</div>
+</div>
+
+<!-- Tab: Review-Queue -->
+<div class="tp" data-t="rev-queue">
+<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.4rem;margin-bottom:.4rem">
+<span style="font-size:.82rem;font-weight:600">Review-Items <span id="rev-items-count" style="font-size:.72rem;font-weight:400;color:#888"></span></span>
+<div style="display:flex;gap:.3rem;flex-wrap:wrap">
+<button class="btn sm" onclick="batchRevStatus('accepted')">&#10003; Alle akzeptieren</button>
+<button class="btn sm s" onclick="batchRevStatus('rejected')" style="background:#888">&#10007; Alle ablehnen</button>
+<button class="btn sm s" onclick="exportRevStatus()">&#11015;&#65039; Exportieren</button>
+<button class="btn sm s" onclick="loadRevItems()">&#128260; Laden</button>
+</div>
+</div>
+<div class="fl" id="rev-filter-status" style="margin-bottom:.3rem">
+<strong style="font-size:.7rem;align-self:center">Status:</strong>
+<div class="fb2 a" data-val="" onclick="filterRevQueue('status','',this)">Alle</div>
+<div class="fb2" data-val="pending" onclick="filterRevQueue('status','pending',this)">Offen</div>
+<div class="fb2" data-val="accepted" onclick="filterRevQueue('status','accepted',this)">Akzeptiert</div>
+<div class="fb2" data-val="rejected" onclick="filterRevQueue('status','rejected',this)">Abgelehnt</div>
+<div class="fb2" data-val="needs_expert_review" onclick="filterRevQueue('status','needs_expert_review',this)">Experte</div>
+<div class="fb2" data-val="applied" onclick="filterRevQueue('status','applied',this)">Angewendet</div>
+</div>
+<div class="fl" id="rev-filter-severity">
+<strong style="font-size:.7rem;align-self:center">Schwere:</strong>
+<div class="fb2 a" data-val="" onclick="filterRevQueue('severity','',this)">Alle</div>
+<div class="fb2" data-val="critical" onclick="filterRevQueue('severity','critical',this)">Kritisch</div>
+<div class="fb2" data-val="warning" onclick="filterRevQueue('severity','warning',this)">Warnung</div>
+<div class="fb2" data-val="info" onclick="filterRevQueue('severity','info',this)">Info</div>
+</div>
+<div id="rev-items-list" class="scroll-box" style="max-height:520px;margin-top:.4rem">
+<div class="em" style="font-size:.78rem">Queue aufbauen oder &raquo;Laden&laquo; klicken.</div>
+</div>
+</div>
+
+<!-- Tab: Arbeitspakete -->
+<div class="tp" data-t="rev-wp">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+<span style="font-size:.82rem;font-weight:600">Arbeitspakete <span id="rev-wp-count" style="font-size:.72rem;font-weight:400;color:#888"></span></span>
+<div style="display:flex;gap:.3rem">
+<button class="btn sm" onclick="generateWorkPackages()">&#128230; Generieren</button>
+<button class="btn sm s" onclick="loadWorkPackages()">&#128260; Laden</button>
+</div>
+</div>
+<div id="rev-wp-list" class="scroll-box" style="max-height:520px">
+<div class="em" style="font-size:.78rem">Arbeitspakete generieren oder &raquo;Laden&laquo; klicken.</div>
+</div>
+</div>
+
+<!-- Tab: Vorschläge -->
+<div class="tp" data-t="rev-sug">
+<div class="c" style="margin-bottom:.8rem">
+<h3>&#9889; Akzeptierte &Auml;nderungen anwenden</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.4rem">Wendet alle Vorschl&auml;ge mit Status &laquo;akzeptiert&raquo; auf den gew&auml;hlten Datensatz an.</p>
+<label>Datensatz</label>
+<select id="rev-apply-ds" style="width:100%"><option value="">&#8212; alle &#8212;</option></select>
+<div style="display:flex;gap:.4rem;margin-top:.5rem;flex-wrap:wrap">
+<button class="btn sm" onclick="revApplyChanges(true)">&#128269; Vorschau (dry run)</button>
+<button class="btn sm" onclick="revApplyChanges(false)">&#10003; Anwenden</button>
+</div>
+<div id="rev-apply-status" style="font-size:.73rem;color:var(--ok);margin-top:.3rem"></div>
+</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+<span style="font-size:.82rem;font-weight:600">Vorschl&auml;ge <span id="rev-sug-count" style="font-size:.72rem;font-weight:400;color:#888"></span></span>
+<button class="btn sm s" onclick="loadRevSuggestions()">&#128260; Laden</button>
+</div>
+<div id="rev-sug-list" class="scroll-box" style="max-height:400px">
+<div class="em" style="font-size:.78rem">Keine Vorschl&auml;ge.</div>
+</div>
+</div>
+
+<!-- Tab: Protokoll -->
+<div class="tp" data-t="rev-log">
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.5rem">
+<span style="font-size:.82rem;font-weight:600">&Auml;nderungsprotokoll <span id="rev-log-count" style="font-size:.72rem;font-weight:400;color:#888"></span></span>
+<button class="btn sm s" onclick="loadRevChangelog()">&#128260; Laden</button>
+</div>
+<div id="rev-log-empty" class="em" style="font-size:.78rem">Noch keine &Auml;nderungen angewendet.</div>
+<div class="scroll-box" style="max-height:500px">
+<table class="etbl"><thead><tr><th>Record</th><th>Spalte</th><th>Original</th><th>Neu</th><th>Aktion</th><th>Datum</th></tr></thead><tbody id="rev-log-body"></tbody></table>
+</div>
+</div>
+</div>
+
+<!-- ===== PHASE 3: EXTRAKTION ===== -->
+<div class="step-panel" data-step="3">
+<h2>Phase 3: Datenextraktion</h2>
+<div class="tabs" id="ext-main-tabs">
+<div class="tab a" data-t="ext-ner">&#128196; NER &amp; Bilder &amp; PDF</div>
+<div class="tab" data-t="ext-qgate">&#128270; Testlauf-Review</div>
+<div class="tab" data-t="ext-full">&#9654;&#65039; Gesamtlauf</div>
+</div>
+
+<!-- Sub-tab: Extraktion -->
+<div class="tp a" data-t="ext-ner">
 <div class="track-cols">
 
 <!-- Text Track: NER -->
@@ -349,13 +483,11 @@
 </div>
 
 </div>
-</div>
+</div><!-- /.tp ext-ner -->
 
-<!-- ===== STEP 3: QUALITY GATEWAY ===== -->
-<div class="step-panel" data-step="3">
-<h2>Schritt 3: Qualit&auml;tspr&uuml;fung</h2>
-<p style="font-size:.78rem;color:#666;margin-bottom:1rem">Pr&uuml;fe die Ergebnisse der 2%-Testl&auml;ufe. Akzeptiere oder lehne Ergebnisse ab, bevor der Gesamtlauf gestartet wird.</p>
-
+<!-- Sub-tab: Testlauf-Review -->
+<div class="tp" data-t="ext-qgate">
+<p style="font-size:.78rem;color:#666;margin-bottom:.8rem">Pr&uuml;fe die Ergebnisse der 2%-Testl&auml;ufe. Akzeptiere oder lehne Ergebnisse ab, bevor der Gesamtlauf gestartet wird.</p>
 <div class="g2">
 <div>
 <div class="c">
@@ -376,7 +508,6 @@
 </div>
 </div>
 </div>
-
 <div>
 <div class="c">
 <h3>Bild-Testergebnisse</h3>
@@ -393,17 +524,11 @@
 </div>
 </div>
 </div>
+</div><!-- /.tp ext-qgate -->
 
-<div style="margin-top:1rem;text-align:center">
-<button class="btn" onclick="markTestReviewed()" style="padding:.6rem 2rem;font-size:.85rem">&#10003; Qualit&auml;tspr&uuml;fung abgeschlossen &mdash; Weiter zu Schritt 4</button>
-</div>
-</div>
-
-<!-- ===== STEP 4: FULL RUN ===== -->
-<div class="step-panel" data-step="4">
-<h2>Schritt 4: Gesamtlauf</h2>
-<p style="font-size:.78rem;color:#666;margin-bottom:1rem">Starte den vollst&auml;ndigen NER- und Bildanalyse-Lauf auf dem gesamten Datensatz.</p>
-
+<!-- Sub-tab: Gesamtlauf -->
+<div class="tp" data-t="ext-full">
+<p style="font-size:.78rem;color:#666;margin-bottom:.8rem">Starte den vollst&auml;ndigen NER- und Bildanalyse-Lauf auf dem gesamten Datensatz.</p>
 <div class="g2">
 <div class="c">
 <h3>&#128196; NER Gesamtlauf</h3>
@@ -417,15 +542,16 @@
 <div id="img-full-status" style="font-size:.72rem;color:#555;margin-top:.4rem"></div>
 </div>
 </div>
-
 <div style="margin-top:1rem;text-align:center">
-<button class="btn" onclick="completeStep(4)" style="padding:.6rem 2rem;font-size:.85rem">&#10003; Gesamtlauf abgeschlossen &mdash; Weiter zu Schritt 5</button>
+<button class="btn" onclick="completeStep(3)" style="padding:.6rem 2rem;font-size:.85rem">&#10003; Extraktion abgeschlossen &rarr; Weiter</button>
 </div>
-</div>
+</div><!-- /.tp ext-full -->
 
-<!-- ===== STEP 5: ENRICHMENT ===== -->
-<div class="step-panel" data-step="5">
-<h2>Schritt 5: Anreicherung</h2>
+</div><!-- /.step-panel Phase 3 -->
+
+<!-- ===== PHASE 4: ANREICHERUNG ===== -->
+<div class="step-panel" data-step="4">
+<h2>Phase 4: Anreicherung</h2>
 <p style="font-size:.78rem;color:#666;margin-bottom:1rem">Reichere erkannte Entit&auml;ten mit Normdaten (Wikidata, GND, GeoNames) an.</p>
 
 <div class="g2"><div class="sb">
@@ -463,13 +589,13 @@
 </div>
 
 <div style="margin-top:1rem;text-align:center">
-<button class="btn" onclick="completeStep(5)" style="padding:.6rem 2rem">&#10003; Anreicherung abgeschlossen &mdash; Weiter</button>
+<button class="btn" onclick="completeStep(4)" style="padding:.6rem 2rem">&#10003; Anreicherung abgeschlossen &rarr; Weiter</button>
 </div>
 </div>
 
-<!-- ===== STEP 6: DICTIONARY ===== -->
-<div class="step-panel" data-step="6">
-<h2>Schritt 6: W&ouml;rterbuch &amp; JSON-Dictionary</h2>
+<!-- ===== PHASE 5: WÖRTERBUCH ===== -->
+<div class="step-panel" data-step="5">
+<h2>Phase 5: W&ouml;rterbuch &amp; JSON-Dictionary</h2>
 <p style="font-size:.78rem;color:#666;margin-bottom:1rem">Kuratierte W&ouml;rterbucheintr&auml;ge als JSON-Dictionary rendern mit standardisierten Feldern.</p>
 
 <div class="g2"><div class="sb">
@@ -516,13 +642,13 @@
 </div>
 
 <div style="margin-top:1rem;text-align:center">
-<button class="btn" onclick="completeStep(6)" style="padding:.6rem 2rem">&#10003; W&ouml;rterbuch fertig &mdash; Weiter zu Export</button>
+<button class="btn" onclick="completeStep(5)" style="padding:.6rem 2rem">&#10003; W&ouml;rterbuch fertig &rarr; Export</button>
 </div>
 </div>
 
-<!-- ===== STEP 7: METADATA ENRICHMENT & EXPORT ===== -->
-<div class="step-panel" data-step="7">
-<h2>Schritt 7: Metadaten-Anreicherung &amp; Export</h2>
+<!-- ===== PHASE 6: EXPORT (always accessible) ===== -->
+<div class="step-panel" data-step="6">
+<h2>Phase 6: Metadaten-Anreicherung &amp; Export</h2>
 <p style="font-size:.78rem;color:#666;margin-bottom:1rem">Wende kuratierte W&ouml;rterbucheintr&auml;ge auf die Original-Metadaten an und exportiere die angereicherten Ergebnisse.</p>
 
 <div class="c" style="margin-bottom:1rem">

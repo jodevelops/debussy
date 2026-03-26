@@ -74,19 +74,20 @@ function safeOpt(val,label){return '<option value="'+esc(val)+'">'+esc(label)+'<
 function dl(name,content,type){const b=new Blob([content],{type});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click()}
 function encPath(v){return encodeURIComponent(String(v==null?'':v))}
 
-// === NAV (Pipeline Stepper) ===
+// === NAV (Phase Navigator — 6 non-blocking phases) ===
 let currentStep=1;
-let stepStates={1:'active',2:'locked',3:'locked',4:'locked',5:'locked',6:'locked',7:'locked'};
+// Phases 2-5 start as 'no-data' (unlocked once data is loaded); Phase 6 always accessible
+let stepStates={1:'active',2:'no-data',3:'no-data',4:'no-data',5:'no-data',6:'pending'};
 
 function goStep(n){
-  if(stepStates[n]==='locked'){return;}
+  if(stepStates[n]==='no-data'){return;}
   currentStep=n;
   // Update step indicators
   document.querySelectorAll('.stepper .step').forEach(el=>{
     const s=parseInt(el.dataset.step);
     if(s===n)el.className='step active';
     else if(stepStates[s]==='completed')el.className='step completed';
-    else if(stepStates[s]==='locked')el.className='step locked';
+    else if(stepStates[s]==='no-data')el.className='step no-data';
     else el.className='step';
   });
   // Update connectors
@@ -97,35 +98,42 @@ function goStep(n){
   document.querySelectorAll('.step-panel').forEach(p=>{
     p.classList.toggle('active',parseInt(p.dataset.step)===n);
   });
-  // Load data for specific steps
+  // Load data for specific phases
   try{
-    if(n===5){loadAuthorityCandidates();}
-    if(n===6){loadDictEntries();loadDictTypes();}
-    if(n===7){loadFMCols();}
+    if(n===2){loadRevSummary();loadWorkPackages();}
+    if(n===4){loadAuthorityCandidates();}
+    if(n===5){loadDictEntries();loadDictTypes();}
+    if(n===6){loadFMCols();}
   }catch(e){console.error('[goStep:'+n+']',e)}
 }
 
 function unlockStep(n){
-  if(stepStates[n]==='locked')stepStates[n]='pending';
+  if(stepStates[n]==='no-data')stepStates[n]='pending';
+  updateStepperUI();
+}
+
+/** Unlock all phases (2-5) once data is loaded. Phase 6 is always accessible. */
+function unlockAllPhases(){
+  for(let i=2;i<=5;i++){if(stepStates[i]==='no-data')stepStates[i]='pending';}
   updateStepperUI();
 }
 
 function completeStep(n){
   stepStates[n]='completed';
-  // Unlock next step
-  if(n<7)unlockStep(n+1);
+  // Suggest next phase
+  if(n<6)unlockStep(n+1);
   updateStepperUI();
   // Notify backend
   fetch('/api/pipeline/step/'+n+'/complete',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{});
   // Auto-advance
-  if(n<7)goStep(n+1);
+  if(n<6)goStep(n+1);
 }
 
 function updateStepperUI(){
   document.querySelectorAll('.stepper .step').forEach(el=>{
     const s=parseInt(el.dataset.step);
     const state=stepStates[s];
-    el.className='step'+(s===currentStep?' active':'')+(state==='completed'?' completed':'')+(state==='locked'?' locked':'');
+    el.className='step'+(s===currentStep?' active':'')+(state==='completed'?' completed':'')+(state==='no-data'?' no-data':'');
   });
   document.querySelectorAll('.step-conn').forEach((conn,i)=>{
     conn.classList.toggle('done',stepStates[i+1]==='completed');
@@ -172,7 +180,7 @@ async function runPilotImages(){
   }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}
 }
 
-// Quality gateway: mark test as reviewed
+// Quality gateway: mark test as reviewed (Phase 3 sub-tab)
 function markTestReviewed(){
   completeStep(3);
 }
@@ -223,13 +231,13 @@ async function loadStepStates(){
     steps.forEach(s=>{
       if(s.completed)stepStates[s.number]='completed';
       else if(s.active||s.number===1)stepStates[s.number]='active';
-      // Unlock step if previous is completed
-      if(s.number>1&&stepStates[s.number-1]==='completed'&&stepStates[s.number]==='locked')stepStates[s.number]='pending';
+      // Unlock if previous is completed
+      if(s.number>1&&stepStates[s.number-1]==='completed'&&stepStates[s.number]==='no-data')stepStates[s.number]='pending';
     });
     updateStepperUI();
   }catch(e){
-    // Default: step 1 active, rest locked
-    stepStates={1:'active',2:'locked',3:'locked',4:'locked',5:'locked',6:'locked',7:'locked'};
+    // Default: phase 1 active, 2-5 no-data, 6 accessible
+    stepStates={1:'active',2:'no-data',3:'no-data',4:'no-data',5:'no-data',6:'pending'};
   }
 }
 
@@ -911,8 +919,8 @@ function rrep(d){
   if($('llmq-placeholder'))$('llmq-placeholder').style.display='block';
   if($('llmq-result'))$('llmq-result').style.display='none';
   if($('llmq-run-status'))$('llmq-run-status').textContent='';
-  // Unlock step 2 since analysis is done
-  unlockStep(2);
+  // Unlock all phases since data is now loaded
+  unlockAllPhases();
 }
 function ff(f,b){document.querySelectorAll('#fbar .fb2').forEach(x=>x.classList.remove('a'));if(b)b.classList.add('a');rfnd(f==='all'?(curRep?.findings||[]):(curRep?.findings||[]).filter(x=>x.severity===f))}
 function rfnd(fs){if(!fs.length){$('flist').textContent='Keine Findings.';return}
@@ -2378,3 +2386,311 @@ function showInitError(label){const b=document.createElement('div');b.style.cssT
   try{loadCustomMdsFields()}catch(err){console.error('[init] mdsFields',err);failed.push('mdsFields')}
   if(failed.length)showInitError(failed.join(', '));
 })();
+
+// ============================================================
+// PHASE 2 — BEREINIGUNG: Material Context + Review Queue
+// ============================================================
+
+// --- Material context detection ---
+let currentMatCtx='table';
+
+function detectMatCtx(files){
+  const exts=[...files].map(f=>f.name.toLowerCase().replace(/^.*\./,''));
+  const hasTable=exts.some(e=>['csv','tsv','xlsx','xls','xml'].includes(e));
+  const hasImg=exts.some(e=>['jpg','jpeg','png','tif','tiff','webp','img'].includes(e));
+  const hasPdf=exts.some(e=>e==='pdf');
+  const count=[hasTable,hasImg,hasPdf].filter(Boolean).length;
+  if(count>1)return'mixed';
+  if(hasImg)return'images';
+  if(hasPdf)return'pdf';
+  return'table';
+}
+
+function setMatCtx(ctx){
+  currentMatCtx=ctx;
+  const ws=$('mat-workspace');
+  if(!ws)return;
+  ws.className='mat-workspace mat-ctx-'+ctx;
+  document.querySelectorAll('.mat-ctx-pill').forEach(p=>{
+    p.classList.toggle('active',p.dataset.ctx===ctx);
+  });
+}
+
+/** Called after file selection — auto-detect material type and update workspace layout. */
+function detectAndSetMatCtx(files){
+  if(!files||!files.length)return;
+  const ctx=detectMatCtx(files);
+  setMatCtx(ctx);
+  const hint=$('mat-auto-hint');
+  if(hint)hint.style.display='inline';
+}
+
+// --- Phase 2 state ---
+let revItems=[],revFilters={status:'',severity:'',category:''};
+let revWorkPackages=[],revSuggestions=[],revChangelog=[];
+
+// --- Summary ---
+async function loadRevSummary(){
+  try{
+    const r=await fetch('/api/review/items/summary');
+    if(!r.ok)return;
+    const d=await r.json();
+    const el=$('rev-summary-bar');
+    if(!el)return;
+    const total=d.total||0;
+    const bs=d.by_status||{};
+    const bsv=d.by_severity||{};
+    el.innerHTML='<div class="mt"><div class="v">'+total+'</div><div class="l">Gesamt</div></div>'+
+      Object.entries(bs).map(([k,v])=>'<div class="mt'+(k==='accepted'?' su':k==='rejected'?' cr':k==='needs_expert_review'?' wr':'')+'"><div class="v">'+v+'</div><div class="l">'+esc(k)+'</div></div>').join('')+
+      Object.entries(bsv).filter(([k])=>k!=='info').map(([k,v])=>'<div class="mt'+(k==='critical'?' cr':k==='warning'?' wr':'')+'"><div class="v">'+v+'</div><div class="l">'+esc(k)+'</div></div>').join('');
+  }catch(e){console.error('[loadRevSummary]',e);}
+}
+
+async function buildRevQueue(){
+  const src=$('rev-source')?$('rev-source').value:'';
+  const aiB=$('rev-is-ai')?$('rev-is-ai').checked:false;
+  sp('Review-Queue aufbauen \u2026');
+  try{
+    const r=await fetch('/api/review/queue/build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({source:src,is_ai_based:aiB})});
+    const d=await r.json();
+    if(d.error){alert(d.error);return;}
+    const el=$('rev-build-status');
+    if(el)el.textContent='\u2713 '+(d.items_created||0)+' Items erstellt';
+    loadRevSummary();
+    loadRevItems();
+  }catch(e){alert('Fehler: '+e.message);}
+  finally{hp();}
+}
+
+async function generateWorkPackages(){
+  sp('Arbeitspakete generieren \u2026');
+  try{
+    const r=await fetch('/api/review/work-packages/generate',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'});
+    const d=await r.json();
+    if(d.error){alert(d.error);return;}
+    const el=$('rev-wp-status');
+    if(el)el.textContent='\u2713 '+(d.packages_created||0)+' Pakete erstellt';
+    loadWorkPackages();
+  }catch(e){alert('Fehler: '+e.message);}
+  finally{hp();}
+}
+
+// --- Review Items ---
+async function loadRevItems(){
+  try{
+    const p=new URLSearchParams();
+    if(revFilters.status)p.set('status',revFilters.status);
+    if(revFilters.severity)p.set('severity',revFilters.severity);
+    if(revFilters.category)p.set('category',revFilters.category);
+    p.set('limit','100');
+    const r=await fetch('/api/review/items?'+p);
+    if(!r.ok)return;
+    const d=await r.json();
+    revItems=d.items||[];
+    renderRevItems();
+    const el=$('rev-items-count');
+    if(el)el.textContent='('+(d.total||revItems.length)+')';
+  }catch(e){console.error('[loadRevItems]',e);}
+}
+
+function renderRevItems(){
+  const el=$('rev-items-list');
+  if(!el)return;
+  if(!revItems.length){el.innerHTML='<div class="em" style="font-size:.78rem">Keine Items. Queue aufbauen oder Laden klicken.</div>';return;}
+  el.innerHTML=revItems.map(item=>{
+    const sev=item.severity||'info';
+    const st=item.status||'pending';
+    return '<div class="rev-item">'+
+      '<div class="rev-item-hdr">'+
+        '<span class="sv '+esc(sev)+'">'+esc(sev)+'</span>'+
+        '<span class="rev-st rev-st-'+esc(st)+'">'+esc(st)+'</span>'+
+        (item.column?'<span style="font-size:.68rem;background:#f5f5f4;padding:.1rem .3rem;border-radius:3px">'+esc(item.column)+'</span>':'')+
+        '<span class="rev-item-msg">'+esc(item.message||'')+'</span>'+
+      '</div>'+
+      (item.reasoning?'<div style="font-size:.68rem;color:#666;margin-bottom:.15rem">'+esc(item.reasoning)+'</div>':'')+
+      '<div class="rev-item-meta">'+
+        (item.record_id?'Record: '+esc(item.record_id)+' \u00b7 ':'')+
+        esc(item.category||'')+
+        (item.confidence!=null?' \u00b7 '+Math.round(item.confidence*100)+'%':'')+
+      '</div>'+
+      '<div class="rev-item-actions">'+
+        '<button class="btn sm" onclick="setRevStatus(\''+esc(item.item_id)+'\',\'accepted\')">&#10003; Akzeptieren</button>'+
+        '<button class="btn sm s" onclick="setRevStatus(\''+esc(item.item_id)+'\',\'rejected\')" style="background:#888">&#10007; Ablehnen</button>'+
+        '<button class="btn sm s" onclick="setRevStatus(\''+esc(item.item_id)+'\',\'needs_expert_review\')" style="background:var(--warn)">? Experte</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+async function setRevStatus(itemId,status){
+  try{
+    const r=await fetch('/api/review/items/'+encodeURIComponent(itemId)+'/status',{
+      method:'PATCH',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status,reviewer:'curator'})
+    });
+    if(!r.ok){alert('Fehler beim Update');return;}
+    const item=revItems.find(i=>i.item_id===itemId);
+    if(item)item.status=status;
+    renderRevItems();
+    loadRevSummary();
+  }catch(e){alert('Fehler: '+e.message);}
+}
+
+async function batchRevStatus(status){
+  const visible=revItems.filter(i=>!revFilters.status||i.status===revFilters.status);
+  for(const item of visible){if(item.status!==status)await setRevStatus(item.item_id,status);}
+}
+
+function filterRevQueue(field,val,btn){
+  revFilters[field]=revFilters[field]===val?'':val;
+  const bar=$('rev-filter-'+field);
+  if(bar)bar.querySelectorAll('.fb2').forEach(p=>p.classList.toggle('a',p.dataset.val===(revFilters[field]||'')));
+  loadRevItems();
+}
+
+// --- Work Packages ---
+async function loadWorkPackages(){
+  try{
+    const r=await fetch('/api/review/work-packages');
+    if(!r.ok)return;
+    const d=await r.json();
+    revWorkPackages=d.packages||[];
+    renderWorkPackages();
+    const el=$('rev-wp-count');
+    if(el)el.textContent='('+revWorkPackages.length+')';
+  }catch(e){console.error('[loadWorkPackages]',e);}
+}
+
+function renderWorkPackages(){
+  const el=$('rev-wp-list');
+  if(!el)return;
+  if(!revWorkPackages.length){el.innerHTML='<div class="em" style="font-size:.78rem">Keine Arbeitspakete. Zuerst generieren.</div>';return;}
+  el.innerHTML=revWorkPackages.map(wp=>{
+    const prio=wp.priority||'medium';
+    const auto=wp.automation_potential||'low';
+    return '<div class="wp-card">'+
+      '<div class="wp-card-hdr">'+
+        '<div class="wp-card-title">'+esc(wp.title||'')+'</div>'+
+        '<div class="wp-card-badges">'+
+          '<span class="wp-prio-'+esc(prio)+'">'+esc(prio.toUpperCase())+'</span>'+
+          '<span class="wp-auto wp-auto-'+esc(auto)+'">Auto: '+esc(auto)+'</span>'+
+        '</div>'+
+      '</div>'+
+      '<div class="wp-card-meta">'+esc(wp.description||'')+
+        (wp.affected_columns&&wp.affected_columns.length?' \u00b7 Spalten: '+esc(wp.affected_columns.join(', ')):'')+(wp.estimated_records?' \u00b7 ~'+wp.estimated_records+' Datens\u00e4tze':'')+
+      '</div>'+
+      (wp.recommended_strategy?'<div class="wp-card-strategy">'+esc(wp.recommended_strategy)+'</div>':'')+
+    '</div>';
+  }).join('');
+}
+
+// --- Suggestions ---
+async function loadRevSuggestions(){
+  try{
+    const r=await fetch('/api/review/suggestions');
+    if(!r.ok)return;
+    const d=await r.json();
+    revSuggestions=d.suggestions||[];
+    renderRevSuggestions();
+    const el=$('rev-sug-count');
+    if(el)el.textContent='('+revSuggestions.length+')';
+  }catch(e){console.error('[loadRevSuggestions]',e);}
+}
+
+function renderRevSuggestions(){
+  const el=$('rev-sug-list');
+  if(!el)return;
+  if(!revSuggestions.length){el.innerHTML='<div class="em" style="font-size:.78rem">Keine Vorschl\u00e4ge.</div>';return;}
+  el.innerHTML=revSuggestions.map(s=>{
+    const st=s.status||'pending';
+    return '<div class="rev-item">'+
+      '<div class="rev-item-hdr">'+
+        '<span class="rev-st rev-st-'+esc(st)+'">'+esc(st)+'</span>'+
+        '<span style="font-size:.73rem;font-weight:600">'+esc(s.action_type||'')+'</span>'+
+      '</div>'+
+      '<div style="font-size:.73rem;margin:.15rem 0">'+
+        '<strong>Original:</strong> '+esc(s.original_value||'\u2014')+
+        (s.suggested_value?' \u2192 <strong>'+esc(s.suggested_value)+'</strong>':'')+
+      '</div>'+
+      (s.reasoning?'<div style="font-size:.68rem;color:#666">'+esc(s.reasoning)+'</div>':'')+
+      '<div class="rev-item-actions">'+
+        '<button class="btn sm" onclick="setSugStatus(\''+esc(s.suggestion_id)+'\',\'accepted\')">&#10003; Akzeptieren</button>'+
+        '<button class="btn sm s" onclick="setSugStatus(\''+esc(s.suggestion_id)+'\',\'rejected\')" style="background:#888">&#10007; Ablehnen</button>'+
+      '</div>'+
+    '</div>';
+  }).join('');
+}
+
+async function setSugStatus(sugId,status){
+  try{
+    const r=await fetch('/api/review/suggestions/'+encodeURIComponent(sugId)+'/status',{
+      method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})
+    });
+    if(!r.ok){alert('Fehler beim Update');return;}
+    await loadRevSuggestions();
+  }catch(e){alert('Fehler: '+e.message);}
+}
+
+async function revApplyChanges(dryRun){
+  sp(dryRun?'Vorschau \u2026':'Änderungen anwenden \u2026');
+  try{
+    const dsId=$('rev-apply-ds')?$('rev-apply-ds').value:'';
+    const body={dry_run:!!dryRun,reviewer:'curator'};
+    if(dsId)body.dataset_id=dsId;
+    const r=await fetch('/api/review/apply',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.error){alert(d.error);return;}
+    const el=$('rev-apply-status');
+    if(el)el.textContent=(dryRun?'Vorschau: ':'\u2713 Angewendet: ')+(d.changes_applied||d.changes_preview||0)+' \u00c4nderungen';
+    if(!dryRun){loadRevChangelog();populateDS();}
+  }catch(e){alert('Fehler: '+e.message);}
+  finally{hp();}
+}
+
+// --- Changelog ---
+async function loadRevChangelog(){
+  try{
+    const r=await fetch('/api/review/changelog');
+    if(!r.ok)return;
+    const d=await r.json();
+    revChangelog=d.changelog||[];
+    renderRevChangelog();
+    const el=$('rev-log-count');
+    if(el)el.textContent='('+revChangelog.length+')';
+  }catch(e){console.error('[loadRevChangelog]',e);}
+}
+
+function renderRevChangelog(){
+  const el=$('rev-log-body');
+  if(!el)return;
+  const empty=$('rev-log-empty');
+  if(!revChangelog.length){if(empty)empty.style.display='block';el.innerHTML='';return;}
+  if(empty)empty.style.display='none';
+  el.innerHTML=revChangelog.map(c=>'<tr>'+
+    '<td>'+esc(c.record_id||'\u2014')+'</td>'+
+    '<td>'+esc(c.column||'\u2014')+'</td>'+
+    '<td style="font-family:monospace">'+esc(c.original_value||'')+'</td>'+
+    '<td style="font-family:monospace;color:var(--ok)">'+esc(c.new_value||'')+'</td>'+
+    '<td>'+esc(c.action_type||'')+'</td>'+
+    '<td style="font-size:.65rem">'+esc((c.applied_at||'').replace('T',' ').slice(0,16))+'</td>'+
+  '</tr>').join('');
+}
+
+async function exportRevStatus(){
+  try{
+    const r=await fetch('/api/review/export');
+    if(!r.ok)return;
+    const d=await r.json();
+    dl('review-export.json',JSON.stringify(d,null,2),'application/json');
+  }catch(e){alert('Export-Fehler: '+e.message);}
+}
+
+// Populate rev-apply-ds with loaded datasets
+function populateRevApplyDs(){
+  const sel=$('rev-apply-ds');
+  if(!sel)return;
+  const ds=Object.keys(ufiles).length?Object.values(ufiles).map(f=>f.uploadName):[];
+  // Also check loaded dataset names from state
+  const existing=new Set([...sel.options].map(o=>o.value).filter(Boolean));
+  ds.forEach(name=>{if(!existing.has(name)){const o=document.createElement('option');o.value=name;o.textContent=name;sel.appendChild(o);}});
+}

@@ -173,3 +173,66 @@ th.sortable{cursor:pointer;white-space:nowrap}th.sortable:hover{color:var(--ac)}
 .pdf-status-err{background:#fee2e2;color:#8b0000;font-size:.58rem;font-weight:700;text-transform:uppercase;padding:.1rem .3rem;border-radius:10px;flex-shrink:0}
 /* Structured JSON output viewer */
 .json-out{background:#1e1e2e;color:#cdd6f4;font-family:'Courier New',monospace;font-size:.65rem;border-radius:var(--r);padding:.75rem;max-height:300px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;border:1px solid var(--brd);margin-top:.4rem}
+/* Phase Navigator: no-data state (data not loaded yet) */
+.step.no-data{opacity:.5;cursor:not-allowed}
+.step.no-data:hover{border-color:var(--brd);color:#888}
+/* Phase 6 (Export) always accessible */
+.step[data-step="6"].no-data{opacity:1;cursor:pointer}
+/* Material context selector bar */
+.mat-ctx-bar{display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;padding:.45rem 0 .55rem;margin-bottom:.6rem;border-bottom:1px solid var(--brd)}
+.mat-ctx-pill{padding:.22rem .65rem;border:1px solid var(--brd);border-radius:20px;font-size:.72rem;cursor:pointer;transition:.15s;background:#fff;user-select:none}
+.mat-ctx-pill:hover{border-color:var(--ac)}
+.mat-ctx-pill.active{background:var(--ink);color:#fff;border-color:var(--ink)}
+/* Material-adaptive workspace */
+.mat-workspace{display:grid;gap:1rem;margin-bottom:1rem}
+.mat-section{display:none;flex-direction:column;gap:.6rem}
+/* table/CSV context: full width */
+.mat-workspace.mat-ctx-table{grid-template-columns:1fr}
+.mat-workspace.mat-ctx-table .mat-section[data-ctx="table"]{display:flex}
+/* images context: 25 sidebar + 75 main */
+.mat-workspace.mat-ctx-images{grid-template-columns:minmax(240px,1fr) 3fr}
+.mat-workspace.mat-ctx-images .mat-section[data-ctx="table"]{display:flex}
+.mat-workspace.mat-ctx-images .mat-section[data-ctx="images"]{display:flex}
+/* pdf context: 50/50 */
+.mat-workspace.mat-ctx-pdf{grid-template-columns:1fr 1fr}
+.mat-workspace.mat-ctx-pdf .mat-section[data-ctx="table"]{display:flex}
+.mat-workspace.mat-ctx-pdf .mat-section[data-ctx="pdf"]{display:flex}
+/* mixed: all three */
+.mat-workspace.mat-ctx-mixed{grid-template-columns:repeat(3,1fr)}
+.mat-workspace.mat-ctx-mixed .mat-section{display:flex}
+@media(max-width:1100px){
+  .mat-workspace.mat-ctx-mixed{grid-template-columns:1fr 1fr}
+  .mat-workspace.mat-ctx-images{grid-template-columns:1fr 2fr}
+}
+@media(max-width:700px){
+  .mat-workspace.mat-ctx-mixed,.mat-workspace.mat-ctx-images,.mat-workspace.mat-ctx-pdf{grid-template-columns:1fr}
+  .mat-workspace .mat-section{display:flex!important}
+}
+/* Review queue items */
+.rev-item{border:1px solid var(--brd);border-radius:var(--r);padding:.5rem .7rem;margin-bottom:.4rem;background:#fff;box-shadow:0 1px 2px var(--shd)}
+.rev-item-hdr{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap;margin-bottom:.2rem}
+.rev-item-msg{font-size:.75rem;color:var(--ink);flex:1;min-width:0}
+.rev-item-meta{font-size:.65rem;color:#888;display:flex;gap:.5rem;flex-wrap:wrap}
+.rev-item-actions{display:flex;gap:.3rem;margin-top:.3rem;flex-wrap:wrap}
+/* Review status pills */
+.rev-st{font-size:.6rem;font-weight:700;text-transform:uppercase;padding:.13rem .38rem;border-radius:10px;flex-shrink:0}
+.rev-st-pending{background:#f3f4f6;color:#6b7280}
+.rev-st-accepted{background:#dcfce7;color:var(--ok)}
+.rev-st-rejected{background:#fee2e2;color:var(--crit)}
+.rev-st-needs_expert_review{background:#fef3c7;color:var(--warn)}
+.rev-st-applied{background:#dbeafe;color:#1d4ed8}
+/* Work package cards */
+.wp-card{border:1px solid var(--brd);border-radius:var(--r);padding:.6rem .8rem;margin-bottom:.5rem;background:#fff;box-shadow:0 1px 3px var(--shd)}
+.wp-card-hdr{display:flex;align-items:flex-start;gap:.5rem;margin-bottom:.3rem}
+.wp-card-title{font-size:.82rem;font-weight:600;flex:1}
+.wp-card-badges{display:flex;gap:.3rem;flex-shrink:0;flex-wrap:wrap}
+.wp-card-meta{font-size:.68rem;color:#666;margin-bottom:.3rem}
+.wp-card-strategy{font-size:.73rem;color:#555;background:var(--pw);padding:.3rem .5rem;border-radius:var(--r)}
+.wp-prio-critical{background:#fee2e2;color:var(--crit);font-size:.6rem;font-weight:700;padding:.13rem .38rem;border-radius:3px}
+.wp-prio-high{background:#fef3c7;color:var(--warn);font-size:.6rem;font-weight:700;padding:.13rem .38rem;border-radius:3px}
+.wp-prio-medium{background:#e0e7ff;color:#3730a3;font-size:.6rem;font-weight:700;padding:.13rem .38rem;border-radius:3px}
+.wp-prio-low{background:#f3f4f6;color:#6b7280;font-size:.6rem;font-weight:700;padding:.13rem .38rem;border-radius:3px}
+.wp-auto{font-size:.6rem;padding:.13rem .38rem;border-radius:3px}
+.wp-auto-high{background:#dcfce7;color:var(--ok)}
+.wp-auto-medium{background:#fef3c7;color:var(--warn)}
+.wp-auto-low{background:#f3f4f6;color:#888}

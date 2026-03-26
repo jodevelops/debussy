@@ -1,0 +1,31 @@
+#!/bin/sh
+# Auto-update docs/FUNKTIONSKATALOG.md test statistics before every commit.
+# Prevents "Testkatalog Konsistenz" CI failures.
+#
+# Install: sh scripts/install-hooks.sh
+
+set -e
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+SCRIPT="$REPO_ROOT/scripts/update_test_catalog.py"
+DOC="docs/FUNKTIONSKATALOG.md"
+
+[ -f "$SCRIPT" ] || exit 0
+
+cd "$REPO_ROOT"
+
+# Only run if Python tests or source files are staged
+CHANGED=$(git diff --cached --name-only)
+echo "$CHANGED" | grep -qE '(^tests/|^src/|\.py$)' || exit 0
+
+printf "pre-commit: Testkatalog aktualisieren ... "
+if python "$SCRIPT" --update-doc 2>/dev/null; then
+  if ! git diff --quiet "$DOC"; then
+    git add "$DOC"
+    printf "aktualisiert und gestaged.\n"
+  else
+    printf "bereits aktuell.\n"
+  fi
+else
+  printf "Fehler (nicht blockierend).\n"
+fi
