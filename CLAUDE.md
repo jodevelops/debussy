@@ -9,6 +9,11 @@ Python 3.10+, MIT-Lizenz, v0.5.2.
 # Tests ausführen (immer vor Commit!)
 PYTHONPATH=src python -m unittest discover tests
 
+# Testkatalog aktualisieren (PFLICHT nach Tests hinzufügen/entfernen!)
+# Muss vor jedem Commit ausgeführt werden, wenn tests/ oder src/ geändert wurden.
+# Der CI-Check "Testkatalog Konsistenz" schlägt sonst fehl.
+python scripts/update_test_catalog.py --update-doc
+
 # Linting
 ruff check src/ tests/
 
