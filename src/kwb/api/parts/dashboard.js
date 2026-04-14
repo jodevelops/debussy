@@ -167,15 +167,16 @@ function getBoolParams(){
 async function runPilotImages(){
   if(!uploadedImages.length){alert('Erst Bilder hochladen.');return}
   const ids=uploadedImages.slice(0,Math.max(1,Math.ceil(uploadedImages.length*0.02))).map(i=>i.id);
-  const mod=$('img-model').value;
+  const mod=($('img-model-sidebar')&&$('img-model-sidebar').value)||($('img-model')&&$('img-model').value)||'';
+  const task=($('img-task-sidebar')&&$('img-task-sidebar').value)||($('img-task')&&$('img-task').value)||'image_description';
   const boolParams=getBoolParams();
   sp('Bild-Testlauf …',ids.length+' Bild(er)');
-  const body={image_ids:ids,model:mod,prompt_task:$('img-task').value,boolean_params:boolParams};
+  const body={image_ids:ids,model:mod,prompt_task:task,boolean_params:boolParams};
   try{
     await fetchSSE('/api/images/analyze/stream',body,
       evt=>{spUp(evt.current,evt.total,esc(evt.filename||''));},
       result=>{renderImgResults(result.results||[]);},
-      msg=>{$('img-results-empty').textContent='Fehler: '+msg;}
+      msg=>{const el=$('img-full-status');if(el)el.textContent='Fehler: '+msg;}
     );
   }catch(e){if(e.name!=='AbortError')alert(e.message);}finally{hp();}
 }
@@ -1364,6 +1365,7 @@ async function chkGPU(){try{const d=await(await fetch('/api/gpu/status')).json()
         visionModels.map(m=>safeOpt(m,m+' [VISION]')).join('')+
         textModels.map(m=>safeOpt(m,m+' [TEXT]')).join('');
       if($('img-model'))$('img-model').innerHTML=visionOpts;
+      if($('img-model-sidebar'))$('img-model-sidebar').innerHTML=visionOpts;
       if($('pdf-model'))$('pdf-model').innerHTML=visionOpts;
     }else{
       setDot('off','GPUStack: nicht erreichbar');
@@ -1477,100 +1479,230 @@ function _filteredImages(){
     return !!h && (hc[h] || 0) > 1;
   });
   if(imgFilter === 'no_analysis') return uploadedImages.filter(img=>!img.analyzed);
+  if(['pending','accepted','rejected'].includes(imgFilter))
+    return uploadedImages.filter(img=>(img.review_status||'pending')===imgFilter);
   return uploadedImages;
 }
 
 function renderImgGrid(){
-  const grid = $('img-grid');
+  const gallery = $('img-gallery');
   const empty = $('img-list-empty');
-  if(!grid)return;
-  if(!uploadedImages.length){if(empty)empty.style.display='block';grid.innerHTML='';return}
+  if(!gallery) return;
+  if(!uploadedImages.length){
+    if(empty){empty.style.display='block';empty.textContent='Noch keine Bilder hochgeladen.';}
+    gallery.innerHTML='';
+    _updateGalleryStatusBar(0,0);
+    return;
+  }
   const shown = _filteredImages();
-  if(!shown.length){if(empty){empty.style.display='block';empty.textContent='Keine Bilder für den gewählten Filter.';}grid.innerHTML='';return}
-  if(empty){empty.style.display='none';empty.textContent='Noch keine Bilder hochgeladen.';}
-  grid.innerHTML = shown.map(function(img){
+  if(!shown.length){
+    if(empty){empty.style.display='block';empty.textContent='Keine Bilder für den gewählten Filter.';}
+    gallery.innerHTML='';
+    _updateGalleryStatusBar(0,uploadedImages.length);
+    return;
+  }
+  if(empty) empty.style.display='none';
+  gallery.innerHTML = shown.map(function(img){
     const imgUrl='/api/images/'+encPath(img.id)+'/data';
-    const info=(img.filename||'')+' — '+(img.width||'?')+'x'+(img.height||'?');
     const isTiff=(img.media_type||'').includes('tiff');
-    const thumb=isTiff
-      ?'<div class="img-open" data-src="'+esc(imgUrl)+'" data-info="'+esc(img.filename||'')+'" style="height:140px;display:flex;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#888;font-size:.85rem;font-weight:600;cursor:pointer">TIFF</div>'
-      :'<img class="img-thumb img-open" src="'+esc(imgUrl)+'" alt="'+esc(img.filename)+'" data-src="'+esc(imgUrl)+'" data-info="'+esc(info)+'"'
-      +' style="width:100%;height:140px;object-fit:contain;background:#eee;border-radius:3px;display:block;cursor:pointer">'
-      +'<div style="display:none;height:140px;align-items:center;justify-content:center;background:#eee;border-radius:3px;color:#aaa;font-size:.68rem">Vorschau n/v</div>';
-    return '<div style="border:1px solid var(--brd);border-radius:4px;padding:.4rem;font-size:.72rem;background:#fafafa;display:flex;flex-direction:column;gap:.25rem">'
-      +thumb
-      +'<div style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="'+esc(img.filename)+'">'+esc(img.filename)+'</div>'
-      +'<div style="color:#888;font-size:.65rem">'+((img.size_bytes/1024).toFixed(1))+' KB &middot; '+esc(img.media_type||'')+'</div>'
-      +'<div><span class="bg '+(img.analyzed?'ac':'no')+'">'+esc(img.analyzed?'analysiert':'ausstehend')+'</span></div>'
-      +'</div>'}).join('');
-  grid.querySelectorAll('.img-open').forEach(el=>el.onclick=()=>openLightbox(el.dataset.src||'',el.dataset.info||''));
-  grid.querySelectorAll('.img-thumb').forEach(el=>el.onerror=()=>{el.style.display='none';if(el.nextElementSibling)el.nextElementSibling.style.display='flex'});
+    const status=img.review_status||'pending';
+    const thumbHtml=isTiff
+      ?'<div class="it-tiff">TIFF</div>'
+      :'<img class="it-thumb" src="'+esc(imgUrl)+'" alt="'+esc(img.filename||'')+'" loading="lazy">';
+    const badgeCls=status==='accepted'?'it-badge-accepted':status==='rejected'?'it-badge-rejected':'it-badge-pending';
+    const badgeTxt=status==='accepted'?'✓':status==='rejected'?'✗':'·';
+    return '<div class="img-tile" data-id="'+esc(img.id)+'" onclick="openImgDetail(\''+esc(img.id)+'\')">'
+      +thumbHtml
+      +'<div class="it-badge '+badgeCls+'">'+badgeTxt+'</div>'
+      +(img.analyzed?'<div class="it-analyzed-dot" title="Analysiert"></div>':'')
+      +'<div class="it-name" title="'+esc(img.filename||img.id)+'">'+esc(img.filename||img.id)+'</div>'
+      +'<div class="it-actions">'
+      +'<button class="btn sm" onclick="event.stopPropagation();quickReview(\''+esc(img.id)+'\',\'accepted\')" title="Freigeben">&#10003;</button>'
+      +'<button class="btn sm s" onclick="event.stopPropagation();quickReview(\''+esc(img.id)+'\',\'rejected\')" title="Verwerfen">&#10007;</button>'
+      +'</div>'
+      +'</div>';
+  }).join('');
+  // Error fallback for broken img tags
+  gallery.querySelectorAll('.it-thumb').forEach(function(el){
+    el.onerror=function(){this.style.display='none';
+      var fb=document.createElement('div');fb.className='it-tiff';fb.textContent='n/v';
+      this.parentNode.insertBefore(fb,this);};
+  });
+  _updateGalleryStatusBar(shown.length,uploadedImages.length);
+}
+
+function _updateGalleryStatusBar(shown, total){
+  const cnt=$('img-gallery-count');
+  const an=$('img-gallery-analyzed');
+  if(cnt) cnt.textContent=total?shown+' / '+total+' Bilder':'';
+  if(an){
+    const analyzed=uploadedImages.filter(i=>i.analyzed).length;
+    an.textContent=total?analyzed+' analysiert':'';
+  }
+}
+
+function setGalleryDensity(size){
+  const gallery=$('img-gallery');
+  if(!gallery) return;
+  gallery.className='img-gallery ig-'+size;
+  ['s','m','l'].forEach(function(s){
+    const btn=$('igd-'+s);
+    if(btn) btn.classList.toggle('active',s===size);
+  });
+}
+
+function openImgDetail(imageId){
+  const img=uploadedImages.find(i=>i.id===imageId);
+  if(!img) return;
+  const panel=$('img-detail-panel');
+  const mainEl=$('ig-main');
+  if(!panel) return;
+  // Highlight tile
+  document.querySelectorAll('.img-tile').forEach(t=>t.classList.remove('selected'));
+  const tile=document.querySelector('.img-tile[data-id="'+CSS.escape(imageId)+'"]');
+  if(tile){tile.classList.add('selected');tile.scrollIntoView({block:'nearest'});}
+  // Header
+  const nm=$('img-detail-name');if(nm) nm.textContent=img.filename||img.id;
+  // Preview
+  const preview=$('img-detail-preview');
+  if(preview){
+    const isTiff=(img.media_type||'').includes('tiff');
+    const imgUrl='/api/images/'+encPath(img.id)+'/data';
+    preview.innerHTML=isTiff
+      ?'<div style="background:var(--pw);padding:1.5rem;border-radius:var(--r);color:#888;font-size:.8rem">TIFF – Klick öffnet Vollbild</div>'
+      :'<img src="'+esc(imgUrl)+'" style="max-width:100%;max-height:160px;object-fit:contain;border-radius:4px;cursor:pointer" '
+        +'onclick="openLightbox(\''+esc(imgUrl)+'\',\''+esc(img.filename||img.id)+'\')" '
+        +'onerror="this.replaceWith(Object.assign(document.createElement(\'div\'),{textContent:\'Vorschau n/v\',style:\'padding:.8rem;color:#aaa;font-size:.75rem\'}))">';
+  }
+  // Body
+  const body=$('img-detail-body');
+  if(!body) return;
+  const r=img.result||{};
+  const status=img.review_status||'pending';
+  const stCls=status==='accepted'?'rev-st-accepted':status==='rejected'?'rev-st-rejected':'rev-st-pending';
+  body.innerHTML=
+    '<div style="margin-bottom:.5rem">'
+    +'<table style="font-size:.72rem;width:100%;border-collapse:collapse">'
+    +'<tr><td style="color:#888;padding:.1rem .4rem 0 0;white-space:nowrap">Status:</td><td><span class="rev-st '+stCls+'">'+esc(status)+'</span></td></tr>'
+    +'<tr><td style="color:#888;padding:.1rem .4rem 0 0">Größe:</td><td>'+(img.width||'?')+'×'+(img.height||'?')+' px</td></tr>'
+    +(img.size_bytes?'<tr><td style="color:#888;padding:.1rem .4rem 0 0">Datei:</td><td>'+((img.size_bytes/1024).toFixed(1))+' KB · '+esc(img.media_type||'')+'</td></tr>':'')
+    +'</table>'
+    +'</div>'
+    +(img.analyzed&&(r.description||r.objects)
+      ?'<div class="c" style="margin-bottom:.5rem;padding:.5rem">'
+        +'<h3 style="font-size:.78rem;margin-bottom:.3rem">KI-Analyse</h3>'
+        +(r.description?'<p style="font-size:.75rem;margin-bottom:.25rem">'+esc(r.description)+'</p>':'')
+        +(r.objects&&r.objects.length?'<p style="font-size:.72rem"><strong>Objekte:</strong> '+esc(r.objects.join(', '))+'</p>':'')
+        +(r.period?'<p style="font-size:.72rem"><strong>Periode:</strong> '+esc(r.period)+'</p>':'')
+        +(r.confidence?'<p style="font-size:.68rem;color:#888;margin-top:.15rem">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</p>':'')
+        +'</div>'
+      :'')
+    +'<div class="c" style="padding:.5rem">'
+    +'<h3 style="font-size:.78rem;margin-bottom:.4rem">Review</h3>'
+    +'<input type="text" id="img-detail-record" placeholder="record_id (optional)" value="'+esc(img.record_id||'')+'" style="width:100%;margin-bottom:.3rem">'
+    +'<textarea id="img-detail-desc" style="width:100%;height:3rem;margin-bottom:.3rem">'+esc(r.description||'')+'</textarea>'
+    +'<input type="text" id="img-detail-comment" placeholder="Kommentar" value="'+esc(img.review_comment||'')+'" style="width:100%;margin-bottom:.3rem">'
+    +'<input type="text" id="img-detail-reviewer" placeholder="Reviewer" value="'+esc(img.reviewer||'')+'" style="width:100%;margin-bottom:.4rem">'
+    +'<div style="display:flex;gap:.3rem;flex-wrap:wrap">'
+    +'<button class="btn sm" onclick="saveDetailReview(\''+esc(img.id)+'\',\'pending\')">&#128190; Speichern</button>'
+    +'<button class="btn sm" style="background:var(--ok)" onclick="saveDetailReview(\''+esc(img.id)+'\',\'accepted\')">&#10003; Best&auml;tigen</button>'
+    +'<button class="btn sm s" onclick="saveDetailReview(\''+esc(img.id)+'\',\'rejected\')">&#10007; Verwerfen</button>'
+    +'</div>'
+    +'</div>';
+  panel.classList.add('open');
+  if(mainEl) mainEl.classList.add('has-detail');
+}
+
+function closeImgDetail(){
+  const panel=$('img-detail-panel');
+  if(panel) panel.classList.remove('open');
+  const mainEl=$('ig-main');if(mainEl) mainEl.classList.remove('has-detail');
+  document.querySelectorAll('.img-tile').forEach(t=>t.classList.remove('selected'));
+}
+
+async function saveDetailReview(imageId, forceStatus){
+  const img=uploadedImages.find(i=>i.id===imageId);
+  if(!img) return;
+  const payload={
+    status:forceStatus,
+    record_id:($('img-detail-record')&&$('img-detail-record').value)||img.record_id||'',
+    comment:($('img-detail-comment')&&$('img-detail-comment').value)||'',
+    reviewer:($('img-detail-reviewer')&&$('img-detail-reviewer').value)||'',
+    result_updates:{description:($('img-detail-desc')&&$('img-detail-desc').value)||''}
+  };
+  try{
+    const resp=await fetch('/api/images/'+encodeURIComponent(imageId)+'/review',{
+      method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)
+    });
+    const d=await resp.json();
+    if(d.error){alert('Review-Fehler: '+d.error);return;}
+    img.review_status=d.image.review_status;
+    img.review_comment=d.image.review_comment;
+    img.reviewer=d.image.reviewer;
+    img.record_id=d.image.record_id;
+    if(d.image.result) img.result=d.image.result;
+    renderImgGrid();
+    openImgDetail(imageId);
+  }catch(e){alert('Review-Fehler: '+e.message);}
+}
+
+async function quickReview(imageId, status){
+  const img=uploadedImages.find(i=>i.id===imageId);
+  if(!img) return;
+  try{
+    const resp=await fetch('/api/images/'+encodeURIComponent(imageId)+'/review',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({status,reviewer:'',comment:'',record_id:img.record_id||''})
+    });
+    const d=await resp.json();
+    if(d.error) return;
+    img.review_status=d.image.review_status;
+    renderImgGrid();
+  }catch(e){}
 }
 
 async function analyzeImages(){
   if(!uploadedImages.length){alert('Erst Bilder hochladen.');return}
-  const mod = $('img-model').value;
-  const sp_text = $('img-sp').value;
+  const mod=($('img-model-sidebar')&&$('img-model-sidebar').value)||($('img-model')&&$('img-model').value)||'';
+  const sp_text=($('img-sp')&&$('img-sp').value)||'';
+  const task=($('img-task-sidebar')&&$('img-task-sidebar').value)||($('img-task')&&$('img-task').value)||'image_description';
   const ids = uploadedImages.map(i=>i.id);
   sp('Bildanalyse läuft…', ids.length + ' Bild(er)');
   const boolParams=getBoolParams();
-  const body={image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:$('img-task').value, boolean_params:boolParams};
+  const body={image_ids:ids, model:mod, system_prompt:sp_text, prompt_task:task, boolean_params:boolParams};
   try{
     await fetchSSE('/api/images/analyze/stream',body,
       evt=>{spUp(evt.current,evt.total,esc(evt.filename||''));},
       result=>{
         renderImgResults(result.results||[]);
-        if((result.results||[]).some(r=>r.result))$('img-results-empty').textContent='';
-        (result.results||[]).forEach(res=>{
-          const img=uploadedImages.find(i=>i.id===res.id);
-          if(img)img.analyzed=!!res.result;
-        });
         renderImgGrid();
       },
-      msg=>{$('img-results-empty').textContent='Fehler: '+msg;}
+      msg=>{ const el=$('img-full-status');if(el)el.textContent='Fehler: '+msg; }
     );
-  }catch(e){if(e.name!=='AbortError')$('img-results-empty').textContent='Fehler: '+e;}finally{hp();}
+  }catch(e){
+    if(e.name!=='AbortError'){const el=$('img-full-status');if(el)el.textContent='Fehler: '+e;}
+  }finally{hp();}
 }
 
 function renderImgResults(results){
   latestImageResults = results || [];
-  applyImageFilter();
+  // Merge analysis results into uploadedImages and re-render gallery
+  results.forEach(function(res){
+    var img=uploadedImages.find(i=>i.id===res.id);
+    if(img){
+      if(res.result) img.result=res.result;
+      if(res.review_status) img.review_status=res.review_status;
+      if(res.review_comment) img.review_comment=res.review_comment;
+      if(res.reviewer) img.reviewer=res.reviewer;
+      if(res.record_id) img.record_id=res.record_id;
+      img.analyzed=true;
+    }
+  });
+  renderImgGrid();
 }
 
 function applyImageFilter(){
-  const el=$('img-results');
-  const empty=$('img-results-empty');
-  const filter=($('img-review-filter')&&$('img-review-filter').value)||'all';
-  filteredImageResults = latestImageResults.filter(function(res){
-    return filter==='all' || (res.review_status||'pending')===filter;
-  });
-  if(!filteredImageResults.length){empty.style.display='block';el.innerHTML='';return}
-  empty.style.display='none';
-  el.innerHTML = filteredImageResults.map(function(res, idx){
-    const originalIdx = latestImageResults.indexOf(res);
-    if(res.error) return '<div class="card" style="border-color:#e55"><strong>'+esc(res.id||res.filename||'')+'</strong><br><span style="color:#c00">'+esc(res.error)+'</span></div>';
-    var r = res.result || {};
-    var status = res.review_status || 'pending';
-    return '<div class="card" style="margin-bottom:.5rem">'
-      +'<strong style="font-size:.8rem">'+esc(res.filename||res.id)+'</strong>'
-      +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:.4rem;margin:.35rem 0">'
-      +'<input type="text" id="img-record-'+idx+'" placeholder="record_id (optional)" value="'+esc(res.record_id||'')+'">'
-      +'<select id="img-status-'+idx+'"><option value="pending"'+(status==='pending'?' selected':'')+'>pending</option><option value="accepted"'+(status==='accepted'?' selected':'')+'>accepted</option><option value="rejected"'+(status==='rejected'?' selected':'')+'>rejected</option></select>'
-      +'</div>'
-      +'<textarea id="img-desc-'+idx+'" style="height:4rem">'+esc(r.description||'')+'</textarea>'
-      +'<p style="font-size:.78rem;margin:.3rem 0">Objekte: '+esc((r.objects||[]).join(', '))+'</p>'
-      +(r.period?'<div style="font-size:.72rem;color:#555">Periode: '+esc(r.period)+'</div>':'')
-      +(r.confidence?'<div style="font-size:.65rem;color:#888">Konfidenz: '+(r.confidence*100).toFixed(0)+'%</div>':'')
-      +'<input type="text" id="img-comment-'+idx+'" placeholder="Kommentar" value="'+esc(res.review_comment||'')+'" style="margin-top:.25rem">'
-      +'<input type="text" id="img-reviewer-'+idx+'" placeholder="Reviewer" value="'+esc(res.reviewer||'')+'" style="margin-top:.25rem">'
-      +'<div style="display:flex;gap:.3rem;margin-top:.35rem">'
-      +'<button class="btn sm" onclick="saveImageReview('+idx+',\'pending\')">💾 anpassen</button>'
-      +'<button class="btn sm" style="background:var(--ok)" onclick="saveImageReview('+idx+',\'accepted\')">✅ bestätigen</button>'
-      +'<button class="btn sm" style="background:var(--crit)" onclick="saveImageReview('+idx+',\'rejected\')">🗑 verwerfen</button>'
-      +'</div>'
-      +'<div style="font-size:.65rem;color:#777;margin-top:.2rem">ID: '+esc(res.id)+' • #'+(originalIdx+1)+'</div>'
-      +'</div>';
-  }).join('');
+  renderImgGrid();
 }
 
 async function saveImageReview(idx, forceStatus){
@@ -1671,32 +1803,27 @@ async function loadImages(){
 // === OCR ===
 async function runOCR(){
   if(!uploadedImages.length){alert('Erst Bilder hochladen.');return;}
-  const mod=$('img-model').value;
+  const mod=($('img-model-sidebar')&&$('img-model-sidebar').value)||($('img-model')&&$('img-model').value)||'';
   const ids=uploadedImages.map(i=>i.id);
   sp('OCR läuft…',ids.length+' Bild(er)');
   _abortCtrl=new AbortController();
+  const statusEl=$('img-full-status');
   try{
     const r=await fetch('/api/images/ocr',{
       method:'POST',headers:{'Content-Type':'application/json'},
       signal:_abortCtrl.signal,
-      body:JSON.stringify({image_ids:ids,model:mod,system_prompt:$('ocr-sp').value||''})
+      body:JSON.stringify({image_ids:ids,model:mod,system_prompt:($('ocr-sp')&&$('ocr-sp').value)||''})
     });
     const data=await r.json();
-    if(data.error){$('img-results-empty').textContent='OCR-Fehler: '+data.error;hp();return;}
-    const el=$('img-results');
-    el.innerHTML='<h3 style="margin:.5rem 0">OCR-Ergebnisse ('+(data.processed||0)+'/'+(data.total||0)+')</h3>'
-      +(data.results||[]).map(function(res){
-        if(res.error)return '<div style="border:1px solid #e55;padding:.4rem;margin-bottom:.3rem;border-radius:4px">'+esc(res.id)+': '+esc(res.error)+'</div>';
-        var rc=res.result||{};var txt=rc.transcription||rc.text||'(kein Text erkannt)';
-        return '<div style="border:1px solid var(--brd);padding:.5rem;margin-bottom:.3rem;border-radius:4px">'
-          +'<strong style="font-size:.78rem">'+esc(res.filename||res.id)+'</strong> '
-          +(rc.text_found?'<span class="bg ac">Text</span>':'<span class="bg no">Kein Text</span>')
-          +'<div style="font-family:monospace;font-size:.75rem;margin:.3rem 0;padding:.3rem;background:var(--pw);border-radius:3px">'+esc(txt)+'</div>'
-          +(rc.overall_confidence?'<div style="font-size:.68rem;color:#888">Konfidenz: '+(rc.overall_confidence*100).toFixed(0)+'%</div>':'')
-          +'</div>';
-      }).join('');
-    $('img-results-empty').textContent='';
-  }catch(e){$('img-results-empty').textContent='Fehler: '+e;}finally{hp();}
+    if(data.error){if(statusEl)statusEl.textContent='OCR-Fehler: '+data.error;hp();return;}
+    // Merge OCR results into uploadedImages
+    (data.results||[]).forEach(function(res){
+      const img=uploadedImages.find(i=>i.id===res.id);
+      if(img&&res.result){img.result=res.result;img.analyzed=true;}
+    });
+    renderImgGrid();
+    if(statusEl)statusEl.textContent='OCR abgeschlossen: '+(data.processed||0)+'/'+(data.total||0)+' Bilder';
+  }catch(e){if(statusEl)statusEl.textContent='Fehler: '+e;}finally{hp();}
 }
 
 // === CSV EXPORT ===
