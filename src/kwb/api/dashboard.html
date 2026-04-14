@@ -222,9 +222,13 @@
 </div><!-- /.ig-workspace -->
 </div>
 
-<!-- Section: PDF-Dokumente -->
+<!-- Section: PDF-Arbeitsfläche (50/50 split: Scan links, Text+NER rechts) -->
 <div class="mat-section" data-ctx="pdf">
-<div class="pane-hdr">&#128209; PDF-Dokumente</div>
+<div class="pane-hdr">&#128209; PDF-Arbeitsfläche</div>
+<div class="pdf-workspace">
+
+<!-- Left panel: Upload + Controls + Scan -->
+<div class="pdf-scan-panel">
 <div class="c">
 <h3>PDF hochladen</h3>
 <div class="uz" id="uz-pdf" onclick="document.getElementById('fi-pdf').click()">
@@ -236,8 +240,70 @@
 </div>
 <div class="c" id="pdf-pane1-info" style="display:none">
 <h3>Dokumente <span id="pdf-pane1-count" style="font-size:.7rem;color:#888"></span></h3>
-<div id="pdf-pane1-list" style="max-height:200px;overflow-y:auto"></div>
+<div id="pdf-pane1-list" style="max-height:120px;overflow-y:auto"></div>
 </div>
+<div class="c">
+<h3>Extraktion &amp; NER</h3>
+<label>Dokument</label>
+<select id="pdf-ner-doc" onchange="onPdfDocChange()" style="width:100%"><option value="">&#8212; Bitte erst PDF hochladen &#8212;</option></select>
+<div id="pdf-doc-info" style="font-size:.73rem;color:#888;margin-top:.2rem"></div>
+<label>Modell (Vision/OCR)</label>
+<select id="pdf-model" style="width:100%"><option value="">Standard (aus Konfiguration)</option></select>
+<label>Max. Seiten</label>
+<input type="number" id="pdf-max-pages" value="20" min="1" max="200">
+<button class="btn f" onclick="extractPDFText()" style="margin-top:.4rem">&#128269; Text extrahieren (OCR)</button>
+<div id="pdf-extract-status" style="font-size:.73rem;margin-top:.3rem"></div>
+<hr style="border:none;border-top:1px solid var(--brd);margin:.5rem 0">
+<label>Entity-Typen</label>
+<div id="pdf-ner-types" class="cl" style="max-height:120px">
+<div class="ci"><input type="checkbox" value="PER" class="pdf-ner-cb" checked><span class="etype etype-PER">PER</span><span>Personen</span></div>
+<div class="ci"><input type="checkbox" value="ORG" class="pdf-ner-cb" checked><span class="etype etype-ORG">ORG</span><span>Organisationen</span></div>
+<div class="ci"><input type="checkbox" value="LOC" class="pdf-ner-cb" checked><span class="etype etype-LOC">LOC</span><span>Orte</span></div>
+<div class="ci"><input type="checkbox" value="GPE" class="pdf-ner-cb" checked><span class="etype etype-GPE">GPE</span><span>Geo-politisch</span></div>
+<div class="ci"><input type="checkbox" value="DAT" class="pdf-ner-cb" checked><span class="etype etype-DAT">DAT</span><span>Datierung</span></div>
+<div class="ci"><input type="checkbox" value="TOP" class="pdf-ner-cb" checked><span class="etype etype-CON">TOP</span><span>Schlagworte</span></div>
+</div>
+<button class="btn f" onclick="runPDFNER()" style="margin-top:.4rem">&#129514; NER ausf&uuml;hren</button>
+<div id="pdf-ner-status" style="font-size:.73rem;margin-top:.3rem"></div>
+<div style="display:flex;gap:.3rem;margin-top:.4rem;flex-wrap:wrap">
+<button class="btn sm" onclick="downloadPDFExtractionJSON()">&#11015;&#65039; Text (JSON)</button>
+<button class="btn sm" onclick="downloadPDFNERJSON()">&#11015;&#65039; Entities (JSON)</button>
+</div>
+</div>
+<div class="c" id="pdf-scan-container" style="display:none">
+<div class="pdf-page-nav">
+<button class="btn sm" id="pdf-prev-btn" onclick="pdfPageNav(-1)">&#9664; Zurück</button>
+<span id="pdf-page-indicator" style="flex:1;text-align:center;font-size:.75rem;color:#555">Seite 1</span>
+<button class="btn sm" id="pdf-next-btn" onclick="pdfPageNav(+1)">Vor &#9654;</button>
+</div>
+<div class="pdf-scan-view">
+<img id="pdf-page-img" style="display:none" alt="Seiten-Scan">
+<div id="pdf-page-no-img" style="padding:1.5rem;text-align:center;color:#888;font-size:.78rem;display:none">Keine Scan-Vorschau (kein pdf2image installiert)</div>
+</div>
+</div>
+</div><!-- /.pdf-scan-panel -->
+
+<!-- Right panel: Text + NER -->
+<div class="pdf-text-panel">
+<div class="pdf-view-hdr">
+<div class="tabs" style="border:none;background:none;padding:0;margin:0;display:flex">
+<div class="tab a" data-t="text" onclick="setPdfViewTab('text',this)">&#128196; Volltext</div>
+<div class="tab" data-t="entities" onclick="setPdfViewTab('entities',this)">&#129514; Entities</div>
+</div>
+<span id="pdf-view-pageinfo" style="font-size:.68rem;color:#888;margin-left:auto"></span>
+</div>
+<div id="pdf-text-tab" class="pdf-text-view">
+<span id="pdf-text-empty" style="color:#aaa;font-size:.78rem">Noch kein Text extrahiert. Dokument wählen und &raquo;Text extrahieren&laquo; klicken.</span>
+</div>
+<div id="pdf-entities-tab" class="pdf-entities-view" style="display:none">
+<div id="pdf-ner-summary-view" style="display:flex;gap:.3rem;flex-wrap:wrap;padding:.5rem .5rem .3rem;border-bottom:1px solid var(--brd)"></div>
+<div class="scroll-box" style="max-height:calc(100vh - 360px)">
+<table class="etbl" id="pdf-ner-tbl-view"><thead><tr><th>Entity</th><th>Typ</th><th>Konf.</th><th>Seite</th></tr></thead><tbody id="pdf-ner-body-view"></tbody></table>
+</div>
+</div>
+</div><!-- /.pdf-text-panel -->
+
+</div><!-- /.pdf-workspace -->
 </div>
 
 </div><!-- /.mat-workspace -->
@@ -505,52 +571,16 @@
 <div class="track-col">
 <div class="c">
 <h3>&#128209; PDF: Textextraktion &amp; NER</h3>
-<label>Dokument</label>
-<select id="pdf-ner-doc" onchange="onPdfDocChange()" style="width:100%"><option value="">&#8212; Bitte erst PDF hochladen &#8212;</option></select>
-<div id="pdf-doc-info" style="font-size:.73rem;color:#888;margin-top:.2rem"></div>
-<label>Modell (Vision/OCR)</label>
-<select id="pdf-model" style="width:100%"><option value="">Standard (aus Konfiguration)</option></select>
-<label>Max. Seiten f&uuml;r Extraktion</label>
-<input type="number" id="pdf-max-pages" value="20" min="1" max="200">
-
-<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
-<h3>1. Textextraktion (OCR)</h3>
-<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">Vision-Modell liest Text von jeder PDF-Seite. Ergebnis als strukturiertes JSON.</p>
-<button class="btn f" onclick="extractPDFText()">&#128269; Text extrahieren (OCR)</button>
-<div id="pdf-extract-status" style="font-size:.73rem;margin-top:.3rem"></div>
-
-<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
-<h3>2. NER auf extrahiertem Text</h3>
-<label>Entity-Typen</label>
-<div id="pdf-ner-types" class="cl" style="max-height:140px">
-<div class="ci"><input type="checkbox" value="PER" class="pdf-ner-cb" checked><span class="etype etype-PER">PER</span><span>Personen</span></div>
-<div class="ci"><input type="checkbox" value="ORG" class="pdf-ner-cb" checked><span class="etype etype-ORG">ORG</span><span>Organisationen</span></div>
-<div class="ci"><input type="checkbox" value="LOC" class="pdf-ner-cb" checked><span class="etype etype-LOC">LOC</span><span>Orte</span></div>
-<div class="ci"><input type="checkbox" value="GPE" class="pdf-ner-cb" checked><span class="etype etype-GPE">GPE</span><span>Geo-politisch</span></div>
-<div class="ci"><input type="checkbox" value="DAT" class="pdf-ner-cb" checked><span class="etype etype-DAT">DAT</span><span>Datierung</span></div>
-<div class="ci"><input type="checkbox" value="TOP" class="pdf-ner-cb" checked><span class="etype etype-CON">TOP</span><span>Schlagworte</span></div>
-</div>
-<button class="btn f" onclick="runPDFNER()" style="margin-top:.4rem">&#129514; NER ausf&uuml;hren</button>
-<div id="pdf-ner-status" style="font-size:.73rem;margin-top:.3rem"></div>
-
-<hr style="border:none;border-top:1px solid var(--brd);margin:.6rem 0">
-<h3>Strukturierte JSON-Ausgabe</h3>
-<p style="font-size:.72rem;color:#666;margin-bottom:.3rem">Valides JSON: Textextraktion (Seite, Text, Konfidenz) oder Entities (Text, Typ, Konfidenz, Quelle).</p>
-<div style="display:flex;gap:.3rem;flex-wrap:wrap">
-<button class="btn sm" onclick="downloadPDFExtractionJSON()">&#11015;&#65039; Textextraktion (JSON)</button>
-<button class="btn sm" onclick="downloadPDFNERJSON()">&#11015;&#65039; Entities (JSON)</button>
-</div>
-</div>
-
-<div id="pdf-extract-result" class="c" style="display:none;margin-top:.6rem">
-<h3>Extrahierter Text <span id="pdf-pages-count" style="font-size:.7rem;color:#888"></span></h3>
-<div id="pdf-extract-pages" class="scroll-box" style="max-height:260px"></div>
-</div>
-
-<div id="pdf-ner-result" class="c" style="display:none;margin-top:.6rem">
-<h3>Erkannte Entities <span id="pdf-ner-count" style="font-size:.7rem;color:#888"></span></h3>
-<div id="pdf-ner-summary" style="font-size:.72rem;color:#555;margin-bottom:.4rem;flex-wrap:wrap;display:flex;gap:.3rem"></div>
-<div class="scroll-box"><table class="etbl" id="pdf-ner-tbl"><thead><tr><th>Entity</th><th>Typ</th><th>Konf.</th><th>Seite</th></tr></thead><tbody id="pdf-ner-body"></tbody></table></div>
+<p style="font-size:.75rem;color:#666;margin-bottom:.4rem">Die PDF-Arbeitsfläche mit Scan-Vorschau, Textextraktion und NER-Highlighting befindet sich im Kontextreiter <strong>&#128209; PDF</strong>.</p>
+<button class="btn sm" onclick="setMatCtx('pdf')">&#128209; Zur PDF-Arbeitsfläche wechseln</button>
+<!-- Legacy containers kept for backward-compat -->
+<div id="pdf-extract-result" style="display:none"></div>
+<div id="pdf-extract-pages" style="display:none"></div>
+<span id="pdf-pages-count" style="display:none"></span>
+<div id="pdf-ner-result" style="display:none"></div>
+<span id="pdf-ner-count" style="display:none"></span>
+<div id="pdf-ner-summary" style="display:none"></div>
+<table style="display:none"><tbody id="pdf-ner-body"></tbody></table>
 </div>
 </div>
 
