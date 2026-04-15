@@ -58,18 +58,14 @@ class TestE2ERealisticWorkflow(unittest.TestCase):
         if not csv_path.exists():
             self.skipTest(f"Test data not found: {csv_path}")
 
-        # Load CSV
-        result = load_csv(csv_path)
+        # load_csv returns a DataFrame directly
+        df = load_csv(csv_path)
 
-        # Assertions
-        self.assertIsNotNone(result.data)
-        self.assertGreater(len(result.data), 0)
-        self.assertIsNotNone(result.profile)
+        self.assertIsNotNone(df)
+        self.assertGreater(len(df), 0)
+        self.assertGreater(len(df.columns), 0)
 
-        # Check encoding detection
-        self.assertIn(result.encoding.upper(), ["UTF-8", "LATIN-1", "UTF-8-SIG"])
-
-        print(f"✓ CSV loaded: {len(result.data)} rows, {len(result.data.columns)} cols")
+        print(f"✓ CSV loaded: {len(df)} rows, {len(df.columns)} cols")
 
     def test_02_structural_analysis(self):
         """Test structural quality checks (F02–F08)."""
