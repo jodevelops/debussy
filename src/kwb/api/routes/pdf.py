@@ -155,6 +155,30 @@ async def pdf_list():
 
 
 # ---------------------------------------------------------------------------
+# Page image (scan preview)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/pdf/{doc_id}/page/{page_num}/image")
+async def pdf_page_image(doc_id: str, page_num: int):
+    """Return the rendered PNG scan for a single PDF page."""
+    import base64
+    from fastapi.responses import Response
+
+    doc = _pdf_store.get(doc_id)
+    if not doc:
+        return JSONResponse({"error": "Dokument nicht gefunden"}, status_code=404)
+    pages = doc.get("_pages_raw", [])
+    if page_num < 1 or page_num > len(pages):
+        return JSONResponse({"error": f"Seite {page_num} nicht vorhanden"}, status_code=404)
+    page = pages[page_num - 1]
+    b64 = getattr(page, "base64_data", None)
+    if not b64:
+        return JSONResponse({"error": "Keine Vorschau verfügbar"}, status_code=404)
+    img_bytes = base64.b64decode(b64)
+    return Response(content=img_bytes, media_type="image/png")
+
+
+# ---------------------------------------------------------------------------
 # Text Extraction (OCR via vision LLM)
 # ---------------------------------------------------------------------------
 
