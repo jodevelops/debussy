@@ -1,0 +1,62 @@
+[
+  {
+    "name": "cluster:silent-failures",
+    "color": "d93f0b",
+    "description": "Cluster 1 — Make hidden failures, dropped records, capped samples, and silent overwrites visible to the user."
+  },
+  {
+    "name": "cluster:provenance",
+    "color": "0e8a16",
+    "description": "Cluster 2 — Surface input → model → prompt → run → result lineage for every extraction."
+  },
+  {
+    "name": "cluster:confidence",
+    "color": "1d76db",
+    "description": "Cluster 3 — Make confidence values mean one thing, displayed and documented consistently."
+  },
+  {
+    "name": "cluster:collection-agnostic",
+    "color": "fbca04",
+    "description": "Cluster 4 — Remove GIUB-specific assumptions so debussy works on letters, other archives, other locales."
+  },
+  {
+    "name": "cluster:preview",
+    "color": "bfd4f2",
+    "description": "Cluster 5 — Show what would happen before destructive or expensive operations commit."
+  },
+  {
+    "name": "cluster:folder-drop",
+    "color": "c5def5",
+    "description": "Cluster 6 — Point debussy at one folder and let it discover what goes with what."
+  },
+  {
+    "name": "cluster:dashboard",
+    "color": "5319e7",
+    "description": "Cluster 7 — Reorganise the dashboard around curator outcomes (Sammlungsstatus) instead of techniques."
+  },
+  {
+    "name": "cluster:date-patterns",
+    "color": "f9d0c4",
+    "description": "Cluster 8 — Cover German GLAM date conventions correctly and show coverage to users."
+  },
+  {
+    "name": "cluster:data-model",
+    "color": "6f42c1",
+    "description": "Cluster 9 — Consolidate report types, enums, dual storage, and provenance schema. Internal blocker for clusters 1, 2, 3, 7."
+  },
+  {
+    "name": "cluster:ops-hygiene",
+    "color": "c2e0c6",
+    "description": "Cluster 10 — Operational debt: logging, defaults, retry semantics, deprecation."
+  },
+  {
+    "name": "cluster:onboarding",
+    "color": "7057ff",
+    "description": "Cluster 11 — Tell users what they need installed and configured before they hit it."
+  },
+  {
+    "name": "cluster:cross-cutting",
+    "color": "cccccc",
+    "description": "Cluster 12 — Small refactors, dead code, code-health background work."
+  }
+]
