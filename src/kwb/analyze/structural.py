@@ -1,13 +1,23 @@
 """Structural analysis — rule-based quality checks."""
 from __future__ import annotations
+import logging
 import pandas as pd
 from kwb.core.models import AnalysisReport, Finding, FindingCategory, Severity
 from kwb.analyze.quality_measures import compute_quality_measures
 
+logger = logging.getLogger(__name__)
+
 def _get_affected_ids(df, mask, id_col, limit=10):
-    if not id_col or id_col not in df.columns: return []
-    try: return df.loc[mask, id_col].head(limit).tolist()
-    except: return []
+    if not id_col or id_col not in df.columns:
+        return []
+    try:
+        return df.loc[mask, id_col].head(limit).tolist()
+    except (KeyError, ValueError, TypeError, IndexError) as e:
+        logger.warning(
+            "Failed to extract affected ids for column %r (%s: %s)",
+            id_col, type(e).__name__, e,
+        )
+        return []
 
 def check_missing_values(df, profile):
     findings=[]; dfa=df.replace("",pd.NA)

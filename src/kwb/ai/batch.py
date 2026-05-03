@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from kwb.ai.provider import AIMessage, AIProvider, AIResponse
@@ -31,18 +32,31 @@ class BatchResult:
     response: AIResponse | None = None
     parsed: dict[str, Any] | None = None
     error: str | None = None
+    error_type: str | None = None
     duration_seconds: float = 0.0
 
 
 @dataclass
 class BatchReport:
-    """Summary of a batch processing run."""
+    """Summary of a batch processing run.
+
+    Provenance fields (provider_name, model, prompt_fn_name, started_at,
+    finished_at) make different runs distinguishable. Without them, two
+    BatchReports produced by different prompt functions or models look
+    identical in storage.
+    """
     total: int = 0
     succeeded: int = 0
     failed: int = 0
     skipped: int = 0
     total_duration_seconds: float = 0.0
     results: list[BatchResult] = field(default_factory=list)
+    # Provenance — populated by process_batch.
+    provider_name: str | None = None
+    model: str | None = None
+    prompt_fn_name: str | None = None
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
 
     @property
     def success_rate(self) -> float:
@@ -52,6 +66,22 @@ class BatchReport:
     def avg_duration(self) -> float:
         durations = [r.duration_seconds for r in self.results if r.success]
         return sum(durations) / len(durations) if durations else 0.0
+
+
+def _prompt_fn_name(fn: Callable[..., Any]) -> str:
+    """Best-effort identifier for a prompt function (handles partial / lambda)."""
+    name = getattr(fn, "__name__", None)
+    if name and name != "<lambda>":
+        return name
+    inner = getattr(fn, "func", None)  # functools.partial
+    if inner is not None:
+        return getattr(inner, "__name__", repr(fn))
+    return repr(fn)
+
+
+def _provider_name(provider: AIProvider) -> str:
+    """Identifier for the provider — class name is stable and readable."""
+    return type(provider).__name__
 
 
 def process_batch(
@@ -68,6 +98,14 @@ def process_batch(
     """
     Process a list of items through an AI provider.
 
+    Exception handling philosophy:
+    - Per-item failures (network, parse, provider errors) are captured into
+      BatchResult and processing continues. The full exception type and
+      stack trace are logged via logger.exception so curators can diagnose.
+    - KeyboardInterrupt / SystemExit / BaseException are NOT caught and will
+      abort the batch — that is intentional, since they signal operator or
+      environment intent.
+
     Args:
         provider: The AI provider to use.
         items: List of dicts, each representing one record.
@@ -80,9 +118,16 @@ def process_batch(
         on_progress: Callback(current_index, total, result) for progress.
 
     Returns:
-        BatchReport with all results.
+        BatchReport with all results and provenance metadata.
     """
-    report = BatchReport(total=len(items))
+    started_at = datetime.now(timezone.utc)
+    report = BatchReport(
+        total=len(items),
+        provider_name=_provider_name(provider),
+        model=model,
+        prompt_fn_name=_prompt_fn_name(prompt_fn),
+        started_at=started_at,
+    )
     start_time = time.time()
 
     for i, item in enumerate(items):
@@ -110,15 +155,23 @@ def process_batch(
             report.succeeded += 1
 
         except Exception as e:
+            # Per-item failure — log with full stack trace and continue.
+            # KeyboardInterrupt / SystemExit are BaseException subclasses and
+            # propagate, so an operator can still abort.
             duration = time.time() - item_start
+            error_type = type(e).__name__
             result = BatchResult(
                 record_id=record_id,
                 success=False,
                 error=str(e),
+                error_type=error_type,
                 duration_seconds=duration,
             )
             report.failed += 1
-            logger.warning(f"Failed on {record_id}: {e}")
+            logger.exception(
+                "Batch item failed: record_id=%s error_type=%s",
+                record_id, error_type,
+            )
 
         report.results.append(result)
 
@@ -129,4 +182,5 @@ def process_batch(
             time.sleep(delay_seconds)
 
     report.total_duration_seconds = time.time() - start_time
+    report.finished_at = datetime.now(timezone.utc)
     return report
