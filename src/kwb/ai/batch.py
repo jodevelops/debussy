@@ -25,6 +25,43 @@ _try_parse_json = try_parse_json
 
 
 @dataclass
+class ParseFailure:
+    """Record of a JSON parse failure from an LLM response."""
+    record_id: str
+    raw_response: str | None = None
+    error_message: str | None = None
+
+    @property
+    def raw_response_preview(self) -> str:
+        """First 200 chars of raw response for dashboard display."""
+        if not self.raw_response:
+            return ""
+        return (self.raw_response[:200] + "...") if len(self.raw_response) > 200 else self.raw_response
+
+
+@dataclass
+class CompletionSummary:
+    """Summary of completion rates and failure types for batch operations."""
+    total_records: int = 0
+    succeeded: int = 0
+    llm_failed: int = 0
+    parse_failed: int = 0
+    empty_result: int = 0
+
+    @property
+    def completion_rate(self) -> float:
+        """Fraction of records that produced usable results."""
+        if self.total_records == 0:
+            return 0.0
+        return self.succeeded / self.total_records
+
+    @property
+    def completion_percentage(self) -> int:
+        """Completion rate as integer percentage."""
+        return round(self.completion_rate * 100)
+
+
+@dataclass
 class BatchResult:
     """Result of processing a single item in a batch."""
     record_id: str
@@ -51,6 +88,7 @@ class BatchReport:
     skipped: int = 0
     total_duration_seconds: float = 0.0
     results: list[BatchResult] = field(default_factory=list)
+    parse_failures: list[ParseFailure] = field(default_factory=list)
     # Provenance — populated by process_batch.
     provider_name: str | None = None
     model: str | None = None
@@ -144,6 +182,14 @@ def process_batch(
             )
             parsed = try_parse_json(response.content)
             duration = time.time() - item_start
+
+            # Track parse failures: when response content exists but parsing failed
+            if parsed is None and response.content and response.content.strip():
+                report.parse_failures.append(ParseFailure(
+                    record_id=record_id,
+                    raw_response=response.content,
+                    error_message="JSON parse failed"
+                ))
 
             result = BatchResult(
                 record_id=record_id,

@@ -26,7 +26,7 @@ from typing import Any
 import pandas as pd
 
 from kwb.ai.provider import AIMessage, AIProvider
-from kwb.ai.batch import process_batch, BatchReport
+from kwb.ai.batch import process_batch, BatchReport, CompletionSummary
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,7 @@ class NERResult:
     """Result of NER on one dataset."""
     entities: list[Entity] = field(default_factory=list)
     batch_report: BatchReport | None = None
+    completion_summary: CompletionSummary | None = None
 
     @property
     def by_type(self) -> dict[EntityType, list[Entity]]:
@@ -360,6 +361,24 @@ def ner_hybrid(
             if k not in llm_map or e.confidence > llm_map[k].confidence:
                 llm_map[k] = e
         result.batch_report = batch
+
+        # Calculate completion summary from batch report
+        if batch:
+            parse_failed = len(batch.parse_failures)
+            llm_failed = batch.failed
+            succeeded_with_entities = len(llm_ents)
+            # Items with non-null parsed but no entities
+            empty_results = sum(1 for r in batch.results
+                              if r.success and r.parsed is not None
+                              and r.record_id not in {e.record_id for e in llm_ents})
+
+            result.completion_summary = CompletionSummary(
+                total_records=batch.total,
+                succeeded=succeeded_with_entities,
+                llm_failed=llm_failed,
+                parse_failed=parse_failed,
+                empty_result=empty_results
+            )
 
     # Merge: start with SpaCy, upgrade overlaps to hybrid/llm
     merged: dict[str, Entity] = dict(spacy_map)

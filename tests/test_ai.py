@@ -245,6 +245,34 @@ class TestBatch:
                 provider, items, prompt_fn=lambda i: [AIMessage.user("test")]
             )
 
+    def test_batch_parse_failure_tracking(self):
+        """EXT-BUG-02: JSON parse failures must be tracked and visible."""
+        from kwb.ai.provider import AIResponse, ProviderConfig
+
+        class BadJsonProvider(MockProvider):
+            def complete(self, messages, model=None, **kwargs):
+                return AIResponse(
+                    content="not valid json at all",
+                    model=model or "mock-model",
+                    usage={},
+                )
+
+        provider = BadJsonProvider(ProviderConfig(base_url="mock://x"))
+        items = [
+            {"record_id": "r1"},
+            {"record_id": "r2"},
+            {"record_id": "r3"},
+        ]
+        report = process_batch(
+            provider, items, prompt_fn=lambda i: [AIMessage.user("test")]
+        )
+
+        assert report.total == 3
+        assert report.succeeded == 3  # LLM calls succeeded
+        assert len(report.parse_failures) == 3  # But parsing failed
+        assert all(pf.raw_response == "not valid json at all" for pf in report.parse_failures)
+        assert all(pf.error_message == "JSON parse failed" for pf in report.parse_failures)
+
 
 # ---------------------------------------------------------------------------
 # Image loader tests
