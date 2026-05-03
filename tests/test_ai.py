@@ -273,6 +273,31 @@ class TestBatch:
         assert all(pf.raw_response == "not valid json at all" for pf in report.parse_failures)
         assert all(pf.error_message == "JSON parse failed" for pf in report.parse_failures)
 
+    def test_ner_completion_summary(self):
+        """EXT-BUG-01: NERResult must track completion rate from batch report."""
+        from kwb.ai.provider import AIResponse, ProviderConfig
+        from kwb.analyze.ner import ner_hybrid
+
+        class GoodJsonProvider(MockProvider):
+            def complete(self, messages, model=None, **kwargs):
+                return AIResponse(
+                    content='{"entities": [{"text": "Berlin", "type": "LOC", "confidence": 0.9}]}',
+                    model=model or "mock-model",
+                    usage={},
+                )
+
+        import pandas as pd
+        df = pd.DataFrame({"id": ["r1", "r2", "r3"], "text": ["Berlin ist schön", "München und Köln", "Guten Tag"]})
+        provider = GoodJsonProvider(ProviderConfig(base_url="mock://x"))
+
+        result = ner_hybrid(df, ["text"], provider=provider, id_column="id")
+
+        assert result.completion_summary is not None
+        assert result.completion_summary.total_records == 3
+        assert result.completion_summary.succeeded == 3
+        assert result.completion_summary.parse_failed == 0
+        assert result.completion_summary.completion_percentage == 100
+
 
 # ---------------------------------------------------------------------------
 # Image loader tests
