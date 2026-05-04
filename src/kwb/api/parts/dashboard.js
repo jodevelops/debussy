@@ -530,7 +530,33 @@ function renderNER(r){
   const types=[...new Set(nerData.map(e=>e.type))].sort();
   $('ner-filter').innerHTML='<div class="fb2 a" onclick="setNerType(\'all\',this)">Alle Typen</div>'+
     types.map(t=>'<div class="fb2" onclick="setNerType(\''+esc(t)+'\',this)"><span class="etype etype-'+esc(t)+'">'+esc(t)+'</span> '+nerData.filter(e=>e.type===t).length+'</div>').join('');
+
+  // EXT-BUG-01: Display completion summary
+  renderCompletionSummary(r.completion_summary, r.parse_failures);
+
   applyNERFilters();
+}
+
+function renderCompletionSummary(summary, parseFailures){
+  const banners=['ner-completion-banner','ner-full-completion-banner'];
+  for(const bannerId of banners){
+    if(!summary || !$(bannerId))continue;
+    const pct=summary.completion_percentage||0;
+    const color=pct>=95?'var(--ok)':pct>=80?'var(--warn)':'var(--crit)';
+    let html='<div style="background:'+color+';padding:12px;border-radius:4px;margin-bottom:12px;color:white;font-weight:600">';
+    html+='✓ '+pct+'% Abschlussrate ('+summary.succeeded+'/'+summary.total_records+' erfolgreich)';
+    if(summary.llm_failed>0)html+=' | ❌ '+summary.llm_failed+' LLM-Fehler';
+    if(summary.parse_failed>0)html+=' | ⚠️ '+summary.parse_failed+' Parse-Fehler';
+    if(summary.empty_result>0)html+=' | — '+summary.empty_result+' leere Ergebnisse';
+    html+='</div>';
+    if(parseFailures && parseFailures.length>0){
+      html+='<details style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600">Parse-Fehler-Details ('+parseFailures.length+')</summary>';
+      html+='<div style="background:#f5f5f5;padding:8px;border-radius:4px;max-height:200px;overflow-y:auto">';
+      html+=parseFailures.map(pf=>'<div style="padding:4px;border-bottom:1px solid #ddd;font-size:.85rem"><strong>'+esc(pf.record_id)+'</strong>: '+esc(pf.error_message)+'<br><code style="color:#666;font-size:.75rem">'+esc(pf.raw_response_preview)+'</code></div>').join('');
+      html+='</div></details>';
+    }
+    $(bannerId).innerHTML=html;
+  }
 }
 
 function setNerType(t,b){
