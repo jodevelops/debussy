@@ -70,6 +70,21 @@ def _merge_completion_summaries(summaries: list[CompletionSummary | None]) -> di
     }
 
 
+def _collect_parse_failures(ner_results: list) -> list[dict]:
+    """Extract parse failures from NERResult.batch_report objects."""
+    failures = []
+    for result in ner_results:
+        if result.batch_report and result.batch_report.parse_failures:
+            for pf in result.batch_report.parse_failures:
+                failures.append({
+                    "record_id": pf.record_id,
+                    "raw_response_preview": pf.raw_response_preview,
+                    "error_message": pf.error_message,
+                })
+    # Return up to 20 most recent failures for dashboard display
+    return failures[-20:] if len(failures) > 20 else failures
+
+
 def _apply_filters(df: pd.DataFrame, filters: dict | None) -> pd.DataFrame:
     """Apply simple API filters to a dataframe copy."""
     if not filters:
@@ -402,6 +417,7 @@ async def api_ner(request: dict):
     errors = 0
     chunk_reports = []
     completion_summaries = []
+    ner_results = []
     for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
         try:
             chunk_result = ner_hybrid(
@@ -423,6 +439,7 @@ async def api_ner(request: dict):
             })
             if chunk_result.completion_summary:
                 completion_summaries.append(chunk_result.completion_summary)
+            ner_results.append(chunk_result)
         except Exception:
             errors += len(chunk_df)
             chunk_reports.append({"chunk": chunk_no, "rows": len(chunk_df), "error": True})
@@ -480,8 +497,9 @@ async def api_ner(request: dict):
         "entity_types_requested": entity_types or "all",
     }
 
-    # EXT-BUG-01: Expose completion summary for visibility
+    # EXT-BUG-01: Expose completion summary and failures for visibility
     completion_summary = _merge_completion_summaries(completion_summaries)
+    parse_failures = _collect_parse_failures(ner_results)
 
     return {
         "task_name": "NER", "total": len(ents),
@@ -494,6 +512,7 @@ async def api_ner(request: dict):
         "run_metrics": metrics,
         "ai_provenance": ai_provenance,
         "completion_summary": completion_summary,
+        "parse_failures": parse_failures,
         "workspace": ws.to_summary(),
     }
 
@@ -530,6 +549,7 @@ async def api_ner_stream(request: dict):
         all_entities = []
         errors = 0
         completion_summaries = []
+        ner_results = []
         chunk_reports = []
         for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
             try:
@@ -552,6 +572,7 @@ async def api_ner_stream(request: dict):
                 })
                 if chunk_result.completion_summary:
                     completion_summaries.append(chunk_result.completion_summary)
+                ner_results.append(chunk_result)
             except Exception:
                 errors += len(chunk_df)
                 chunk_reports.append({
@@ -608,8 +629,9 @@ async def api_ner_stream(request: dict):
             "prompt_version": prompt_version,
             "entity_types_requested": entity_types or "all",
         }
-        # EXT-BUG-01: Expose completion summary for visibility
+        # EXT-BUG-01: Expose completion summary and failures for visibility
         completion_summary = _merge_completion_summaries(completion_summaries)
+        parse_failures = _collect_parse_failures(ner_results)
         yield _sse_event({
             "type": "done",
             "result": {
@@ -620,6 +642,7 @@ async def api_ner_stream(request: dict):
                 "entities": ents[:500], "by_type": by_type,
                 "run_metrics": metrics, "ai_provenance": ai_provenance,
                 "completion_summary": completion_summary,
+                "parse_failures": parse_failures,
                 "workspace": ws.to_summary(),
             },
         })
