@@ -278,7 +278,7 @@ def dataframe_to_goobi_xml(
         )
 
     dict_lookup = {e.term.lower(): e for e in workspace.dictionary}
-    parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<goobi-batch>"]
+    parts = ['<?xml version="1.0" encoding="UTF-8"?>', "<goobi-import-batch>"]
 
     for _, row in df.iterrows():
         elem = record_to_xml(
@@ -292,7 +292,7 @@ def dataframe_to_goobi_xml(
         xml_bytes = tostring(elem, encoding="unicode")
         parts.append(xml_bytes)
 
-    parts.append("</goobi-batch>")
+    parts.append("</goobi-import-batch>")
     return "\n".join(parts)
 
 
