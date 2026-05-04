@@ -36,6 +36,7 @@ from kwb.analyze.quality_report import build_quality_analysis_report
 from kwb.enrich.edtf import normalize_dates
 from kwb.report.markdown import render_report
 from kwb.ai.prompts import PROMPT_VERSIONS
+from kwb.ai.batch import CompletionSummary
 
 router = APIRouter()
 
@@ -43,6 +44,30 @@ router = APIRouter()
 def _sse_event(data: dict) -> str:
     """Format a dict as an SSE data line."""
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _merge_completion_summaries(summaries: list[CompletionSummary | None]) -> dict:
+    """Merge multiple CompletionSummary objects into a single dict."""
+    if not summaries or all(s is None for s in summaries):
+        return {}
+
+    total_records = sum(s.total_records for s in summaries if s)
+    succeeded = sum(s.succeeded for s in summaries if s)
+    llm_failed = sum(s.llm_failed for s in summaries if s)
+    parse_failed = sum(s.parse_failed for s in summaries if s)
+    empty_result = sum(s.empty_result for s in summaries if s)
+
+    completion_rate = succeeded / total_records if total_records > 0 else 0.0
+
+    return {
+        "total_records": total_records,
+        "succeeded": succeeded,
+        "llm_failed": llm_failed,
+        "parse_failed": parse_failed,
+        "empty_result": empty_result,
+        "completion_rate": round(completion_rate, 4),
+        "completion_percentage": round(completion_rate * 100),
+    }
 
 
 def _apply_filters(df: pd.DataFrame, filters: dict | None) -> pd.DataFrame:
@@ -376,6 +401,7 @@ async def api_ner(request: dict):
     all_entities = []
     errors = 0
     chunk_reports = []
+    completion_summaries = []
     for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
         try:
             chunk_result = ner_hybrid(
@@ -395,6 +421,8 @@ async def api_ner(request: dict):
                 "rows": len(chunk_df),
                 "entities": len(chunk_result.entities),
             })
+            if chunk_result.completion_summary:
+                completion_summaries.append(chunk_result.completion_summary)
         except Exception:
             errors += len(chunk_df)
             chunk_reports.append({"chunk": chunk_no, "rows": len(chunk_df), "error": True})
@@ -452,6 +480,9 @@ async def api_ner(request: dict):
         "entity_types_requested": entity_types or "all",
     }
 
+    # EXT-BUG-01: Expose completion summary for visibility
+    completion_summary = _merge_completion_summaries(completion_summaries)
+
     return {
         "task_name": "NER", "total": len(ents),
         "prompt_name": prompt_name,
@@ -462,6 +493,7 @@ async def api_ner(request: dict):
         "by_type": by_type,
         "run_metrics": metrics,
         "ai_provenance": ai_provenance,
+        "completion_summary": completion_summary,
         "workspace": ws.to_summary(),
     }
 
@@ -497,6 +529,7 @@ async def api_ner_stream(request: dict):
         started = time.perf_counter()
         all_entities = []
         errors = 0
+        completion_summaries = []
         chunk_reports = []
         for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
             try:
@@ -517,6 +550,8 @@ async def api_ner_stream(request: dict):
                     "chunk": chunk_no, "rows": len(chunk_df),
                     "entities": len(chunk_result.entities),
                 })
+                if chunk_result.completion_summary:
+                    completion_summaries.append(chunk_result.completion_summary)
             except Exception:
                 errors += len(chunk_df)
                 chunk_reports.append({
@@ -573,6 +608,8 @@ async def api_ner_stream(request: dict):
             "prompt_version": prompt_version,
             "entity_types_requested": entity_types or "all",
         }
+        # EXT-BUG-01: Expose completion summary for visibility
+        completion_summary = _merge_completion_summaries(completion_summaries)
         yield _sse_event({
             "type": "done",
             "result": {
@@ -582,6 +619,7 @@ async def api_ner_stream(request: dict):
                 "model": model_name,
                 "entities": ents[:500], "by_type": by_type,
                 "run_metrics": metrics, "ai_provenance": ai_provenance,
+                "completion_summary": completion_summary,
                 "workspace": ws.to_summary(),
             },
         })
