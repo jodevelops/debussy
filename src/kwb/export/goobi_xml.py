@@ -428,14 +428,40 @@ def dataframe_to_goobi_xml_files(
     Write one XML file per record to output_dir.
 
     Returns list of written file paths.
+
+    Raises ValueError if filename sanitization produces collisions
+    (e.g. "obj 001" and "obj/001" both become "obj_001").
     """
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    written = []
+    # EXP-BUG-04: Build record_id -> safe_filename mapping upfront, detect collisions.
+    record_to_safe_id: dict[str, str] = {}
+    safe_id_to_records: dict[str, list[str]] = {}
+
     for _, row in df.iterrows():
         record_id = str(row.get("record_id", f"row_{_}"))
         safe_id = re.sub(r"[^\w\-]", "_", record_id)
+
+        record_to_safe_id[record_id] = safe_id
+        safe_id_to_records.setdefault(safe_id, []).append(record_id)
+
+    # Check for collisions
+    collisions = {safe_id: ids for safe_id, ids in safe_id_to_records.items() if len(ids) > 1}
+    if collisions:
+        details = "; ".join(
+            f"'{safe_id}': {ids}" for safe_id, ids in collisions.items()
+        )
+        raise ValueError(
+            f"Filename collision detected in record IDs. "
+            f"The following sanitized filenames would overwrite each other: {details}"
+        )
+
+    # Write files
+    written = []
+    for _, row in df.iterrows():
+        record_id = str(row.get("record_id", f"row_{_}"))
+        safe_id = record_to_safe_id[record_id]
 
         dict_lookup = {e.term.lower(): e for e in workspace.dictionary}
         elem = record_to_xml(

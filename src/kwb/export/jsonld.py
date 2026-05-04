@@ -160,7 +160,7 @@ def export_jsonld(
     df: pd.DataFrame,
     workspace: "Workspace",
     *,
-    base_url: str = "https://example.org/collection/",
+    base_url: str | None = None,
     limit: int | None = None,
 ) -> str:
     """
@@ -170,11 +170,21 @@ def export_jsonld(
     ----------
     df:        Source DataFrame
     workspace: Workspace with field_mapping, entity_reviews, dates
-    base_url:  Base URI for record identifiers
+    base_url:  Base URI for record identifiers (required; read from workspace if not provided)
     limit:     Maximum records to export (None = all)
 
     Returns a formatted JSON-LD string.
+
+    Raises ExportError if base_url is not provided and not set in workspace.
     """
+    # EXP-BUG-06: Require base_url to prevent placeholder URIs
+    if base_url is None:
+        base_url = workspace.base_url
+    if not base_url or base_url.startswith("https://example.org"):
+        raise ValueError(
+            "base_url must be set on the workspace before JSON-LD export. "
+            "Placeholder URIs (https://example.org) are not allowed for publishing."
+        )
     id_col = workspace.id_column or (df.columns[0] if len(df.columns) > 0 else "record_id")
     active_mappings = workspace.active_mappings()
 
