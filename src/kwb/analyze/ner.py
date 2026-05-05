@@ -83,6 +83,7 @@ class NERResult:
     """Result of NER on one dataset."""
     entities: list[Entity] = field(default_factory=list)
     batch_report: BatchReport | None = None
+    completion_summary: dict | None = None
 
     @property
     def by_type(self) -> dict[EntityType, list[Entity]]:
@@ -235,6 +236,7 @@ def ner_llm(
     )
 
     entities = []
+    parse_failures = []
     for result in batch.results:
         if result.parsed and "entities" in result.parsed:
             for ent_data in result.parsed["entities"]:
@@ -250,6 +252,8 @@ def ner_llm(
                     source="llm",
                     record_id=result.record_id,
                 ))
+        elif not result.parsed:
+            parse_failures.append(result.record_id)
     return entities, batch
 
 
@@ -360,6 +364,21 @@ def ner_hybrid(
             if k not in llm_map or e.confidence > llm_map[k].confidence:
                 llm_map[k] = e
         result.batch_report = batch
+
+        # Build completion summary for batch processing
+        # Count records with successful parses (not entities)
+        total_items = len(texts)
+        successful_parses = sum(
+            1 for r in batch.results
+            if r.parsed and "entities" in r.parsed
+        )
+        failed_parses = total_items - successful_parses
+        result.completion_summary = {
+            "total_items": total_items,
+            "successful_parses": successful_parses,
+            "failed_parses": failed_parses,
+            "success_rate": round(successful_parses / total_items, 3) if total_items > 0 else 0.0,
+        }
 
     # Merge: start with SpaCy, upgrade overlaps to hybrid/llm
     merged: dict[str, Entity] = dict(spacy_map)
