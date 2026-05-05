@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import uuid as _uuid
 from dataclasses import dataclass
-from datetime import datetime
 from enum import Enum
+
+from kwb.core.utils import utc_now_iso
 
 
 class TaskStatus(str, Enum):
@@ -51,17 +52,17 @@ class CurationTask:
         if not self.task_id:
             self.task_id = str(_uuid.uuid4())[:8]
         if not self.created_at:
-            self.created_at = datetime.utcnow().isoformat()
+            self.created_at = utc_now_iso()
 
     def complete(self, note: str = "") -> None:
         self.status = TaskStatus.DONE
-        self.completed_at = datetime.utcnow().isoformat()
+        self.completed_at = utc_now_iso()
         if note:
             self.note = note
 
     def skip(self, note: str = "") -> None:
         self.status = TaskStatus.SKIPPED
-        self.completed_at = datetime.utcnow().isoformat()
+        self.completed_at = utc_now_iso()
         if note:
             self.note = note
 

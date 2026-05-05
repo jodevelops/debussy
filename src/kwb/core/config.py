@@ -53,11 +53,16 @@ class KWBConfig:
         )
 
     def save_to_dotenv(self, path=None) -> None:
-        """Write/update GPUStack vars in a .env file.
+        """Write/update **all** managed config keys in a .env file.
 
-        Only the four GPUStack fields are written; all other lines are preserved.
+        Round-trips with ``load_config``: every key that ``load_config`` reads
+        is also written here, so a sequence of
+        ``load_config → save_to_dotenv → load_config`` preserves the full
+        configuration. Comments and unrelated lines are kept verbatim.
+
         If *path* is None the same search order as ``_load_dotenv`` is used;
-        if no .env exists at all a new one is created in the current directory.
+        if no .env exists at all a new one is created in the current
+        directory.
         """
         if path is None:
             for candidate in [Path.cwd(), Path.cwd().parent,
@@ -70,11 +75,23 @@ class KWBConfig:
                 path = Path.cwd() / ".env"
 
         path = Path(path)
-        mapping = {
+        # Mirror of ``load_config``: every env var read there must round-trip
+        # through here. Order kept stable so generated .env files are
+        # diff-friendly.
+        mapping: dict[str, str] = {
             "KWB_GPUSTACK_URL": self.gpustack_url,
             "KWB_GPUSTACK_KEY": self.gpustack_key,
             "KWB_GPUSTACK_MODEL_TEXT": self.gpustack_model_text,
             "KWB_GPUSTACK_MODEL_VISION": self.gpustack_model_vision,
+            "KWB_GEONAMES_USERNAME": self.geonames_username,
+            "KWB_GOOBI_API_URL": self.goobi_api_url,
+            "KWB_GOOBI_API_KEY": self.goobi_api_key,
+            "KWB_GOOBI_PROJECT": self.goobi_project,
+            "KWB_BATCH_SIZE": str(self.batch_size),
+            "KWB_BATCH_DELAY": str(self.batch_delay_seconds),
+            "KWB_MAX_RETRIES": str(self.max_retries),
+            "KWB_TIMEOUT": str(self.timeout_seconds),
+            "KWB_LANGUAGE": self.language,
         }
 
         existing_lines: list[str] = []

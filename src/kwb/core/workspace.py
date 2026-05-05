@@ -18,10 +18,20 @@ from __future__ import annotations
 import json
 import uuid as _uuid
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from kwb.core.models import ReviewStatus
+from kwb.core.utils import utc_now_iso
+
+__all__ = [
+    "GoobiMetadataType", "FieldMapping",
+    "DictionaryType", "DictionaryEntry",
+    "ReviewStatus", "ImageReviewStatus",
+    "AuthorityCandidate", "EntityReview", "CuratedEntity",
+    "CuratedDate", "ImageAnalysisResult", "Workspace",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -209,13 +219,6 @@ class DictionaryEntry:
 # Entity Review Status
 # ---------------------------------------------------------------------------
 
-class ReviewStatus(str, Enum):
-    PENDING  = "pending"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    MERGED   = "merged"
-
-
 class ImageReviewStatus(str, Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
@@ -245,12 +248,12 @@ class AuthorityCandidate:
     def accept(self, note: str = "") -> None:
         self.status = ReviewStatus.ACCEPTED
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewed_at = utc_now_iso()
 
     def reject(self, note: str = "") -> None:
         self.status = ReviewStatus.REJECTED
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewed_at = utc_now_iso()
 
     def to_dict(self) -> dict:
         return {
@@ -307,12 +310,12 @@ class EntityReview:
         self.gnd_id = gnd_id
         self.gnd_preferred = gnd_preferred
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewed_at = utc_now_iso()
 
     def reject(self, note: str = "") -> None:
         self.status = ReviewStatus.REJECTED
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewed_at = utc_now_iso()
 
     @property
     def dedup_key(self) -> tuple[str, str]:
@@ -461,7 +464,7 @@ class ImageAnalysisResult:
             if not isinstance(self.result, dict):
                 self.result = {}
             self.result.update(result_updates)
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewed_at = utc_now_iso()
     def to_dict(self) -> dict:
         return {
             "image_id": self.image_id,
@@ -532,8 +535,8 @@ class Workspace:
         id_column: str = "record_id",
     ):
         self.name = name
-        self.created_at = created_at or datetime.utcnow().isoformat()
-        self.updated_at = updated_at or datetime.utcnow().isoformat()
+        self.created_at = created_at or utc_now_iso()
+        self.updated_at = updated_at or utc_now_iso()
         self.source_file = source_file
         self.id_column = id_column
 
@@ -946,20 +949,14 @@ class Workspace:
             "duration": duration,
             "prompt_name": prompt_name,
             "prompt_version": prompt_version,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_iso(),
         })
 
-    def image_review_stats(self) -> dict[str, int]:
-        stats = {"pending": 0, "approved": 0, "rejected": 0, "total": len(self.image_analyses)}
-        for result in self.image_analyses:
-            status = result.review_status or "pending"
-            if status not in stats:
-                continue
-            stats[status] += 1
-        return stats
-
     def has_pending_ai_suggestions(self) -> bool:
-        return any((r.review_status or "pending") == "pending" for r in self.image_analyses)
+        return any(
+            r.review_status == ImageReviewStatus.PENDING
+            for r in self.image_analyses
+        )
 
     # ------------------------------------------------------------------
     # Summary
@@ -988,7 +985,7 @@ class Workspace:
     # ------------------------------------------------------------------
 
     def _touch(self) -> None:
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = utc_now_iso()
 
     def to_dict(self) -> dict:
         # Serialize field_mapping
