@@ -1,0 +1,509 @@
+{
+  "_comment": "Audit-ID -> GitHub-issue lookup. Edit 'unclear' manually: pick a github_number and move into 'confident'. Then run 'apply'.",
+  "repo": "jodevelops/debussy",
+  "confident": {
+    "AI-BUG-01": {
+      "github_number": 139,
+      "github_title": "`process_batch` catches `Exception` broadly; `KeyboardInterrupt` and `SystemExit` are swallowed only by accident",
+      "audit_title": "`process_batch` catches `Exception` broadly; `KeyboardInterrupt` and `SystemExit` are swallowed only by accident",
+      "score": 1.0
+    },
+    "AI-BUG-02": {
+      "github_number": 140,
+      "github_title": "`BatchReport` does not record which `prompt_fn` was used; results from different runs are indistinguishable",
+      "audit_title": "`BatchReport` does not record which `prompt_fn` was used; results from different runs are indistinguishable",
+      "score": 1.0
+    },
+    "AI-BUG-03": {
+      "github_number": 141,
+      "github_title": "`delay_seconds=0.0` default plus no per-provider rate-limit awareness leads to API bans on real workloads",
+      "audit_title": "`delay_seconds=0.0` default plus no per-provider rate-limit awareness leads to API bans on real workloads",
+      "score": 1.0
+    },
+    "AI-BUG-04": {
+      "github_number": 142,
+      "github_title": "`gpustack.py` HTTP retry loop has a fall-through bug; on 429 it never re-raises after exhausting retries",
+      "audit_title": "`gpustack.py` HTTP retry loop has a fall-through bug; on 429 it never re-raises after exhausting retries",
+      "score": 1.0
+    },
+    "AI-BUG-05": {
+      "github_number": 143,
+      "github_title": "`ollama.py` `is_available()` returns `True` on any 200 response from `/`; doesn't actually verify Ollama is the responder",
+      "audit_title": "`ollama.py` `is_available()` returns `True` on any 200 response from `/`; doesn't actually verify Ollama is the responder",
+      "score": 1.0
+    },
+    "AI-BUG-06": {
+      "github_number": 144,
+      "github_title": "`MockProvider.with_defaults()` rule order can mask vision detection on non-vision inputs that contain \"klassif\"",
+      "audit_title": "`MockProvider.with_defaults()` rule order can mask vision detection on non-vision inputs that contain \"klassif\"",
+      "score": 1.0
+    },
+    "AI-BUG-07": {
+      "github_number": 145,
+      "github_title": "`_message_to_dict` silently drops content parts of unknown type",
+      "audit_title": "`_message_to_dict` silently drops content parts of unknown type",
+      "score": 1.0
+    },
+    "AI-BUG-08": {
+      "github_number": 146,
+      "github_title": "Duplicate `_message_to_dict` in `gpustack.py` and `ollama.py` will drift; OpenAI compat is fragile",
+      "audit_title": "Duplicate `_message_to_dict` in `gpustack.py` and `ollama.py` will drift; OpenAI compat is fragile",
+      "score": 1.0
+    },
+    "AI-BUG-09": {
+      "github_number": 147,
+      "github_title": "`ProviderConfig` has no `provider_type` field; misconfiguration produces wrong-API errors",
+      "audit_title": "`ProviderConfig` has no `provider_type` field; misconfiguration produces wrong-API errors",
+      "score": 1.0
+    },
+    "AI-ENH-01": {
+      "github_number": 148,
+      "github_title": "Prompts as data, not constants; users cannot see, edit, or version them today",
+      "audit_title": "Prompts as data, not constants; users cannot see, edit, or version them today",
+      "score": 0.8
+    },
+    "AI-ENH-02": {
+      "github_number": 149,
+      "github_title": "Provider error taxonomy; users see raw HTTP errors and cannot triage",
+      "audit_title": "Provider error taxonomy; users see raw HTTP errors and cannot triage",
+      "score": 0.8
+    },
+    "AI-ENH-03": {
+      "github_number": 150,
+      "github_title": "`system_prompt=\"\"` override pattern is implicit and untested; users cannot tell if their override took effect",
+      "audit_title": "`system_prompt=\"\"` override pattern is implicit and untested; users cannot tell if their override took effect",
+      "score": 1.0
+    },
+    "AI-ENH-04": {
+      "github_number": 151,
+      "github_title": "No \"test connection\" workflow that exercises the actual task path; users only test connectivity, not capability",
+      "audit_title": "No \"test connection\" workflow that exercises the actual task path; users only test connectivity, not capability",
+      "score": 0.8
+    },
+    "AI-ENH-05": {
+      "github_number": 152,
+      "github_title": "`prompt_describe_image` and `prompt_image_description` are aliases; same for `prompt_ocr_analysis` and `prompt_ocr_transcription_quality`",
+      "audit_title": "`prompt_describe_image` and `prompt_image_description` are aliases; same for `prompt_ocr_analysis` and `prompt_ocr_transcription_quality`",
+      "score": 1.0
+    },
+    "AI-ENH-06": {
+      "github_number": 153,
+      "github_title": "`MockProvider.with_quality_check_responses()` is 100+ lines of hardcoded GIUB-flavored test data inside `mock.py`",
+      "audit_title": "`MockProvider.with_quality_check_responses()` is 100+ lines of hardcoded GIUB-flavored test data inside `mock.py`",
+      "score": 1.0
+    },
+    "AI-ENH-07": {
+      "github_number": 154,
+      "github_title": "No streaming support; long generations block the UI for tens of seconds with no feedback",
+      "audit_title": "No streaming support; long generations block the UI for tens of seconds with no feedback",
+      "score": 0.8
+    },
+    "AI-ENH-08": {
+      "github_number": 155,
+      "github_title": "`temperature=0.0` everywhere is undocumented; users cannot tune determinism / creativity tradeoff",
+      "audit_title": "`temperature=0.0` everywhere is undocumented; users cannot tune determinism / creativity tradeoff",
+      "score": 0.8
+    },
+    "CORE-BUG-01": {
+      "github_number": 101,
+      "github_title": "Duplicate `image_review_stats()` method on Workspace",
+      "audit_title": "Duplicate `image_review_stats()` method on Workspace",
+      "score": 1.0
+    },
+    "CORE-BUG-02": {
+      "github_number": 102,
+      "github_title": "Two distinct `ReviewStatus` enums with the same name",
+      "audit_title": "Two distinct `ReviewStatus` enums with the same name",
+      "score": 0.8
+    },
+    "CORE-BUG-03": {
+      "github_number": 103,
+      "github_title": "`field_mapping` and `dictionary` properties have dual list/dict storage",
+      "audit_title": "`field_mapping` and `dictionary` properties have dual list/dict storage",
+      "score": 1.0
+    },
+    "CORE-BUG-04": {
+      "github_number": 104,
+      "github_title": "Silent JSON load failure in `UserStore` can silently re-create default admin",
+      "audit_title": "Silent JSON load failure in `UserStore` can silently re-create default admin",
+      "score": 0.8
+    },
+    "CORE-BUG-05": {
+      "github_number": 105,
+      "github_title": "Default admin password `\"debussy\"` with no warning",
+      "audit_title": "Default admin password `\"debussy\"` with no warning",
+      "score": 0.8
+    },
+    "CORE-BUG-06": {
+      "github_number": 106,
+      "github_title": "`KWBConfig.save_to_dotenv` saves only 4 of 14 config keys",
+      "audit_title": "`KWBConfig.save_to_dotenv` saves only 4 of 14 config keys",
+      "score": 1.0
+    },
+    "CORE-BUG-07": {
+      "github_number": 107,
+      "github_title": "Deprecated `datetime.utcnow()` used throughout core",
+      "audit_title": "Deprecated `datetime.utcnow()` used throughout core",
+      "score": 1.0
+    },
+    "CORE-ENH-01": {
+      "github_number": 108,
+      "github_title": "Consolidate three coexisting \"report\" model generations",
+      "audit_title": "Consolidate three coexisting \"report\" model generations",
+      "score": 0.8
+    },
+    "CORE-ENH-02": {
+      "github_number": 109,
+      "github_title": "Phase 3 review types appear disconnected from earlier strata",
+      "audit_title": "Phase 3 review types appear disconnected from earlier strata",
+      "score": 0.8
+    },
+    "CORE-ENH-03": {
+      "github_number": 110,
+      "github_title": "Provenance fields are inconsistent across extraction result types",
+      "audit_title": "Provenance fields are inconsistent across extraction result types",
+      "score": 0.8
+    },
+    "CORE-ENH-04": {
+      "github_number": 111,
+      "github_title": "Workspace is a fragmented fact store; consolidate into a unified model",
+      "audit_title": "Workspace is a fragmented fact store; consolidate into a unified model",
+      "score": 0.8
+    },
+    "CORE-ENH-05": {
+      "github_number": 112,
+      "github_title": "`mds.py` field list does not match Fachkonzept MDS list",
+      "audit_title": "`mds.py` field list does not match Fachkonzept MDS list",
+      "score": 1.0
+    },
+    "CORE-ENH-06": {
+      "github_number": 113,
+      "github_title": "Generalize `tasks.py` from MDS gaps to FK field gaps",
+      "audit_title": "Generalize `tasks.py` from MDS gaps to FK field gaps",
+      "score": 1.0
+    },
+    "CORE-ENH-07": {
+      "github_number": 114,
+      "github_title": "Complete the service-protocol abstraction",
+      "audit_title": "Complete the service-protocol abstraction",
+      "score": 0.8
+    },
+    "EDTF-BUG-01": {
+      "github_number": 156,
+      "github_title": "`_RANGE` and `_RANGE_TEXT` patterns produce wrong EDTF when one year is approximate but not the other",
+      "audit_title": "`_RANGE` and `_RANGE_TEXT` patterns produce wrong EDTF when one year is approximate but not the other",
+      "score": 0.8
+    },
+    "EDTF-BUG-02": {
+      "github_number": 157,
+      "github_title": "Combined uncertainty markers (`[ca. 1920]`, `1920?-1925`) not handled",
+      "audit_title": "Combined uncertainty markers (`[ca. 1920]`, `1920?-1925`) not handled",
+      "score": 0.8
+    },
+    "EDTF-BUG-03": {
+      "github_number": 158,
+      "github_title": "`_CENTURY` rule converts \"19. Jh.\" to `18XX` (correct) but no handling of \"19./20. Jh.\" (cross-century)",
+      "audit_title": "`_CENTURY` rule converts \"19. Jh.\" to `18XX` (correct) but no handling of \"19./20. Jh.\" (cross-century)",
+      "score": 0.8
+    },
+    "EDTF-BUG-04": {
+      "github_number": 159,
+      "github_title": "`_POSITION_CENTURY` only catches a few qualifier words; \"frühes 19. Jh.\", \"spätes 19. Jh.\" not matched",
+      "audit_title": "`_POSITION_CENTURY` only catches a few qualifier words; \"frühes 19. Jh.\", \"spätes 19. Jh.\" not matched",
+      "score": 0.8
+    },
+    "EDTF-BUG-05": {
+      "github_number": 160,
+      "github_title": "`_RANGE` does not handle BCE / \"v. Chr.\"",
+      "audit_title": "`_RANGE` does not handle BCE / \"v. Chr.\"",
+      "score": 0.8
+    },
+    "EDTF-BUG-06": {
+      "github_number": 161,
+      "github_title": "`_FULL_DATE_DE` accepts `\"32.13.2020\"` (invalid date) without validation",
+      "audit_title": "`_FULL_DATE_DE` accepts `\"32.13.2020\"` (invalid date) without validation",
+      "score": 0.8
+    },
+    "EDTF-BUG-07": {
+      "github_number": 162,
+      "github_title": "`_ISO_YEAR` accepts `\"0000\"`; EDTF spec is ambiguous",
+      "audit_title": "`_ISO_YEAR` accepts `\"0000\"`; EDTF spec is ambiguous",
+      "score": 0.8
+    },
+    "EDTF-ENH-01": {
+      "github_number": 163,
+      "github_title": "`EDTF` pattern coverage is invisible to users; no listing of supported / unsupported inputs",
+      "audit_title": "Pattern coverage is invisible to users; no listing of supported / unsupported inputs",
+      "score": 0.79
+    },
+    "EDTF-ENH-02": {
+      "github_number": 164,
+      "github_title": "`EDTFResult` lacks the original-input position when from batch; users cannot trace back to source row",
+      "audit_title": "`EDTFResult` lacks the original-input position when from batch; users cannot trace back to source row",
+      "score": 0.8
+    },
+    "EDTF-ENH-03": {
+      "github_number": 165,
+      "github_title": "Hybrid path silently routes valid-but-low-confidence rules to LLM; user cannot see which path produced the result",
+      "audit_title": "Hybrid path silently routes valid-but-low-confidence rules to LLM; user cannot see which path produced the result",
+      "score": 0.8
+    },
+    "EXT-BUG-01": {
+      "github_number": 115,
+      "github_title": "Batch sampling silently drops records when LLM calls fail; user sees no warning",
+      "audit_title": "Batch sampling silently drops records when LLM calls fail; user sees no warning",
+      "score": 0.8
+    },
+    "EXT-BUG-02": {
+      "github_number": 116,
+      "github_title": "JSON parse failures from LLM are silently dropped instead of flagged",
+      "audit_title": "JSON parse failures from LLM are silently dropped instead of flagged",
+      "score": 0.8
+    },
+    "EXT-BUG-03": {
+      "github_number": 117,
+      "github_title": "Random sampling with `random_state=42` is invisible and irreproducible from user perspective",
+      "audit_title": "Random sampling with `random_state=42` is invisible and irreproducible from user perspective",
+      "score": 1.0
+    },
+    "EXT-BUG-04": {
+      "github_number": 118,
+      "github_title": "Bare `except` in `_get_affected_ids` swallows all errors silently",
+      "audit_title": "`bare except` in `_get_affected_ids` swallows all errors silently",
+      "score": 0.996
+    },
+    "EXT-BUG-05": {
+      "github_number": 119,
+      "github_title": "Findings show capped record-id samples without indicating they are samples",
+      "audit_title": "Findings show capped record-id samples without indicating they are samples",
+      "score": 0.8
+    },
+    "EXT-BUG-06": {
+      "github_number": 120,
+      "github_title": "Hardcoded subject column `subject_extract_original` makes `classify_subjects` GIUB-specific",
+      "audit_title": "Hardcoded subject column `subject_extract_original` makes `classify_subjects` GIUB-specific",
+      "score": 1.0
+    },
+    "EXT-BUG-07": {
+      "github_number": 121,
+      "github_title": "`parse_gnd_columns` hardcodes `named_entity_N` schema (max 11) without configurability",
+      "audit_title": "`parse_gnd_columns` hardcodes `named_entity_N` schema (max 11) without configurability",
+      "score": 1.0
+    },
+    "EXT-BUG-08": {
+      "github_number": 122,
+      "github_title": "`confidence: 0.8` hardcoded in `LobidGNDClient.search` regardless of actual match quality",
+      "audit_title": "`confidence: 0.8` hardcoded in `LobidGNDClient.search` regardless of actual match quality",
+      "score": 1.0
+    },
+    "EXT-BUG-09": {
+      "github_number": 123,
+      "github_title": "Confidence values mean different things in different modules; no documented scale",
+      "audit_title": "Confidence values mean different things in different modules; no documented scale",
+      "score": 0.8
+    },
+    "EXT-BUG-10": {
+      "github_number": 124,
+      "github_title": "`_normalize_dates_llm` rebuilds original text via fragile inline expression",
+      "audit_title": "`_normalize_dates_llm` rebuilds original text via fragile inline expression",
+      "score": 1.0
+    },
+    "EXT-ENH-01": {
+      "github_number": 125,
+      "github_title": "Every result needs a \"where did this come from\" panel the user can open",
+      "audit_title": "Every result needs a \"where did this come from\" panel the user can open",
+      "score": 0.8
+    },
+    "EXT-ENH-02": {
+      "github_number": 126,
+      "github_title": "Run history per dataset; users need to compare and re-run",
+      "audit_title": "Run history per dataset; users need to compare and re-run",
+      "score": 0.8
+    },
+    "EXT-ENH-03": {
+      "github_number": 127,
+      "github_title": "Dashboard is technique-organised; users think in collection workflows",
+      "audit_title": "Dashboard is technique-organised; users think in collection workflows",
+      "score": 0.8
+    },
+    "EXT-ENH-04": {
+      "github_number": 128,
+      "github_title": "Model selection lacks guidance; users don't know which model to pick for which task",
+      "audit_title": "Model selection lacks guidance; users don't know which model to pick for which task",
+      "score": 0.8
+    },
+    "EXT-ENH-05": {
+      "github_number": 129,
+      "github_title": "Confidence and severity need user-facing explanations; raw numbers and enum values are inscrutable",
+      "audit_title": "Confidence and severity need user-facing explanations; raw numbers and enum values are inscrutable",
+      "score": 0.8
+    },
+    "EXT-ENH-06": {
+      "github_number": 130,
+      "github_title": "`scan_problematic_terms` mixes 10 columns into one prompt; single colonial term hides among neutral ones",
+      "audit_title": "`scan_problematic_terms` mixes 10 columns into one prompt; single colonial term hides among neutral ones",
+      "score": 1.0
+    },
+    "EXT-ENH-07": {
+      "github_number": 131,
+      "github_title": "`_FIELD_SEMANTICS` dictionary in `llm_quality.py` is monolingual, English/German-mixed, and not user-extensible",
+      "audit_title": "`_FIELD_SEMANTICS` dictionary in `llm_quality.py` is monolingual, English/German-mixed, and not user-extensible",
+      "score": 1.0
+    },
+    "EXT-ENH-08": {
+      "github_number": 132,
+      "github_title": "Prompts have no visible version; users cannot tell which prompt produced an old result",
+      "audit_title": "Prompts have no visible version; users cannot tell which prompt produced an old result",
+      "score": 0.8
+    },
+    "EXT-ENH-09": {
+      "github_number": 133,
+      "github_title": "`parse_confidence(\"70%\")` interpreted as 0.70, but no UI affordance shows users the conversion",
+      "audit_title": "`parse_confidence(\"70%\")` interpreted as 0.70, but no UI affordance shows users the conversion",
+      "score": 1.0
+    },
+    "EXT-ENH-10": {
+      "github_number": 134,
+      "github_title": "`flag_low_confidence` threshold of 0.75 is hardcoded; users cannot adjust per dataset",
+      "audit_title": "`flag_low_confidence` threshold of 0.75 is hardcoded; users cannot adjust per dataset",
+      "score": 1.0
+    },
+    "EXT-ENH-11": {
+      "github_number": 135,
+      "github_title": "`geonames_search` defaults to `username=\"demo\"` which silently rate-limits or fails",
+      "audit_title": "`geonames_search` defaults to `username=\"demo\"` which silently rate-limits or fails",
+      "score": 1.0
+    },
+    "EXT-ENH-12": {
+      "github_number": 136,
+      "github_title": "Wikidata SPARQL queries are German-locked via hardcoded `lang=\"de\"` defaults; multilingual collections suffer",
+      "audit_title": "Wikidata SPARQL queries are German-locked via hardcoded `lang=\"de\"` defaults; multilingual collections suffer",
+      "score": 0.8
+    },
+    "EXT-ENH-13": {
+      "github_number": 137,
+      "github_title": "`EDTF` rule patterns not yet audited; full coverage matrix needed",
+      "audit_title": "`EDTF` rule patterns not yet audited; full coverage matrix needed",
+      "score": 0.8
+    },
+    "EXT-ENH-14": {
+      "github_number": 138,
+      "github_title": "Tests assert structural shape but rarely assert output correctness on realistic data",
+      "audit_title": "Tests assert structural shape but rarely assert output correctness on realistic data",
+      "score": 0.8
+    },
+    "ING-BUG-01": {
+      "github_number": 166,
+      "github_title": "Encoding detection silently falls back to \"utf-8\" when chardet is missing; users see Mojibake without warning",
+      "audit_title": "Encoding detection silently falls back to \"utf-8\" when chardet is missing; users see Mojibake without warning",
+      "score": 0.8
+    },
+    "ING-BUG-02": {
+      "github_number": 167,
+      "github_title": "Encoding fallback chain decodes Mojibake without flagging it",
+      "audit_title": "Encoding fallback chain decodes Mojibake without flagging it",
+      "score": 0.8
+    },
+    "ING-BUG-03": {
+      "github_number": 168,
+      "github_title": "`detect_id_column` silently returns the *first* unique column it finds, which can be the wrong one",
+      "audit_title": "`detect_id_column` silently returns the *first* unique column it finds, which can be the wrong one",
+      "score": 1.0
+    },
+    "ING-BUG-04": {
+      "github_number": 169,
+      "github_title": "`MAX_ROWS = 50_000` is hardcoded; users with larger datasets get an opaque error",
+      "audit_title": "`MAX_ROWS = 50_000` is hardcoded; users with larger datasets get an opaque error",
+      "score": 0.8
+    },
+    "ING-BUG-05": {
+      "github_number": 170,
+      "github_title": "`ingest_image` silently swallows hash and dimension extraction errors with bare `except`",
+      "audit_title": "`ingest_image` silently swallows hash and dimension extraction errors with bare `except`",
+      "score": 1.0
+    },
+    "ING-BUG-06": {
+      "github_number": 171,
+      "github_title": "`_detect_mime` returns `\"application/octet-stream\"` for unrecognised image bytes; downstream treats them as images anyway",
+      "audit_title": "`_detect_mime` returns `\"application/octet-stream\"` for unrecognised image bytes; downstream treats them as images anyway",
+      "score": 1.0
+    },
+    "ING-BUG-07": {
+      "github_number": 172,
+      "github_title": "`pdf_loader._load_with_pypdf` returns base64 of the *entire PDF* on page 1 only, then empty strings — confusing fallback semantics",
+      "audit_title": "`pdf_loader._load_with_pypdf` returns base64 of the *entire PDF* on page 1 only, then empty strings — confusing fallback semantics",
+      "score": 1.0
+    },
+    "ING-BUG-08": {
+      "github_number": 173,
+      "github_title": "`xml_loader` falls through three different namespace strategies; the third one matches *anything tagged \"mods\"*, including non-MODS XML",
+      "audit_title": "`xml_loader` falls through three different namespace strategies; the third one matches *anything tagged \"mods\"*, including non-MODS XML",
+      "score": 1.0
+    },
+    "ING-BUG-09": {
+      "github_number": 174,
+      "github_title": "`xml_loader._extract_mods_record` extracts only the first matching element and silently drops repeated MODS structures",
+      "audit_title": "`xml_loader._extract_mods_record` extracts only the first matching element and silently drops repeated MODS structures",
+      "score": 1.0
+    },
+    "ING-BUG-10": {
+      "github_number": 175,
+      "github_title": "`_NULLISH` set in `xlsx_loader` does not match `csv_loader`; the same string `\"N/A\"` produces different results between formats",
+      "audit_title": "`_NULLISH` set in `xlsx_loader` does not match `csv_loader`; the same string `\"N/A\"` produces different results between formats",
+      "score": 1.0
+    },
+    "ING-BUG-11": {
+      "github_number": 176,
+      "github_title": "`xlsx_loader` and `xml_loader` import internals from `csv_loader` (private-ish helpers); refactor would break them",
+      "audit_title": "`xlsx_loader` and `xml_loader` import internals from `csv_loader` (private-ish helpers); refactor would break them",
+      "score": 1.0
+    },
+    "ING-ENH-01": {
+      "github_number": 177,
+      "github_title": "No \"ingest preview\" step; users have no opportunity to confirm encoding, ID column, or column types before commitment",
+      "audit_title": "No \"ingest preview\" step; users have no opportunity to confirm encoding, ID column, or column types before commitment",
+      "score": 0.8
+    },
+    "ING-ENH-02": {
+      "github_number": 178,
+      "github_title": "No folder-drop ingest; the architecture document mentioned \"alle Daten in einen Ordner werfen\" but no such code exists",
+      "audit_title": "No folder-drop ingest; the architecture document mentioned \"alle Daten in einen Ordner werfen\" but no such code exists",
+      "score": 0.8
+    },
+    "ING-ENH-03": {
+      "github_number": 179,
+      "github_title": "`DatasetProfile` does not record loader version, ingest timestamp, or chosen options",
+      "audit_title": "`DatasetProfile` does not record loader version, ingest timestamp, or chosen options",
+      "score": 0.8
+    },
+    "ING-ENH-04": {
+      "github_number": 180,
+      "github_title": "Dependency requirements (`chardet`, `pdf2image`, `pypdf`, `openpyxl`) checked late and per-call; a \"system check\" view would prevent surprise",
+      "audit_title": "Dependency requirements (`chardet`, `pdf2image`, `pypdf`, `openpyxl`) checked late and per-call; a \"system check\" view would prevent surprise",
+      "score": 0.8
+    },
+    "ING-ENH-05": {
+      "github_number": 181,
+      "github_title": "`csv_loader.split_multivalued` is the only multi-value handler; XLSX and XML have no equivalent",
+      "audit_title": "`csv_loader.split_multivalued` is the only multi-value handler; XLSX and XML have no equivalent",
+      "score": 1.0
+    },
+    "ING-ENH-06": {
+      "github_number": 182,
+      "github_title": "`image_loader.ingest_image` always loads base64 by default, which is wasteful for directory scans",
+      "audit_title": "`image_loader.ingest_image` always loads base64 by default, which is wasteful for directory scans",
+      "score": 1.0
+    },
+    "ING-ENH-07": {
+      "github_number": 183,
+      "github_title": "XML loader hard-codes English MODS field names but data is bilingual; users see English column headers next to German content",
+      "audit_title": "XML loader hard-codes English MODS field names but data is bilingual; users see English column headers next to German content",
+      "score": 0.8
+    }
+  },
+  "unclear": {},
+  "no_match": [
+    "EXT-BUG-11"
+  ],
+  "duplicates_detected": {}
+}
