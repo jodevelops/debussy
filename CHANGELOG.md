@@ -36,9 +36,9 @@ Sektionen:
 ### Behoben
 - NER-LLM-Batch-Ausfallquoten waren nicht sichtbar; nun werden sie in
   `completion_summary` surfaced für Monitoring und Debugging. (#116)
-- Bare `except: pass` in `_get_affected_ids()` konnte legitime Exceptions
-  wie IndexError/KeyError verschlucken; now catches nur (IndexError, KeyError,
-  ValueError). (#118)
+- Bare `except:` in `_get_affected_ids()` konnte legitime Exceptions
+  wie pandas.errors.IndexingError verschlucken; now catches spezifisch
+  (IndexError, KeyError, ValueError, pandas.errors.IndexingError). (#118)
 - LobidGND-Matches wurden alle mit 0.8 Konfidenz gerankt, egal ob 1. oder
   5. Treffer — ist jetzt rank-sensitiv (1.0 für 1., 0.8 für 2., etc.). (#122)
 - `_normalize_dates_llm()` hatte O(n²)-Komplexität beim Lookup von Input-Texts
@@ -51,6 +51,14 @@ Die Audit-Arbeit folgt der etablierten Struktur:
 - Regression-Tests für alle Fixes
 - Dokumentation in CHANGELOG und Docstrings
 - Keine großen Umstrukturierungen, nur Stabilisierung
+
+Siehe `debussy-core-audit-issues.md` für die vollständige Sequenzierung.
+
+---
+
+## [0.6.1] — 2026-05 (Phase 1a — Core Stabilization)
+
+### Hinzugefügt
 - **`kwb.core.utils.utc_now_iso()`** — zentraler Helper für UTC-Zeitstempel
   mit Timezone-Offset. Single source of truth für alle persistierten
   Timestamps. Ersetzt das deprecated `datetime.utcnow()` projektweit.
