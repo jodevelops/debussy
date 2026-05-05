@@ -7,7 +7,7 @@ from kwb.analyze.quality_measures import compute_quality_measures
 def _get_affected_ids(df, mask, id_col, limit=10):
     if not id_col or id_col not in df.columns: return []
     try: return df.loc[mask, id_col].head(limit).tolist()
-    except (IndexError, KeyError, ValueError): return []
+    except (IndexError, KeyError, ValueError, pd.errors.IndexingError): return []
 
 def check_missing_values(df, profile):
     findings=[]; dfa=df.replace("",pd.NA)
