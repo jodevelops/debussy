@@ -22,7 +22,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from kwb.core.models import ReviewStatus
+from kwb.core.models import Provenance, ReviewStatus
 from kwb.core.utils import utc_now_iso
 
 __all__ = [
@@ -171,6 +171,18 @@ class DictionaryEntry:
     def has_authority(self) -> bool:
         return bool(self.gnd_id or self.wikidata_id or self.geonames_id)
 
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        return {
+            "source": self.source,
+            "method": self.source,  # source doubles as method here
+            "model": self.model_source,
+            "extracted_at": "",  # not tracked at extraction time
+            "reviewed_at": self.last_edited,
+            "reviewer": "",
+            "note": self.note,
+        }
+
     def add_record_id(self, record_id: str) -> None:
         """Add a record_id if not already present."""
         if record_id and record_id not in self.record_ids:
@@ -240,20 +252,40 @@ class AuthorityCandidate:
     status: ReviewStatus = ReviewStatus.PENDING
     reviewer_note: str = ""
     reviewed_at: str = ""
+    # Provenance fields (CORE-ENH-03)
+    model: str = ""                     # AI model used (if any)
+    extracted_at: str = ""              # When the candidate was discovered
+    reviewer: str = ""                  # Who reviewed
 
     def __post_init__(self):
         if not self.candidate_id:
             self.candidate_id = str(_uuid.uuid4())[:8]
+        if not self.extracted_at:
+            self.extracted_at = utc_now_iso()
 
-    def accept(self, note: str = "") -> None:
+    def accept(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.ACCEPTED
         self.reviewer_note = note
+        self.reviewer = reviewer or self.reviewer
         self.reviewed_at = utc_now_iso()
 
-    def reject(self, note: str = "") -> None:
+    def reject(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.REJECTED
         self.reviewer_note = note
+        self.reviewer = reviewer or self.reviewer
         self.reviewed_at = utc_now_iso()
+
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        return {
+            "source": self.source,
+            "method": "api",  # authority candidates always come from API lookups
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.reviewer_note,
+        }
 
     def to_dict(self) -> dict:
         return {
@@ -269,6 +301,9 @@ class AuthorityCandidate:
             "status": self.status.value,
             "reviewer_note": self.reviewer_note,
             "reviewed_at": self.reviewed_at,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewer": self.reviewer,
         }
 
     @staticmethod
@@ -286,6 +321,9 @@ class AuthorityCandidate:
             status=ReviewStatus(d.get("status", "pending")),
             reviewer_note=d.get("reviewer_note", ""),
             reviewed_at=d.get("reviewed_at", ""),
+            model=d.get("model", ""),
+            extracted_at=d.get("extracted_at", ""),
+            reviewer=d.get("reviewer", ""),
         )
 
 
@@ -304,22 +342,47 @@ class EntityReview:
     reviewer_note: str = ""
     editor_note: str = ""
     reviewed_at: str = ""
+    # Provenance fields (CORE-ENH-03)
+    model: str = ""                     # AI model used (e.g., "qwen3-coder")
+    extracted_at: str = ""              # When the entity was extracted
+    reviewer: str = ""                  # Who reviewed
 
-    def accept(self, gnd_id: str = "", gnd_preferred: str = "", note: str = "") -> None:
+    def __post_init__(self):
+        if not self.extracted_at:
+            self.extracted_at = utc_now_iso()
+
+    def accept(self, gnd_id: str = "", gnd_preferred: str = "",
+               note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.ACCEPTED
         self.gnd_id = gnd_id
         self.gnd_preferred = gnd_preferred
         self.reviewer_note = note
+        self.reviewer = reviewer or self.reviewer
         self.reviewed_at = utc_now_iso()
 
-    def reject(self, note: str = "") -> None:
+    def reject(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.REJECTED
         self.reviewer_note = note
+        self.reviewer = reviewer or self.reviewer
         self.reviewed_at = utc_now_iso()
 
     @property
     def dedup_key(self) -> tuple[str, str]:
         return (self.text.lower(), self.entity_type)
+
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        # Map source ("llm"/"spacy"/"manual") to method
+        method = self.source if self.source in ("llm", "spacy", "rule", "manual") else "ner"
+        return {
+            "source": self.source,
+            "method": method,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.editor_note or self.reviewer_note,
+        }
 
     def to_dict(self) -> dict:
         return {
@@ -334,6 +397,9 @@ class EntityReview:
             "reviewer_note": self.reviewer_note,
             "editor_note": self.editor_note,
             "reviewed_at": self.reviewed_at,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewer": self.reviewer,
         }
 
     @staticmethod
@@ -346,6 +412,9 @@ class EntityReview:
             confidence=float(d.get("confidence", 0)),
             source=d.get("source", ""),
             column=d.get("column", ""),
+            model=d.get("model", ""),
+            extracted_at=d.get("extracted_at", ""),
+            reviewer=d.get("reviewer", ""),
         )
         er.gnd_id = d.get("gnd_id", "")
         er.gnd_preferred = d.get("gnd_preferred", "")
@@ -373,6 +442,31 @@ class CuratedDate:
     record_id: str = ""
     column: str = ""
     note: str = ""
+    # Provenance fields (CORE-ENH-03)
+    source: str = ""                    # "rule" | "llm" | "hybrid" | "manual"
+    model: str = ""                     # AI model used (if any)
+    extracted_at: str = ""              # When the date was normalized
+    reviewed_at: str = ""               # When reviewed (if any)
+    reviewer: str = ""                  # Who reviewed
+
+    def __post_init__(self):
+        if not self.extracted_at:
+            self.extracted_at = utc_now_iso()
+        # Mirror method into source for uniform provenance reads
+        if not self.source and self.method:
+            self.source = self.method
+
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        return {
+            "source": self.source or self.method,
+            "method": self.method,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.note,
+        }
 
     def to_dict(self) -> dict:
         return {
@@ -383,6 +477,11 @@ class CuratedDate:
             "record_id": self.record_id,
             "column": self.column,
             "note": self.note,
+            "source": self.source,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
         }
 
     @staticmethod
@@ -395,6 +494,11 @@ class CuratedDate:
             record_id=d.get("record_id", ""),
             column=d.get("column", ""),
             note=d.get("note", ""),
+            source=d.get("source", ""),
+            model=d.get("model", ""),
+            extracted_at=d.get("extracted_at", ""),
+            reviewed_at=d.get("reviewed_at", ""),
+            reviewer=d.get("reviewer", ""),
         )
 
 
@@ -439,14 +543,16 @@ class ImageAnalysisResult:
     def is_reviewed(self) -> bool:
         return bool(self.reviewed_at and self.review_status != ImageReviewStatus.PENDING)
 
-    @property
-    def provenance(self) -> dict:
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
         return {
             "source": "vision_ai",
+            "method": "llm",
             "model": self.model,
-            "analyzed_at": self.analyzed_at,
+            "extracted_at": self.analyzed_at,
             "reviewed_at": self.reviewed_at,
             "reviewer": self.reviewer,
+            "note": self.review_note or self.review_comment,
         }
 
     def update_review(

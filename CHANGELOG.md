@@ -29,9 +29,14 @@ Sektionen:
   Audit-Issue ist mit einem dedizierten Test abgedeckt; die Audit-ID
   steht im Docstring.
 - **Regression-Test-Suite `tests/test_phase2_collection_agnosticism.py`** —
-  15 dedizierte Tests für Phase 2 (Collection-Agnosticism) Issues #103,
-  #110, #120, #121, #136. Validiert field_mapping Konsolidierung,
-  Migrationen, Round-trip Serialisierung.
+  30 dedizierte Tests für Phase 2 (Collection-Agnosticism). 15 Tests für
+  Issue #103 (field_mapping Konsolidierung) plus 15 Tests für Issue #110
+  (Provenance-Konsistenz). Validiert Migrationen, Round-trip Serialisierung,
+  einheitliches Provenance-Schema über alle Extraktions-Typen.
+- **`Provenance` TypedDict** in `kwb.core.models` — kanonisches Schema
+  für Extraktions-Provenance. Single source of truth für die Felder
+  `source`, `method`, `model`, `extracted_at`, `reviewed_at`,
+  `reviewer`, `note`.
 
 ### Geändert
 - **`Workspace.image_review_stats()`** — gibt jetzt einen Dict zurück,
@@ -66,6 +71,23 @@ Sektionen:
   anti-pattern. Legacy dict-Format (`{"col": (label, type)}`) wird
   automatisch zu list-Format migriert. Alle Serialisierung nutzt jetzt
   konsistent das list-Format. (CORE-BUG-03, Issue #103)
+- **Provenance-Felder über alle Extraktions-Typen** — `EntityReview`,
+  `CuratedDate`, `AuthorityCandidate`, `DictionaryEntry` und
+  `ImageAnalysisResult` exponieren jetzt eine einheitliche
+  `provenance() → Provenance` Methode mit kanonischem Schema:
+  `source`, `method`, `model`, `extracted_at`, `reviewed_at`,
+  `reviewer`, `note`. Vorher hatten alle Typen unterschiedliche Felder
+  und der `source`-Schlüssel hatte unterschiedliche Bedeutung.
+  Fehlende Felder (`model`, `extracted_at`, `reviewer`) wurden zu
+  `EntityReview`, `CuratedDate` und `AuthorityCandidate` hinzugefügt;
+  `extracted_at` wird in `__post_init__` automatisch gesetzt. Die neue
+  `Provenance`-TypedDict ist in `kwb.core.models` definiert.
+  (CORE-ENH-03, Issue #110)
+- **`ImageAnalysisResult.provenance`** — von einer Property zu einer
+  Methode geändert (für Konsistenz mit anderen Extraktions-Typen).
+  Aufrufer in `api/routes/export.py` entsprechend angepasst. Die
+  Rückgabe enthält jetzt zusätzlich `method` und `note` Schlüssel.
+  (CORE-ENH-03, Issue #110)
 
 ### Behoben
 - Bilder mit `review_status = ACCEPTED` wurden in `image_review_stats()`
@@ -90,7 +112,7 @@ Phase 2 (Collection-Agnosticism) hat **begonnen**:
 
 **Phase 2** (🟡 in Arbeit):
 - CORE-BUG-03 (#103) ✅ — field_mapping Konsolidierung **fertiggestellt**
-- CORE-ENH-03 (#110) — provenance Konsistenz (ausstehend)
+- CORE-ENH-03 (#110) ✅ — Provenance Konsistenz **fertiggestellt**
 - CORE-ENH-04 (#120) — subject_extract_original Hardcodierung (ausstehend)
 - CORE-ENH-05 (#121) — named_entity schema Konfigurierbarkeit (ausstehend)
 - CORE-ENH-06 (#136) — Multilingual Wikidata (ausstehend)
