@@ -540,9 +540,8 @@ class Workspace:
         self.source_file = source_file
         self.id_column = id_column
 
-        # Internal storage
+        # Internal storage — canonical list format only (CORE-BUG-03)
         self._field_mapping: list[FieldMapping] = []
-        self._field_mapping_raw: dict | None = None
         self._dictionary: list[DictionaryEntry] = []
         self.entity_reviews: list[EntityReview] = []
         self.dates: list[CuratedDate] = []
@@ -558,27 +557,30 @@ class Workspace:
         self.authority_candidates: list[AuthorityCandidate] = []
 
     @property
-    def field_mapping(self):
-        """Return field_mapping. Supports both list[FieldMapping] and dict access."""
-        if self._field_mapping_raw is not None:
-            return self._field_mapping_raw
+    def field_mapping(self) -> list[FieldMapping]:
+        """Return field_mapping as list[FieldMapping] (canonical format)."""
         return self._field_mapping
 
     @field_mapping.setter
     def field_mapping(self, value):
-        """Accept both list[FieldMapping] and dict[str, tuple] for field_mapping."""
+        """
+        Accept list[FieldMapping] or legacy dict[str, tuple] format.
+        Legacy dict format is converted to canonical list format.
+        """
         if isinstance(value, dict):
-            self._field_mapping_raw = value
+            # Migrate legacy dict[str, (label, type)] format to list
             self._field_mapping = []
             for col, val in value.items():
                 if isinstance(val, (list, tuple)) and len(val) >= 2:
+                    # Legacy: (label, goobi_type) or [label, goobi_type]
                     self._field_mapping.append(FieldMapping(
-                        csv_column=col, label=val[0], goobi_type=val[1],
+                        csv_column=col,
+                        label=val[0],
+                        goobi_type=val[1],
                     ))
                 elif isinstance(val, FieldMapping):
                     self._field_mapping.append(val)
         elif isinstance(value, list):
-            self._field_mapping_raw = None
             self._field_mapping = value
         else:
             self._field_mapping = value
@@ -988,12 +990,8 @@ class Workspace:
         self.updated_at = utc_now_iso()
 
     def to_dict(self) -> dict:
-        # Serialize field_mapping
-        if self._field_mapping_raw is not None:
-            fm_ser = {k: list(v) if isinstance(v, tuple) else v
-                      for k, v in self._field_mapping_raw.items()}
-        else:
-            fm_ser = [m.to_dict() for m in self._field_mapping]
+        # Serialize field_mapping as list (canonical format, CORE-BUG-03)
+        fm_ser = [m.to_dict() for m in self._field_mapping]
 
         return {
             "name": self.name,
@@ -1029,11 +1027,12 @@ class Workspace:
             source_file=d.get("source_file", ""),
             id_column=d.get("id_column", "record_id"),
         )
-        # Field mapping: support both list and dict formats
+        # Field mapping: migrate legacy dict format to canonical list format (CORE-BUG-03)
         fm = d.get("field_mapping", [])
         if isinstance(fm, list):
             ws._field_mapping = [FieldMapping.from_dict(m) for m in fm]
         elif isinstance(fm, dict):
+            # Legacy dict format: convert via property setter
             ws.field_mapping = fm
 
         # Dictionary: support both list and dict formats

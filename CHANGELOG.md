@@ -28,6 +28,10 @@ Sektionen:
 - **Regression-Test-Suite `tests/test_phase1_stabilization.py`** — jeder
   Audit-Issue ist mit einem dedizierten Test abgedeckt; die Audit-ID
   steht im Docstring.
+- **Regression-Test-Suite `tests/test_phase2_collection_agnosticism.py`** —
+  15 dedizierte Tests für Phase 2 (Collection-Agnosticism) Issues #103,
+  #110, #120, #121, #136. Validiert field_mapping Konsolidierung,
+  Migrationen, Round-trip Serialisierung.
 
 ### Geändert
 - **`Workspace.image_review_stats()`** — gibt jetzt einen Dict zurück,
@@ -57,6 +61,11 @@ Sektionen:
   `api/routes/ai.py`, `api/routes/mds_tasks.py` nutzen jetzt
   `utc_now_iso()` statt `datetime.utcnow().isoformat()`. ISO-Strings
   enthalten den Timezone-Offset `+00:00`. (CORE-BUG-07, Issue #107)
+- **`Workspace.field_mapping`** — konsolidiert zu `list[FieldMapping]`
+  (kanonisches Format). Entfernt `_field_mapping_raw` dual-storage
+  anti-pattern. Legacy dict-Format (`{"col": (label, type)}`) wird
+  automatisch zu list-Format migriert. Alle Serialisierung nutzt jetzt
+  konsistent das list-Format. (CORE-BUG-03, Issue #103)
 
 ### Behoben
 - Bilder mit `review_status = ACCEPTED` wurden in `image_review_stats()`
@@ -73,11 +82,21 @@ Sektionen:
   beseitigt; alle Timestamps sind timezone-aware. (#107)
 
 ### Architektur-Hinweis
-Phase 1 (Stabilize) der Core-Audit-Empfehlungen ist abgeschlossen. Die
-nächsten Phasen sind:
-- **Phase 2** — Collection-Agnosticism (Issues #103, #110, #120, #121, #136)
-- **Phase 3** — Confidence-Semantics (Issues #123, #129, #133)
-- **Phase 4** — User-Centered UX-Redesign (Issues #125, #126, #127, #132)
+Phase 1 (Stabilize) der Core-Audit-Empfehlungen ist **abgeschlossen**.
+Phase 2 (Collection-Agnosticism) hat **begonnen**:
+
+**Phase 1** (✅ abgeschlossen):
+- CORE-BUG-01 bis CORE-BUG-07 — Kern-Stabilisierung
+
+**Phase 2** (🟡 in Arbeit):
+- CORE-BUG-03 (#103) ✅ — field_mapping Konsolidierung **fertiggestellt**
+- CORE-ENH-03 (#110) — provenance Konsistenz (ausstehend)
+- CORE-ENH-04 (#120) — subject_extract_original Hardcodierung (ausstehend)
+- CORE-ENH-05 (#121) — named_entity schema Konfigurierbarkeit (ausstehend)
+- CORE-ENH-06 (#136) — Multilingual Wikidata (ausstehend)
+
+**Phase 3** (geplant): Confidence-Semantics (Issues #123, #129, #133)
+**Phase 4** (geplant): User-Centered UX-Redesign (Issues #125, #126, #127, #132)
 
 Siehe `debussy-core-audit-issues.md` für die vollständige Sequenzierung.
 
