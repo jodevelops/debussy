@@ -48,6 +48,9 @@ src/kwb/
 - **Sprache**: Code auf Englisch, UI/Doku auf Deutsch.
 - **Dependencies minimal halten**: Kern nur pandas + pydantic. Extras über optional-dependencies.
 - **Tests**: unittest-basiert. Jedes neue Feature braucht Tests.
+- **Timestamps**: Immer `kwb.core.utils.utc_now_iso()` verwenden, nie `datetime.utcnow()` (deprecated, naive). Details in `docs/ARCHITECTURE.md` → "Coding-Konventionen".
+- **Cross-Modul-Enums**: Wenn ein Enum in mehreren Modulen gebraucht wird, lebt er in `kwb.core.models` und wird re-exportiert. Niemals zwei Enums mit gleichem Namen in verschiedenen Modulen definieren — Cross-Modul-Vergleiche geben dann silently `False` zurück.
+- **Persistenz-Schutz**: Bare `except: pass` ist verboten. Korrupte Dateien mit Timestamp-Suffix archivieren, nicht überschreiben.
 
 ## Abhängigkeiten
 

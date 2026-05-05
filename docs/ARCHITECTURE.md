@@ -102,6 +102,40 @@ Module:
 - Video/Audio-Verarbeitung (Keyframe-Extraktion)
 - Cross-modale Analyse (Bild ↔ Metadaten)
 
+## Coding-Konventionen
+
+### Timestamps
+**Regel:** Alle persistierten Zeitstempel laufen über
+`kwb.core.utils.utc_now_iso()` und sind ISO-8601-Strings mit Timezone-
+Offset (`+00:00`). Niemals `datetime.utcnow()` (deprecated, naive
+datetime) oder `datetime.now()` (lokale Zeitzone) für persistierte
+Daten benutzen.
+
+```python
+from kwb.core.utils import utc_now_iso
+
+result.analyzed_at = utc_now_iso()
+# → "2026-05-05T10:23:11.123456+00:00"
+```
+
+**Warum:** Konsistente Vergleichbarkeit über Workspaces, Server und
+Zeitzonen hinweg; Timezone-aware Strings sind self-documenting.
+
+### Enums über Modulgrenzen
+Wenn ein `Enum` in mehr als einem Modul gebraucht wird, lebt er in
+`kwb.core.models`. Andere Module re-exportieren ihn über `__all__`,
+damit bestehende Import-Pfade weiter funktionieren. **Niemals** einen
+Enum mit gleichem Namen in zwei Modulen definieren — selbst wenn die
+Member zufällig identisch sind, geben Cross-Modul-Vergleiche silently
+`False` zurück (Python vergleicht nach Klasse, nicht nach Wert).
+
+### Persistenz-Schutz
+Datei-basierte Stores (User-Accounts, Workspaces) müssen Korruption
+*sichtbar* behandeln: bare `except: pass` ist verboten. Stattdessen:
+spezifische Exceptions catchen, loggen, und (wo das Risiko
+unbeabsichtigter Datenmanipulation besteht) die korrupte Datei mit
+Zeitstempel-Suffix archivieren, statt sie zu überschreiben.
+
 ## Design-Entscheidungen
 
 ### Warum diese Reihenfolge?
