@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import time
@@ -17,6 +18,17 @@ from pathlib import Path
 
 
 _TOKEN_EXPIRY = int(os.environ.get("KWB_SESSION_EXPIRY", 86400))  # 24h default
+_log = logging.getLogger(__name__)
+
+
+class UserStoreCorruptError(RuntimeError):
+    """Raised when ``users.json`` exists but cannot be parsed.
+
+    Used internally to distinguish "no file yet" (legitimate first run, may
+    create default admin) from "file corrupt" (refuse to wipe accounts —
+    operator must investigate). The corrupt file is preserved with a
+    timestamp suffix so manual recovery is possible.
+    """
 
 
 def _hash_password(password: str, salt: str = "") -> tuple[str, str]:
@@ -82,6 +94,12 @@ class UserStore:
         self._path = Path(path) if path else None
         self._users: dict[str, User] = {}
         self._sessions: dict[str, Session] = {}
+        # Tracks whether the on-disk store could be read.  ``True`` means
+        # either the file did not exist (fresh install) or it was loaded
+        # successfully.  ``False`` means the file is present but unreadable
+        # — in that case ``ensure_default_admin`` MUST refuse to run, so a
+        # corrupted store cannot silently re-create the admin account.
+        self._load_ok: bool = True
         if self._path and self._path.exists():
             self._load()
 
@@ -89,12 +107,47 @@ class UserStore:
         if not self._path:
             return
         try:
-            data = json.loads(self._path.read_text(encoding="utf-8"))
-            for u in data.get("users", []):
+            raw = self._path.read_text(encoding="utf-8")
+        except OSError as e:
+            self._load_ok = False
+            _log.error(
+                "Failed to read user store at %s: %s. "
+                "User accounts will not be available until the file is readable.",
+                self._path, e,
+            )
+            return
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            self._load_ok = False
+            backup = self._path.with_suffix(
+                self._path.suffix + f".corrupt-{int(time.time())}",
+            )
+            try:
+                self._path.rename(backup)
+                _log.error(
+                    "User store at %s is corrupt (%s). "
+                    "Preserved as %s. Refusing to create default admin to "
+                    "prevent silent account loss — operator must restore or "
+                    "delete the corrupt file manually.",
+                    self._path, e, backup,
+                )
+            except OSError as rename_err:
+                _log.error(
+                    "User store at %s is corrupt (%s) and could not be "
+                    "renamed (%s). Refusing to create default admin.",
+                    self._path, e, rename_err,
+                )
+            return
+
+        for u in data.get("users", []):
+            try:
                 user = User.from_dict(u)
                 self._users[user.username] = user
-        except Exception:
-            pass
+            except (KeyError, TypeError) as e:
+                _log.warning(
+                    "Skipping malformed user entry in %s: %s", self._path, e,
+                )
 
     def _save(self) -> None:
         if not self._path:
@@ -174,9 +227,28 @@ class UserStore:
             del self._sessions[k]
 
     def ensure_default_admin(self) -> bool:
-        """Create a default admin if no users exist. Returns True if created."""
+        """Create a default admin if no users exist. Returns True if created.
+
+        Returns ``False`` (no action) when:
+        - At least one user already exists, OR
+        - The on-disk user store failed to load (``self._load_ok is False``).
+          In that case a corrupt or unreadable ``users.json`` would otherwise
+          silently lead to a re-created default admin and the loss of all
+          previously registered accounts.
+        """
+        if not self._load_ok:
+            _log.warning(
+                "Refusing to create default admin: user store could not be "
+                "loaded. Restore or remove the corrupt file before retrying.",
+            )
+            return False
         if self._users:
             return False
         default_pw = os.environ.get("KWB_ADMIN_PASSWORD", "debussy")
         self.create_user("admin", default_pw, display_name="Administrator", role="admin")
         return True
+
+    @property
+    def load_ok(self) -> bool:
+        """True if the on-disk user store was loaded successfully (or absent)."""
+        return self._load_ok

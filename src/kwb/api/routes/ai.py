@@ -405,8 +405,7 @@ async def images_analyze(request: dict):
             Default: ["Are there humans in the image?",
                       "Are their faces recognizable?"]
     """
-    from datetime import datetime
-    from kwb.core.utils import try_parse_json
+    from kwb.core.utils import try_parse_json, utc_now_iso
 
     image_ids = request.get("image_ids", list(_uploaded_images.keys()))
     image_record_map = request.get("image_record_map", {})
@@ -483,7 +482,7 @@ async def images_analyze(request: dict):
                 analyzed=True,
                 result=parsed,
                 model=mod or "default",
-                analyzed_at=datetime.utcnow().isoformat(),
+                analyzed_at=utc_now_iso(),
                 record_id=img.get("record_id", ""),
                 review_status=ImageReviewStatus(img.get("review_status", "pending")),
                 review_comment=img.get("review_comment", ""),
@@ -524,8 +523,7 @@ async def images_analyze(request: dict):
 @router.post("/api/images/analyze/stream")
 async def images_analyze_stream(request: dict):
     """SSE streaming version of /api/images/analyze — yields progress per image."""
-    from datetime import datetime
-    from kwb.core.utils import try_parse_json
+    from kwb.core.utils import try_parse_json, utc_now_iso
 
     image_ids = request.get("image_ids", list(_uploaded_images.keys()))
     image_record_map = request.get("image_record_map", {})
@@ -595,7 +593,7 @@ async def images_analyze_stream(request: dict):
                     analyzed=True,
                     result=parsed,
                     model=mod or "default",
-                    analyzed_at=datetime.utcnow().isoformat(),
+                    analyzed_at=utc_now_iso(),
                     record_id=img.get("record_id", ""),
                     review_status=ImageReviewStatus(
                         img.get("review_status", "pending")
@@ -669,8 +667,8 @@ async def image_review_update(img_id: str, request: dict):
     img["review_status"] = status.value
     img["review_comment"] = comment
     img["reviewer"] = reviewer
-    from datetime import datetime
-    img["reviewed_at"] = datetime.utcnow().isoformat()
+    from kwb.core.utils import utc_now_iso
+    img["reviewed_at"] = utc_now_iso()
 
     ws = get_workspace()
     existing = ws.get_image_analysis(img_id)
@@ -735,7 +733,7 @@ async def image_review_batch(request: dict):
 
     ws = get_workspace()
     updated = 0
-    from datetime import datetime
+    from kwb.core.utils import utc_now_iso
 
     for img_id in image_ids:
         img = _uploaded_images.get(img_id)
@@ -747,7 +745,7 @@ async def image_review_batch(request: dict):
             img["review_comment"] = comment
         if reviewer:
             img["reviewer"] = reviewer
-        img["reviewed_at"] = datetime.utcnow().isoformat()
+        img["reviewed_at"] = utc_now_iso()
 
         existing = ws.get_image_analysis(img_id)
         if existing:
@@ -907,7 +905,7 @@ async def images_ocr(request: dict):
     ws = get_workspace()
 
     # Persist OCR results in workspace image_analyses for OCR→NER pipeline
-    from datetime import datetime
+    from kwb.core.utils import utc_now_iso
     for r in successful:
         img = _uploaded_images.get(r["id"])
         if not img:
@@ -926,7 +924,7 @@ async def images_ocr(request: dict):
                 analyzed=True,
                 result=r["result"],
                 model=mod or "default",
-                analyzed_at=datetime.utcnow().isoformat(),
+                analyzed_at=utc_now_iso(),
                 record_id=record_id,
                 prompt_name=prompt_name,
                 prompt_version=prompt_version,
@@ -966,9 +964,9 @@ async def review_image_ai(request: dict):
     if not target:
         return JSONResponse({"error": "Bildanalyse nicht gefunden"}, 404)
 
-    from datetime import datetime
+    from kwb.core.utils import utc_now_iso
     target.review_status = status
     target.review_note = note
-    target.reviewed_at = datetime.utcnow().isoformat() if status != "pending" else ""
+    target.reviewed_at = utc_now_iso() if status != "pending" else ""
     ws.save(workspace_dir() / safe_filename(ws.name))
     return {"ok": True, "image_id": image_id, "review_status": target.review_status, "stats": ws.image_review_stats()}
