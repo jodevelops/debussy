@@ -19,7 +19,6 @@ Benötigt Testdaten in tests/data/e2e/:
 from __future__ import annotations
 
 import json
-import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -32,7 +31,6 @@ except ImportError:
     HAS_PANDAS = False
 
 # Debussy imports
-from kwb.core.workspace import Workspace
 from kwb.ingest.csv_loader import load_csv
 
 
