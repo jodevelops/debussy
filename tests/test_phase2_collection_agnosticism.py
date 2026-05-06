@@ -315,13 +315,15 @@ class TestIssue110ProvenanceConsistency(unittest.TestCase):
         self.assertEqual(prov["source"], "gnd")
         self.assertEqual(prov["method"], "api")
         self.assertEqual(prov["model"], "qwen3-coder")
-        # extracted_at auto-populated in __post_init__
-        self.assertTrue(prov["extracted_at"])
+        # extracted_at not auto-populated (preserves unknown for legacy data)
+        self.assertEqual(prov["extracted_at"], "")
 
-    def test_03_authority_candidate_extracted_at_auto_populated(self):
-        """CORE-ENH-03: AuthorityCandidate.extracted_at auto-populates."""
+    def test_03_authority_candidate_extracted_at_not_auto_populated(self):
+        """CORE-ENH-03: AuthorityCandidate.extracted_at not auto-populated (preserves unknown)."""
         cand = AuthorityCandidate(entry_id="e1", source="gnd")
-        self.assertTrue(cand.extracted_at)
+        self.assertEqual(cand.extracted_at, "")
+        # Caller should set it explicitly if needed
+        cand.extracted_at = "2026-05-06T12:00:00+00:00"
         self.assertIn("+00:00", cand.extracted_at)
 
     def test_04_entity_review_provenance_keys(self):
@@ -337,12 +339,15 @@ class TestIssue110ProvenanceConsistency(unittest.TestCase):
         self.assertEqual(prov["source"], "llm")
         self.assertEqual(prov["method"], "llm")
         self.assertEqual(prov["model"], "qwen3-coder")
-        self.assertTrue(prov["extracted_at"])
+        # extracted_at not auto-populated (preserves unknown for legacy data)
+        self.assertEqual(prov["extracted_at"], "")
 
-    def test_05_entity_review_extracted_at_auto_populated(self):
-        """CORE-ENH-03: EntityReview.extracted_at auto-populates."""
+    def test_05_entity_review_extracted_at_not_auto_populated(self):
+        """CORE-ENH-03: EntityReview.extracted_at not auto-populated (preserves unknown)."""
         er = EntityReview(text="Test", entity_type="PER")
-        self.assertTrue(er.extracted_at)
+        self.assertEqual(er.extracted_at, "")
+        # Caller should set it explicitly if needed
+        er.extracted_at = "2026-05-06T12:00:00+00:00"
         self.assertIn("+00:00", er.extracted_at)
 
     def test_06_curated_date_provenance_keys(self):
@@ -358,12 +363,15 @@ class TestIssue110ProvenanceConsistency(unittest.TestCase):
         # Method mirrors into source if source not set
         self.assertEqual(prov["source"], "rule")
         self.assertEqual(prov["method"], "rule")
-        self.assertTrue(prov["extracted_at"])
+        # extracted_at not auto-populated (preserves unknown for legacy data)
+        self.assertEqual(prov["extracted_at"], "")
 
-    def test_07_curated_date_extracted_at_auto_populated(self):
-        """CORE-ENH-03: CuratedDate.extracted_at auto-populates."""
+    def test_07_curated_date_extracted_at_not_auto_populated(self):
+        """CORE-ENH-03: CuratedDate.extracted_at not auto-populated (preserves unknown)."""
         cd = CuratedDate(original="1900", method="rule")
-        self.assertTrue(cd.extracted_at)
+        self.assertEqual(cd.extracted_at, "")
+        # Caller should set it explicitly if needed
+        cd.extracted_at = "2026-05-06T12:00:00+00:00"
         self.assertIn("+00:00", cd.extracted_at)
 
     def test_08_image_analysis_provenance_keys(self):

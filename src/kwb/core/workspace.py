@@ -260,8 +260,6 @@ class AuthorityCandidate:
     def __post_init__(self):
         if not self.candidate_id:
             self.candidate_id = str(_uuid.uuid4())[:8]
-        if not self.extracted_at:
-            self.extracted_at = utc_now_iso()
 
     def accept(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.ACCEPTED
@@ -348,8 +346,7 @@ class EntityReview:
     reviewer: str = ""                  # Who reviewed
 
     def __post_init__(self):
-        if not self.extracted_at:
-            self.extracted_at = utc_now_iso()
+        pass
 
     def accept(self, gnd_id: str = "", gnd_preferred: str = "",
                note: str = "", reviewer: str = "") -> None:
@@ -450,8 +447,6 @@ class CuratedDate:
     reviewer: str = ""                  # Who reviewed
 
     def __post_init__(self):
-        if not self.extracted_at:
-            self.extracted_at = utc_now_iso()
         # Mirror method into source for uniform provenance reads
         if not self.source and self.method:
             self.source = self.method

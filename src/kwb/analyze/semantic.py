@@ -35,7 +35,7 @@ def infer_subject_column(df) -> str | None:
     collections. Returns the first matching column name in case-insensitive
     comparison, or None if no candidate matches.
     """
-    columns_lower = {c.lower(): c for c in df.columns}
+    columns_lower = {str(c).lower(): c for c in df.columns}
     for candidate in SUBJECT_COLUMN_CANDIDATES:
         if candidate in columns_lower:
             return columns_lower[candidate]
