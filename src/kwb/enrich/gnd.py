@@ -344,11 +344,14 @@ class LobidGNDClient:
             return []
 
         results = []
-        for item in data.get("member", []):
+        for rank, item in enumerate(data.get("member", [])):
             gnd_id = item.get("gndIdentifier", "")
             preferred = item.get("preferredName", "")
             types = item.get("type", [])
             alts = item.get("variantName", [])
+
+            # Rank-based confidence: 1.0 for 1st, 0.8 for 2nd, 0.6 for 3rd, etc.
+            confidence = max(0.2, 1.0 - (rank * 0.2))
 
             results.append(GNDMatch(
                 term=term,
@@ -356,7 +359,7 @@ class LobidGNDClient:
                 preferred_name=preferred,
                 gnd_type=next((t for t in types if t != "AuthorityResource"), types[0] if types else ""),
                 alternatives=alts[:5],
-                confidence=0.8,  # lobid doesn't expose a confidence score
+                confidence=confidence,
                 source="lobid",
             ))
 

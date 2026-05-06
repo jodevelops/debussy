@@ -57,6 +57,10 @@ def _normalize_dates_llm(
             ),
         ]
     batch = process_batch(provider, items, _p, id_field="record_id", model=model)
+
+    # Pre-build lookup dict for O(1) access instead of O(n²) search
+    items_by_id = {item.get("record_id"): item for item in items}
+
     results = []
     for r in batch.results:
         if r.parsed:
@@ -69,9 +73,10 @@ def _normalize_dates_llm(
                 record_id=r.record_id,
             ))
         else:
-            # LLM failed — emit empty result so caller gets correct count
+            # LLM failed — emit empty result with original text for retry/logging
+            item = items_by_id.get(r.record_id, {})
             results.append(EDTFResult(
-                original=item["text"] if (item := next((x for x in items if x.get("record_id") == r.record_id), None)) else "",
+                original=item.get("text", ""),
                 edtf="",
                 confidence=0.0,
                 method="llm",

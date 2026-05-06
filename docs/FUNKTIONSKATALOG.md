@@ -262,6 +262,7 @@
 | test_pdf_loader.py | 3/3 | 0 | 0 | ✅ |
 | test_phase1_stabilization.py | 11/11 | 0 | 0 | ✅ |
 | test_phase2_collection_agnosticism.py | 61/61 | 0 | 0 | ✅ |
+| test_phase1b_stabilization.py | 9/9 | 0 | 0 | ✅ |
 | test_pipeline.py | 18/18 | 0 | 0 | ✅ |
 | test_pipeline_steps.py | 10/10 | 0 | 0 | ✅ |
 | test_quality_analysis_report.py | 52/52 | 0 | 0 | ✅ |
