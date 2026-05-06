@@ -29,14 +29,22 @@ Sektionen:
   Audit-Issue ist mit einem dedizierten Test abgedeckt; die Audit-ID
   steht im Docstring.
 - **Regression-Test-Suite `tests/test_phase2_collection_agnosticism.py`** —
-  30 dedizierte Tests für Phase 2 (Collection-Agnosticism). 15 Tests für
-  Issue #103 (field_mapping Konsolidierung) plus 15 Tests für Issue #110
-  (Provenance-Konsistenz). Validiert Migrationen, Round-trip Serialisierung,
-  einheitliches Provenance-Schema über alle Extraktions-Typen.
+  61 dedizierte Tests für Phase 2 (Collection-Agnosticism), aufgeteilt in
+  fünf Klassen: 15 Tests für Issue #103 (field_mapping), 15 Tests für
+  Issue #110 (Provenance), 10 Tests für Issue #120 (Subject-Spalten-
+  Erkennung), 11 Tests für Issue #121 (NamedEntitySchema), 10 Tests für
+  Issue #136 (Wikidata-Mehrsprachigkeit).
 - **`Provenance` TypedDict** in `kwb.core.models` — kanonisches Schema
   für Extraktions-Provenance. Single source of truth für die Felder
   `source`, `method`, `model`, `extracted_at`, `reviewed_at`,
   `reviewer`, `note`.
+- **`infer_subject_column()`** in `kwb.analyze.semantic` — Helper für
+  automatische Erkennung der Subject/Topic-Spalte aus typischen
+  Schema-Konventionen.
+- **`NamedEntitySchema`** in `kwb.enrich.gnd` — Dataclass für
+  konfigurierbare Spalten-Konventionen in flachen GND-CSVs.
+- **`DEFAULT_LANG`** in `kwb.enrich.wikidata` — Modul-Konstante mit
+  Override über `DEBUSSY_WIKIDATA_LANG` Umgebungsvariable.
 
 ### Geändert
 - **`Workspace.image_review_stats()`** — gibt jetzt einen Dict zurück,
@@ -88,6 +96,27 @@ Sektionen:
   Aufrufer in `api/routes/export.py` entsprechend angepasst. Die
   Rückgabe enthält jetzt zusätzlich `method` und `note` Schlüssel.
   (CORE-ENH-03, Issue #110)
+- **`classify_subjects()`** — der hardcodierte Default
+  `subject_column="subject_extract_original"` wurde entfernt. Stattdessen
+  triggert `subject_column=None` jetzt eine Auto-Erkennung über die
+  neue Helper-Funktion `infer_subject_column()`, die typische Spalten-
+  Namen (subject, topic, keywords, schlagwort, …) case-insensitiv
+  durchsucht. Sammlungen mit anderen Schemata werden jetzt korrekt
+  unterstützt. (CORE-ENH-04, Issue #120)
+- **`parse_gnd_columns()` und `flag_low_confidence()`** — die
+  hardcodierte `named_entity_N_gnd_*` Spalten-Konvention wurde durch
+  die neue `NamedEntitySchema` Dataclass ersetzt. Default ist
+  `DEFAULT_NAMED_ENTITY_SCHEMA` (kompatibel mit GIUB Master-CSV).
+  Andere Sammlungen können `schema=NamedEntitySchema(term_pattern=…)`
+  übergeben. `max_entities` wird jetzt aus den tatsächlich vorhandenen
+  Spalten erkannt (statt fest 11). (CORE-ENH-05, Issue #121)
+- **Wikidata SPARQL-Queries** — die hardcodierte
+  `FILTER(LANG(?typeLabel) = "de")` wurde dynamisch gemacht. Alle
+  Public-Funktionen (`wikidata_search`, `wikidata_batch_search`)
+  akzeptieren jetzt `lang=None` und nutzen dann das neue
+  `DEFAULT_LANG` Modul-Konstante (steuerbar über die Umgebungsvariable
+  `DEBUSSY_WIKIDATA_LANG`). Sammlungen in anderen Sprachen erhalten
+  jetzt korrekt typisierte Labels. (CORE-ENH-06, Issue #136)
 
 ### Behoben
 - Bilder mit `review_status = ACCEPTED` wurden in `image_review_stats()`

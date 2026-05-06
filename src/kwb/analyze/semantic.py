@@ -9,10 +9,58 @@ from kwb.ai.batch import BatchReport, process_batch
 
 logger = logging.getLogger(__name__)
 
+# Column-name heuristics for auto-detecting subject columns across
+# different GLAM collection schemas (CORE-ENH-04, Issue #120).
+# Order matters: longer/more-specific names come first.
+SUBJECT_COLUMN_CANDIDATES = (
+    "subject_extract_original",
+    "subject_extract",
+    "subjects",
+    "subject",
+    "schlagwort",
+    "schlagworte",
+    "schlagwörter",
+    "keywords",
+    "topic",
+    "topics",
+    "thema",
+    "themen",
+)
 
-def classify_subjects(df, profile, provider, subject_column="subject_extract_original",
+
+def infer_subject_column(df) -> str | None:
+    """Auto-detect the subject column from a dataset.
+
+    Checks against common subject column names used in different GLAM
+    collections. Returns the first matching column name in case-insensitive
+    comparison, or None if no candidate matches.
+    """
+    columns_lower = {c.lower(): c for c in df.columns}
+    for candidate in SUBJECT_COLUMN_CANDIDATES:
+        if candidate in columns_lower:
+            return columns_lower[candidate]
+    return None
+
+
+def classify_subjects(df, profile, provider, subject_column=None,
                       sample_size=None, model=None):
     findings = []
+
+    # CORE-ENH-04 (#120): No hardcoded column default. Caller can pass
+    # explicit column name; otherwise we auto-detect from common schemas.
+    if subject_column is None:
+        subject_column = infer_subject_column(df)
+        if subject_column is None:
+            findings.append(Finding(
+                category=FindingCategory.SCHEMA_MISMATCH,
+                severity=Severity.WARNING,
+                message=(
+                    "No subject column detected in dataset. "
+                    f"Tried: {', '.join(SUBJECT_COLUMN_CANDIDATES[:5])}, …"
+                ),
+            ))
+            return findings, BatchReport()
+
     if subject_column not in df.columns:
         findings.append(Finding(category=FindingCategory.SCHEMA_MISMATCH, severity=Severity.WARNING,
             message=f"Subject column '{subject_column}' not found in dataset"))
