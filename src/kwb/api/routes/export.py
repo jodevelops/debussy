@@ -43,7 +43,7 @@ def _build_image_result_rows(ws):
             "places": "; ".join(payload.get("places", []) or []),
             "style": payload.get("style", ""),
             "period": payload.get("period", ""),
-            "provenance": json.dumps(r.provenance, ensure_ascii=False),
+            "provenance": json.dumps(r.provenance(), ensure_ascii=False),
         })
     return rows
 

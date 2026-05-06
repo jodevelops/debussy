@@ -540,7 +540,11 @@ function renderNER(r){
 function renderCompletionSummary(summary, parseFailures){
   const banners=['ner-completion-banner','ner-full-completion-banner'];
   for(const bannerId of banners){
-    if(!summary || !$(bannerId))continue;
+    const el=$(bannerId);
+    if(!el)continue;
+    // Clear any stale banner from a previous run when summary is absent
+    // (e.g., when switching from LLM/hybrid mode to SpaCy-only).
+    if(!summary){el.innerHTML='';continue;}
     const pct=summary.completion_percentage||0;
     const color=pct>=95?'var(--ok)':pct>=80?'var(--warn)':'var(--crit)';
     let html='<div style="background:'+color+';padding:12px;border-radius:4px;margin-bottom:12px;color:white;font-weight:600">';
@@ -555,7 +559,7 @@ function renderCompletionSummary(summary, parseFailures){
       html+=parseFailures.map(pf=>'<div style="padding:4px;border-bottom:1px solid #ddd;font-size:.85rem"><strong>'+esc(pf.record_id)+'</strong>: '+esc(pf.error_message)+'<br><code style="color:#666;font-size:.75rem">'+esc(pf.raw_response_preview)+'</code></div>').join('');
       html+='</div></details>';
     }
-    $(bannerId).innerHTML=html;
+    el.innerHTML=html;
   }
 }
 

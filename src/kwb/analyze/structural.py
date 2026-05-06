@@ -12,7 +12,7 @@ def _get_affected_ids(df, mask, id_col, limit=10):
         return []
     try:
         return df.loc[mask, id_col].head(limit).tolist()
-    except (KeyError, ValueError, TypeError, IndexError) as e:
+    except (IndexError, KeyError, ValueError, TypeError, pd.errors.IndexingError) as e:
         logger.warning(
             "Failed to extract affected ids for column %r (%s: %s)",
             id_col, type(e).__name__, e,

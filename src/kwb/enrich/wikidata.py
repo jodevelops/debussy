@@ -5,11 +5,18 @@ Sucht Wikidata-Entitäten für Personen, Orte und Organisationen via SPARQL.
 Unterstützt offline-Betrieb: gibt [] zurück wenn kein Netzwerk verfügbar.
 
 SPARQL Endpoint: https://query.wikidata.org/sparql
+
+Sprache (CORE-ENH-06, Issue #136):
+    Die Default-Sprache wird über die Umgebungsvariable DEBUSSY_WIKIDATA_LANG
+    gesteuert (Default "de"). Aufrufer können `lang=` pro Aufruf überschreiben.
+    Das SPARQL-Label-Service nutzt automatisch Fallback auf Englisch
+    (`wikibase:language "{lang},en"`).
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -21,6 +28,11 @@ logger = logging.getLogger(__name__)
 
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 USER_AGENT = "Debussy/0.5 (GLAM curation tool; https://github.com/example/debussy)"
+
+# Default language for SPARQL queries (CORE-ENH-06, Issue #136).
+# Override via DEBUSSY_WIKIDATA_LANG env var or per-call `lang=` argument.
+# Treat empty string as "not set" (common in templated CI/container envs).
+DEFAULT_LANG = os.environ.get("DEBUSSY_WIKIDATA_LANG") or "de"
 
 
 # ---------------------------------------------------------------------------
@@ -59,12 +71,14 @@ class WikidataResult:
 # SPARQL queries by entity type
 # ---------------------------------------------------------------------------
 
-def _sparql_search_query(term: str, lang: str = "de", limit: int = 5) -> str:
+def _sparql_search_query(term: str, lang: str | None = None, limit: int = 5) -> str:
     """
     Full-text SPARQL query using wikibase:mwapi for entity search.
 
     Returns items with their label, description, GND ID (P227), and type.
     """
+    if lang is None:
+        lang = DEFAULT_LANG
     safe = term.replace('"', '\\"')
     return f"""
 SELECT DISTINCT ?item ?itemLabel ?itemDescription ?gnd ?typeLabel WHERE {{
@@ -80,7 +94,7 @@ SELECT DISTINCT ?item ?itemLabel ?itemDescription ?gnd ?typeLabel WHERE {{
   OPTIONAL {{
     ?item wdt:P31 ?type .
     ?type rdfs:label ?typeLabel .
-    FILTER(LANG(?typeLabel) = "de")
+    FILTER(LANG(?typeLabel) = "{lang}")
   }}
   SERVICE wikibase:label {{
     bd:serviceParam wikibase:language "{lang},en" .
@@ -90,8 +104,10 @@ LIMIT {limit}
 """
 
 
-def _sparql_person_query(term: str, lang: str = "de", limit: int = 5) -> str:
+def _sparql_person_query(term: str, lang: str | None = None, limit: int = 5) -> str:
     """Search specifically for persons (Q5)."""
+    if lang is None:
+        lang = DEFAULT_LANG
     safe = term.replace('"', '\\"')
     return f"""
 SELECT DISTINCT ?item ?itemLabel ?itemDescription ?gnd ?birth ?death WHERE {{
@@ -115,8 +131,10 @@ LIMIT {limit}
 """
 
 
-def _sparql_place_query(term: str, lang: str = "de", limit: int = 5) -> str:
+def _sparql_place_query(term: str, lang: str | None = None, limit: int = 5) -> str:
     """Search for geographic locations."""
+    if lang is None:
+        lang = DEFAULT_LANG
     safe = term.replace('"', '\\"')
     return f"""
 SELECT DISTINCT ?item ?itemLabel ?itemDescription ?gnd ?coord WHERE {{
@@ -180,7 +198,7 @@ def _binding_val(binding: dict, key: str) -> str:
 def wikidata_search(
     term: str,
     entity_type: str = "",
-    lang: str = "de",
+    lang: str | None = None,
     limit: int = 5,
     timeout: int = 15,
 ) -> list[WikidataResult]:
@@ -191,12 +209,17 @@ def wikidata_search(
     ----------
     term:       Search term (e.g. "Goethe", "Berlin", "UNESCO")
     entity_type: "PER", "LOC", "GPE", "ORG" or "" for general
-    lang:       Language for labels (default "de")
+    lang:       Language for labels and type filter. If None, uses
+                DEFAULT_LANG (controlled by DEBUSSY_WIKIDATA_LANG env var,
+                falls back to "de"). The SPARQL ``wikibase:label`` service
+                automatically falls back to English for missing labels.
     limit:      Maximum results
     timeout:    HTTP timeout in seconds
 
     Returns [] on any network error (offline-safe).
     """
+    if lang is None:
+        lang = DEFAULT_LANG
     if not term or not term.strip():
         return []
 
@@ -231,7 +254,7 @@ def wikidata_search(
 
 def wikidata_batch_search(
     terms: list[dict],
-    lang: str = "de",
+    lang: str | None = None,
     limit: int = 3,
     delay: float = 1.0,
 ) -> list[dict]:
@@ -240,7 +263,12 @@ def wikidata_batch_search(
 
     Respects Wikidata's rate limit with delay between requests.
     Returns [] for each failed lookup (offline-safe).
+
+    Use ``lang=`` to override the default language; if None, uses
+    DEFAULT_LANG (controlled by DEBUSSY_WIKIDATA_LANG env var).
     """
+    if lang is None:
+        lang = DEFAULT_LANG
     output = []
     for i, item in enumerate(terms):
         text = item.get("text", "")

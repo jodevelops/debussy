@@ -3,7 +3,23 @@ Shared utility functions for Debussy.
 """
 from __future__ import annotations
 import json
+from datetime import datetime, timezone
 from typing import Any
+
+
+def utc_now_iso() -> str:
+    """Return the current UTC time as an ISO-8601 string with timezone offset.
+
+    Single source of truth for timestamps across the codebase. All persisted
+    timestamps (workspace, tasks, image reviews, AI runs, …) use this helper
+    so the format is consistent and the resulting strings are always
+    timezone-aware. Replaces the deprecated ``datetime.utcnow()`` call which
+    produced naive datetimes and triggers a ``DeprecationWarning`` in
+    Python 3.12+.
+
+    The output looks like ``"2026-05-05T14:23:11.123456+00:00"``.
+    """
+    return datetime.now(timezone.utc).isoformat()
 
 
 def try_parse_json(text: str | None) -> dict[str, Any] | list | None:

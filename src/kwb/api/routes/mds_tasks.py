@@ -174,8 +174,8 @@ async def update_task(task_id: str, request: dict):
             if new_status:
                 task["status"] = new_status
                 if new_status in ("done", "skipped"):
-                    from datetime import datetime
-                    task["completed_at"] = datetime.utcnow().isoformat()
+                    from kwb.core.utils import utc_now_iso
+                    task["completed_at"] = utc_now_iso()
             if "note" in request:
                 task["note"] = request["note"]
             ws._touch()

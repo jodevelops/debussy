@@ -18,10 +18,20 @@ from __future__ import annotations
 import json
 import uuid as _uuid
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from kwb.core.models import Provenance, ReviewStatus
+from kwb.core.utils import utc_now_iso
+
+__all__ = [
+    "GoobiMetadataType", "FieldMapping",
+    "DictionaryType", "DictionaryEntry",
+    "ReviewStatus", "ImageReviewStatus",
+    "AuthorityCandidate", "EntityReview", "CuratedEntity",
+    "CuratedDate", "ImageAnalysisResult", "Workspace",
+]
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +171,18 @@ class DictionaryEntry:
     def has_authority(self) -> bool:
         return bool(self.gnd_id or self.wikidata_id or self.geonames_id)
 
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        return {
+            "source": self.source,
+            "method": self.source,  # source doubles as method here
+            "model": self.model_source,
+            "extracted_at": "",  # not tracked at extraction time
+            "reviewed_at": self.last_edited,
+            "reviewer": "",
+            "note": self.note,
+        }
+
     def add_record_id(self, record_id: str) -> None:
         """Add a record_id if not already present."""
         if record_id and record_id not in self.record_ids:
@@ -209,13 +231,6 @@ class DictionaryEntry:
 # Entity Review Status
 # ---------------------------------------------------------------------------
 
-class ReviewStatus(str, Enum):
-    PENDING  = "pending"
-    ACCEPTED = "accepted"
-    REJECTED = "rejected"
-    MERGED   = "merged"
-
-
 class ImageReviewStatus(str, Enum):
     PENDING = "pending"
     ACCEPTED = "accepted"
@@ -237,20 +252,38 @@ class AuthorityCandidate:
     status: ReviewStatus = ReviewStatus.PENDING
     reviewer_note: str = ""
     reviewed_at: str = ""
+    # Provenance fields (CORE-ENH-03)
+    model: str = ""                     # AI model used (if any)
+    extracted_at: str = ""              # When the candidate was discovered
+    reviewer: str = ""                  # Who reviewed
 
     def __post_init__(self):
         if not self.candidate_id:
             self.candidate_id = str(_uuid.uuid4())[:8]
 
-    def accept(self, note: str = "") -> None:
+    def accept(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.ACCEPTED
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewer = reviewer or self.reviewer
+        self.reviewed_at = utc_now_iso()
 
-    def reject(self, note: str = "") -> None:
+    def reject(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.REJECTED
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewer = reviewer or self.reviewer
+        self.reviewed_at = utc_now_iso()
+
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        return {
+            "source": self.source,
+            "method": "api",  # authority candidates always come from API lookups
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.reviewer_note,
+        }
 
     def to_dict(self) -> dict:
         return {
@@ -266,6 +299,9 @@ class AuthorityCandidate:
             "status": self.status.value,
             "reviewer_note": self.reviewer_note,
             "reviewed_at": self.reviewed_at,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewer": self.reviewer,
         }
 
     @staticmethod
@@ -283,6 +319,9 @@ class AuthorityCandidate:
             status=ReviewStatus(d.get("status", "pending")),
             reviewer_note=d.get("reviewer_note", ""),
             reviewed_at=d.get("reviewed_at", ""),
+            model=d.get("model", ""),
+            extracted_at=d.get("extracted_at", ""),
+            reviewer=d.get("reviewer", ""),
         )
 
 
@@ -301,22 +340,46 @@ class EntityReview:
     reviewer_note: str = ""
     editor_note: str = ""
     reviewed_at: str = ""
+    # Provenance fields (CORE-ENH-03)
+    model: str = ""                     # AI model used (e.g., "qwen3-coder")
+    extracted_at: str = ""              # When the entity was extracted
+    reviewer: str = ""                  # Who reviewed
 
-    def accept(self, gnd_id: str = "", gnd_preferred: str = "", note: str = "") -> None:
+    def __post_init__(self):
+        pass
+
+    def accept(self, gnd_id: str = "", gnd_preferred: str = "",
+               note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.ACCEPTED
         self.gnd_id = gnd_id
         self.gnd_preferred = gnd_preferred
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewer = reviewer or self.reviewer
+        self.reviewed_at = utc_now_iso()
 
-    def reject(self, note: str = "") -> None:
+    def reject(self, note: str = "", reviewer: str = "") -> None:
         self.status = ReviewStatus.REJECTED
         self.reviewer_note = note
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewer = reviewer or self.reviewer
+        self.reviewed_at = utc_now_iso()
 
     @property
     def dedup_key(self) -> tuple[str, str]:
         return (self.text.lower(), self.entity_type)
+
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        # Map source ("llm"/"spacy"/"manual") to method
+        method = self.source if self.source in ("llm", "spacy", "rule", "manual") else "ner"
+        return {
+            "source": self.source,
+            "method": method,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.editor_note or self.reviewer_note,
+        }
 
     def to_dict(self) -> dict:
         return {
@@ -331,6 +394,9 @@ class EntityReview:
             "reviewer_note": self.reviewer_note,
             "editor_note": self.editor_note,
             "reviewed_at": self.reviewed_at,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewer": self.reviewer,
         }
 
     @staticmethod
@@ -343,6 +409,9 @@ class EntityReview:
             confidence=float(d.get("confidence", 0)),
             source=d.get("source", ""),
             column=d.get("column", ""),
+            model=d.get("model", ""),
+            extracted_at=d.get("extracted_at", ""),
+            reviewer=d.get("reviewer", ""),
         )
         er.gnd_id = d.get("gnd_id", "")
         er.gnd_preferred = d.get("gnd_preferred", "")
@@ -370,6 +439,29 @@ class CuratedDate:
     record_id: str = ""
     column: str = ""
     note: str = ""
+    # Provenance fields (CORE-ENH-03)
+    source: str = ""                    # "rule" | "llm" | "hybrid" | "manual"
+    model: str = ""                     # AI model used (if any)
+    extracted_at: str = ""              # When the date was normalized
+    reviewed_at: str = ""               # When reviewed (if any)
+    reviewer: str = ""                  # Who reviewed
+
+    def __post_init__(self):
+        # Mirror method into source for uniform provenance reads
+        if not self.source and self.method:
+            self.source = self.method
+
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
+        return {
+            "source": self.source or self.method,
+            "method": self.method,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
+            "note": self.note,
+        }
 
     def to_dict(self) -> dict:
         return {
@@ -380,6 +472,11 @@ class CuratedDate:
             "record_id": self.record_id,
             "column": self.column,
             "note": self.note,
+            "source": self.source,
+            "model": self.model,
+            "extracted_at": self.extracted_at,
+            "reviewed_at": self.reviewed_at,
+            "reviewer": self.reviewer,
         }
 
     @staticmethod
@@ -392,6 +489,11 @@ class CuratedDate:
             record_id=d.get("record_id", ""),
             column=d.get("column", ""),
             note=d.get("note", ""),
+            source=d.get("source", ""),
+            model=d.get("model", ""),
+            extracted_at=d.get("extracted_at", ""),
+            reviewed_at=d.get("reviewed_at", ""),
+            reviewer=d.get("reviewer", ""),
         )
 
 
@@ -436,14 +538,16 @@ class ImageAnalysisResult:
     def is_reviewed(self) -> bool:
         return bool(self.reviewed_at and self.review_status != ImageReviewStatus.PENDING)
 
-    @property
-    def provenance(self) -> dict:
+    def provenance(self) -> Provenance:
+        """Canonical provenance dict (CORE-ENH-03)."""
         return {
             "source": "vision_ai",
+            "method": "llm",
             "model": self.model,
-            "analyzed_at": self.analyzed_at,
+            "extracted_at": self.analyzed_at,
             "reviewed_at": self.reviewed_at,
             "reviewer": self.reviewer,
+            "note": self.review_note or self.review_comment,
         }
 
     def update_review(
@@ -461,7 +565,7 @@ class ImageAnalysisResult:
             if not isinstance(self.result, dict):
                 self.result = {}
             self.result.update(result_updates)
-        self.reviewed_at = datetime.utcnow().isoformat()
+        self.reviewed_at = utc_now_iso()
     def to_dict(self) -> dict:
         return {
             "image_id": self.image_id,
@@ -533,15 +637,14 @@ class Workspace:
         base_url: str | None = None,
     ):
         self.name = name
-        self.created_at = created_at or datetime.utcnow().isoformat()
-        self.updated_at = updated_at or datetime.utcnow().isoformat()
+        self.created_at = created_at or utc_now_iso()
+        self.updated_at = updated_at or utc_now_iso()
         self.source_file = source_file
         self.id_column = id_column
         self.base_url = base_url
 
-        # Internal storage
+        # Internal storage — canonical list format only (CORE-BUG-03)
         self._field_mapping: list[FieldMapping] = []
-        self._field_mapping_raw: dict | None = None
         self._dictionary: list[DictionaryEntry] = []
         self.entity_reviews: list[EntityReview] = []
         self.dates: list[CuratedDate] = []
@@ -557,27 +660,30 @@ class Workspace:
         self.authority_candidates: list[AuthorityCandidate] = []
 
     @property
-    def field_mapping(self):
-        """Return field_mapping. Supports both list[FieldMapping] and dict access."""
-        if self._field_mapping_raw is not None:
-            return self._field_mapping_raw
+    def field_mapping(self) -> list[FieldMapping]:
+        """Return field_mapping as list[FieldMapping] (canonical format)."""
         return self._field_mapping
 
     @field_mapping.setter
     def field_mapping(self, value):
-        """Accept both list[FieldMapping] and dict[str, tuple] for field_mapping."""
+        """
+        Accept list[FieldMapping] or legacy dict[str, tuple] format.
+        Legacy dict format is converted to canonical list format.
+        """
         if isinstance(value, dict):
-            self._field_mapping_raw = value
+            # Migrate legacy dict[str, (label, type)] format to list
             self._field_mapping = []
             for col, val in value.items():
                 if isinstance(val, (list, tuple)) and len(val) >= 2:
+                    # Legacy: (label, goobi_type) or [label, goobi_type]
                     self._field_mapping.append(FieldMapping(
-                        csv_column=col, label=val[0], goobi_type=val[1],
+                        csv_column=col,
+                        label=val[0],
+                        goobi_type=val[1],
                     ))
                 elif isinstance(val, FieldMapping):
                     self._field_mapping.append(val)
         elif isinstance(value, list):
-            self._field_mapping_raw = None
             self._field_mapping = value
         else:
             self._field_mapping = value
@@ -948,20 +1054,14 @@ class Workspace:
             "duration": duration,
             "prompt_name": prompt_name,
             "prompt_version": prompt_version,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_now_iso(),
         })
 
-    def image_review_stats(self) -> dict[str, int]:
-        stats = {"pending": 0, "approved": 0, "rejected": 0, "total": len(self.image_analyses)}
-        for result in self.image_analyses:
-            status = result.review_status or "pending"
-            if status not in stats:
-                continue
-            stats[status] += 1
-        return stats
-
     def has_pending_ai_suggestions(self) -> bool:
-        return any((r.review_status or "pending") == "pending" for r in self.image_analyses)
+        return any(
+            r.review_status == ImageReviewStatus.PENDING
+            for r in self.image_analyses
+        )
 
     # ------------------------------------------------------------------
     # Summary
@@ -990,15 +1090,11 @@ class Workspace:
     # ------------------------------------------------------------------
 
     def _touch(self) -> None:
-        self.updated_at = datetime.utcnow().isoformat()
+        self.updated_at = utc_now_iso()
 
     def to_dict(self) -> dict:
-        # Serialize field_mapping
-        if self._field_mapping_raw is not None:
-            fm_ser = {k: list(v) if isinstance(v, tuple) else v
-                      for k, v in self._field_mapping_raw.items()}
-        else:
-            fm_ser = [m.to_dict() for m in self._field_mapping]
+        # Serialize field_mapping as list (canonical format, CORE-BUG-03)
+        fm_ser = [m.to_dict() for m in self._field_mapping]
 
         return {
             "name": self.name,
@@ -1036,11 +1132,12 @@ class Workspace:
             id_column=d.get("id_column", "record_id"),
             base_url=d.get("base_url"),
         )
-        # Field mapping: support both list and dict formats
+        # Field mapping: migrate legacy dict format to canonical list format (CORE-BUG-03)
         fm = d.get("field_mapping", [])
         if isinstance(fm, list):
             ws._field_mapping = [FieldMapping.from_dict(m) for m in fm]
         elif isinstance(fm, dict):
+            # Legacy dict format: convert via property setter
             ws.field_mapping = fm
 
         # Dictionary: support both list and dict formats

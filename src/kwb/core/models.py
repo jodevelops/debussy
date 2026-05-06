@@ -9,7 +9,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
+from typing import Any, TypedDict
+
+
+class Provenance(TypedDict, total=False):
+    """
+    Canonical provenance shape for all extraction types (CORE-ENH-03).
+
+    All extraction types (EntityReview, CuratedDate, DictionaryEntry,
+    AuthorityCandidate, ImageAnalysisResult) expose a uniform `provenance()`
+    method that returns this shape. Consumers can rely on the same key set
+    regardless of the extraction type.
+
+    Fields use empty strings for absent data (not None) so that downstream
+    code can apply uniform string operations without None-checks.
+    """
+    source: str          # Origin: "manual" | "api" | "llm" | "spacy" | "ner" | "ocr" | "vision_ai" | "gnd" | "wikidata" | "geonames"
+    method: str          # Method/algorithm: "rule" | "llm" | "hybrid" | "manual"
+    model: str           # AI model name (if applicable, e.g. "qwen3-coder")
+    extracted_at: str    # ISO timestamp when extraction happened
+    reviewed_at: str     # ISO timestamp when reviewed (if reviewed)
+    reviewer: str        # Reviewer username (if reviewed)
+    note: str            # Free-text provenance note
 
 
 class Severity(str, Enum):

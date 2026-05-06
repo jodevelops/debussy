@@ -236,6 +236,7 @@ def ner_llm(
     )
 
     entities = []
+    parse_failures = []
     for result in batch.results:
         if result.parsed and "entities" in result.parsed:
             for ent_data in result.parsed["entities"]:
@@ -251,6 +252,8 @@ def ner_llm(
                     source="llm",
                     record_id=result.record_id,
                 ))
+        elif not result.parsed:
+            parse_failures.append(result.record_id)
     return entities, batch
 
 
@@ -362,19 +365,23 @@ def ner_hybrid(
                 llm_map[k] = e
         result.batch_report = batch
 
-        # Calculate completion summary from batch report
+        # Calculate completion summary from batch report.
+        # Count items (records) producing entities, NOT entity instances —
+        # one record may yield multiple entities, so len(llm_ents) would
+        # overcount and could exceed 100% completion.
         if batch:
             parse_failed = len(batch.parse_failures)
             llm_failed = batch.failed
-            succeeded_with_entities = len(llm_ents)
-            # Items with non-null parsed but no entities
+            records_with_entities = {e.record_id for e in llm_ents}
+            succeeded_records = len(records_with_entities)
+            # Items where parse succeeded but no entities were extracted
             empty_results = sum(1 for r in batch.results
                               if r.success and r.parsed is not None
-                              and r.record_id not in {e.record_id for e in llm_ents})
+                              and r.record_id not in records_with_entities)
 
             result.completion_summary = CompletionSummary(
                 total_records=batch.total,
-                succeeded=succeeded_with_entities,
+                succeeded=succeeded_records,
                 llm_failed=llm_failed,
                 parse_failed=parse_failed,
                 empty_result=empty_results
