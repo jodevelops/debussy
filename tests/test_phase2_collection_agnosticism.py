@@ -920,7 +920,27 @@ class TestIssue136MultilingualWikidata(unittest.TestCase):
         sig = inspect.signature(wikidata_batch_search)
         self.assertIsNone(sig.parameters["lang"].default)
 
-    def test_10_label_service_includes_english_fallback(self):
+    def test_10_default_lang_fallback_on_empty_env_var(self):
+        """CORE-ENH-06: Empty DEBUSSY_WIKIDATA_LANG env var falls back to 'de'."""
+        import os
+        import importlib
+        original = os.environ.get("DEBUSSY_WIKIDATA_LANG")
+        try:
+            # Set env var to empty string (common in templated CI/container envs)
+            os.environ["DEBUSSY_WIKIDATA_LANG"] = ""
+            import kwb.enrich.wikidata as wikidata_mod
+            importlib.reload(wikidata_mod)
+            # Should fall back to "de", not become empty string
+            self.assertEqual(wikidata_mod.DEFAULT_LANG, "de")
+        finally:
+            if original is None:
+                os.environ.pop("DEBUSSY_WIKIDATA_LANG", None)
+            else:
+                os.environ["DEBUSSY_WIKIDATA_LANG"] = original
+            import kwb.enrich.wikidata as wikidata_mod
+            importlib.reload(wikidata_mod)
+
+    def test_11_label_service_includes_english_fallback(self):
         """CORE-ENH-06: SPARQL label service always falls back to English."""
         from kwb.enrich.wikidata import _sparql_search_query
         # German default

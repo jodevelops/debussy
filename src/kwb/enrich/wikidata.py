@@ -31,7 +31,8 @@ USER_AGENT = "Debussy/0.5 (GLAM curation tool; https://github.com/example/debuss
 
 # Default language for SPARQL queries (CORE-ENH-06, Issue #136).
 # Override via DEBUSSY_WIKIDATA_LANG env var or per-call `lang=` argument.
-DEFAULT_LANG = os.environ.get("DEBUSSY_WIKIDATA_LANG", "de")
+# Treat empty string as "not set" (common in templated CI/container envs).
+DEFAULT_LANG = os.environ.get("DEBUSSY_WIKIDATA_LANG") or "de"
 
 
 # ---------------------------------------------------------------------------
