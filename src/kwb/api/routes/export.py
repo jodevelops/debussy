@@ -319,7 +319,7 @@ async def export_jsonld_route(request: dict):
     if review_block:
         return review_block
     limit = min(request.get("limit", 1000), 50_000)
-    base_url = request.get("base_url", "https://example.org/collection/")
+    base_url = request.get("base_url")
 
     try:
         from kwb.export.jsonld import export_jsonld

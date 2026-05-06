@@ -26,7 +26,7 @@ from typing import Any
 import pandas as pd
 
 from kwb.ai.provider import AIMessage, AIProvider
-from kwb.ai.batch import process_batch, BatchReport
+from kwb.ai.batch import process_batch, BatchReport, CompletionSummary
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +83,7 @@ class NERResult:
     """Result of NER on one dataset."""
     entities: list[Entity] = field(default_factory=list)
     batch_report: BatchReport | None = None
-    completion_summary: dict | None = None
+    completion_summary: CompletionSummary | None = None
 
     @property
     def by_type(self) -> dict[EntityType, list[Entity]]:
@@ -365,20 +365,27 @@ def ner_hybrid(
                 llm_map[k] = e
         result.batch_report = batch
 
-        # Build completion summary for batch processing
-        # Count records with successful parses (not entities)
-        total_items = len(texts)
-        successful_parses = sum(
-            1 for r in batch.results
-            if r.parsed and "entities" in r.parsed
-        )
-        failed_parses = total_items - successful_parses
-        result.completion_summary = {
-            "total_items": total_items,
-            "successful_parses": successful_parses,
-            "failed_parses": failed_parses,
-            "success_rate": round(successful_parses / total_items, 3) if total_items > 0 else 0.0,
-        }
+        # Calculate completion summary from batch report.
+        # Count items (records) producing entities, NOT entity instances —
+        # one record may yield multiple entities, so len(llm_ents) would
+        # overcount and could exceed 100% completion.
+        if batch:
+            parse_failed = len(batch.parse_failures)
+            llm_failed = batch.failed
+            records_with_entities = {e.record_id for e in llm_ents}
+            succeeded_records = len(records_with_entities)
+            # Items where parse succeeded but no entities were extracted
+            empty_results = sum(1 for r in batch.results
+                              if r.success and r.parsed is not None
+                              and r.record_id not in records_with_entities)
+
+            result.completion_summary = CompletionSummary(
+                total_records=batch.total,
+                succeeded=succeeded_records,
+                llm_failed=llm_failed,
+                parse_failed=parse_failed,
+                empty_result=empty_results
+            )
 
     # Merge: start with SpaCy, upgrade overlaps to hybrid/llm
     merged: dict[str, Entity] = dict(spacy_map)

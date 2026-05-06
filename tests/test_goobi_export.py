@@ -287,8 +287,8 @@ class TestDataframeToGoobiXml(unittest.TestCase):
     def test_batch_wrapper(self):
         df, ws = self._df_and_ws()
         xml_str = dataframe_to_goobi_xml(df, ws)
-        self.assertIn("<goobi-batch>", xml_str)
-        self.assertIn("</goobi-batch>", xml_str)
+        self.assertIn("<goobi-import-batch>", xml_str)
+        self.assertIn("</goobi-import-batch>", xml_str)
 
     def test_two_records_two_imports(self):
         df, ws = self._df_and_ws()

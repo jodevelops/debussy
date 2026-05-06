@@ -139,6 +139,165 @@ class TestBatch:
         assert _try_parse_json('```json\n{"key": "value"}\n```') == {"key": "value"}
         assert _try_parse_json("not json") is None
 
+    def test_batch_report_provenance_populated(self):
+        """AI-BUG-02: BatchReport must record provider/model/prompt_fn so two
+        runs are distinguishable."""
+        mock = MockProvider.with_defaults()
+        items = [{"record_id": "r1", "text": "Classify: Minarett"}]
+
+        def my_prompt(item):
+            return [AIMessage.user(item["text"])]
+
+        report = process_batch(mock, items, my_prompt, model="mock-x")
+
+        assert report.provider_name == "MockProvider"
+        assert report.model == "mock-x"
+        assert report.prompt_fn_name == "my_prompt"
+        assert report.started_at is not None
+        assert report.finished_at is not None
+        assert report.finished_at >= report.started_at
+
+    def test_batch_report_provenance_distinguishes_runs(self):
+        """Two runs with different prompt functions produce distinguishable
+        BatchReports."""
+        mock = MockProvider.with_defaults()
+        items = [{"record_id": "r1"}]
+
+        def prompt_a(item):
+            return [AIMessage.user("a")]
+
+        def prompt_b(item):
+            return [AIMessage.user("b")]
+
+        rep_a = process_batch(mock, items, prompt_a, model="m1")
+        rep_b = process_batch(mock, items, prompt_b, model="m2")
+
+        assert rep_a.prompt_fn_name != rep_b.prompt_fn_name
+        assert rep_a.model != rep_b.model
+
+    def test_batch_failure_captures_exception_type(self):
+        """AI-BUG-01: per-item failures must record error_type, not just
+        the message — so curators can triage timeouts vs parse errors."""
+        from kwb.ai.provider import ProviderConfig
+
+        class FailingProvider(MockProvider):
+            def complete(self, messages, model=None, **kwargs):
+                raise ConnectionError("simulated network failure")
+
+        provider = FailingProvider(ProviderConfig(base_url="mock://x"))
+        items = [{"record_id": "r1"}, {"record_id": "r2"}]
+        report = process_batch(
+            provider, items, prompt_fn=lambda i: [AIMessage.user("test")]
+        )
+
+        assert report.failed == 2
+        assert report.succeeded == 0
+        for r in report.results:
+            assert r.success is False
+            assert r.error_type == "ConnectionError"
+            assert "simulated network failure" in r.error
+
+    def test_batch_continues_on_per_item_failure(self):
+        """AI-BUG-01: a single failing item must not abort the batch."""
+        from kwb.ai.provider import AIResponse, ProviderConfig
+
+        class FlakyProvider(MockProvider):
+            def __init__(self):
+                super().__init__(ProviderConfig(base_url="mock://x"))
+                self.calls = 0
+
+            def complete(self, messages, model=None, **kwargs):
+                self.calls += 1
+                if self.calls == 2:
+                    raise ValueError("flaky on second call")
+                return AIResponse(
+                    content='{"ok": true}',
+                    model=model or "mock-model",
+                    usage={},
+                )
+
+        provider = FlakyProvider()
+        items = [{"record_id": f"r{i}"} for i in range(3)]
+        report = process_batch(
+            provider, items, prompt_fn=lambda i: [AIMessage.user("test")]
+        )
+
+        assert report.total == 3
+        assert report.succeeded == 2
+        assert report.failed == 1
+        assert report.results[1].error_type == "ValueError"
+
+    def test_batch_keyboard_interrupt_propagates(self):
+        """AI-BUG-01: KeyboardInterrupt is BaseException, must NOT be caught.
+        Operators must always be able to abort."""
+        import pytest
+        from kwb.ai.provider import ProviderConfig
+
+        class AbortingProvider(MockProvider):
+            def complete(self, messages, model=None, **kwargs):
+                raise KeyboardInterrupt()
+
+        provider = AbortingProvider(ProviderConfig(base_url="mock://x"))
+        items = [{"record_id": "r1"}]
+
+        with pytest.raises(KeyboardInterrupt):
+            process_batch(
+                provider, items, prompt_fn=lambda i: [AIMessage.user("test")]
+            )
+
+    def test_batch_parse_failure_tracking(self):
+        """EXT-BUG-02: JSON parse failures must be tracked and visible."""
+        from kwb.ai.provider import AIResponse, ProviderConfig
+
+        class BadJsonProvider(MockProvider):
+            def complete(self, messages, model=None, **kwargs):
+                return AIResponse(
+                    content="not valid json at all",
+                    model=model or "mock-model",
+                    usage={},
+                )
+
+        provider = BadJsonProvider(ProviderConfig(base_url="mock://x"))
+        items = [
+            {"record_id": "r1"},
+            {"record_id": "r2"},
+            {"record_id": "r3"},
+        ]
+        report = process_batch(
+            provider, items, prompt_fn=lambda i: [AIMessage.user("test")]
+        )
+
+        assert report.total == 3
+        assert report.succeeded == 3  # LLM calls succeeded
+        assert len(report.parse_failures) == 3  # But parsing failed
+        assert all(pf.raw_response == "not valid json at all" for pf in report.parse_failures)
+        assert all(pf.error_message == "JSON parse failed" for pf in report.parse_failures)
+
+    def test_ner_completion_summary(self):
+        """EXT-BUG-01: NERResult must track completion rate from batch report."""
+        from kwb.ai.provider import AIResponse, ProviderConfig
+        from kwb.analyze.ner import ner_hybrid
+
+        class GoodJsonProvider(MockProvider):
+            def complete(self, messages, model=None, **kwargs):
+                return AIResponse(
+                    content='{"entities": [{"text": "Berlin", "type": "LOC", "confidence": 0.9}]}',
+                    model=model or "mock-model",
+                    usage={},
+                )
+
+        import pandas as pd
+        df = pd.DataFrame({"id": ["r1", "r2", "r3"], "text": ["Berlin ist schön", "München und Köln", "Guten Tag"]})
+        provider = GoodJsonProvider(ProviderConfig(base_url="mock://x"))
+
+        result = ner_hybrid(df, ["text"], provider=provider, id_column="id")
+
+        assert result.completion_summary is not None
+        assert result.completion_summary.total_records == 3
+        assert result.completion_summary.succeeded == 3
+        assert result.completion_summary.parse_failed == 0
+        assert result.completion_summary.completion_percentage == 100
+
 
 # ---------------------------------------------------------------------------
 # Image loader tests

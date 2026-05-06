@@ -634,12 +634,14 @@ class Workspace:
         updated_at: str = "",
         source_file: str = "",
         id_column: str = "record_id",
+        base_url: str | None = None,
     ):
         self.name = name
         self.created_at = created_at or utc_now_iso()
         self.updated_at = updated_at or utc_now_iso()
         self.source_file = source_file
         self.id_column = id_column
+        self.base_url = base_url
 
         # Internal storage — canonical list format only (CORE-BUG-03)
         self._field_mapping: list[FieldMapping] = []
@@ -1101,6 +1103,7 @@ class Workspace:
             "source_file": self.source_file,
             "source_files": self.source_files,
             "id_column": self.id_column,
+            "base_url": self.base_url,
             "field_mapping": fm_ser,
             "dictionary": [e.to_dict() for e in self._dictionary],
             "entity_reviews": [r.to_dict() for r in self.entity_reviews],
@@ -1127,6 +1130,7 @@ class Workspace:
             updated_at=d.get("updated_at", ""),
             source_file=d.get("source_file", ""),
             id_column=d.get("id_column", "record_id"),
+            base_url=d.get("base_url"),
         )
         # Field mapping: migrate legacy dict format to canonical list format (CORE-BUG-03)
         fm = d.get("field_mapping", [])

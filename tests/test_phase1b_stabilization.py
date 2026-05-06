@@ -24,6 +24,7 @@ class TestNERCompletionSummary(unittest.TestCase):
         """NERResult.completion_summary must exist when LLM provider is given."""
         from kwb.analyze.ner import ner_hybrid
         from kwb.ai.provider import AIProvider
+        from kwb.ai.batch import CompletionSummary
 
         df = pd.DataFrame({
             "id": ["1", "2"],
@@ -37,13 +38,16 @@ class TestNERCompletionSummary(unittest.TestCase):
         )
 
         self.assertIsNotNone(result.completion_summary)
-        self.assertIn("total_items", result.completion_summary)
-        self.assertIn("successful_parses", result.completion_summary)
-        self.assertIn("failed_parses", result.completion_summary)
-        self.assertIn("success_rate", result.completion_summary)
+        self.assertIsInstance(result.completion_summary, CompletionSummary)
+        # Typed CompletionSummary attributes
+        self.assertTrue(hasattr(result.completion_summary, "total_records"))
+        self.assertTrue(hasattr(result.completion_summary, "succeeded"))
+        self.assertTrue(hasattr(result.completion_summary, "llm_failed"))
+        self.assertTrue(hasattr(result.completion_summary, "parse_failed"))
+        self.assertTrue(hasattr(result.completion_summary, "empty_result"))
 
     def test_completion_summary_tracks_parse_success(self):
-        """Completion summary must show ratio of successful vs failed parses."""
+        """Completion summary must distinguish parse failures from empty results."""
         from kwb.analyze.ner import ner_hybrid
         from kwb.ai.provider import AIProvider
 
@@ -53,9 +57,12 @@ class TestNERCompletionSummary(unittest.TestCase):
         })
 
         mock_batch = MagicMock()
+        mock_batch.total = 2
+        mock_batch.failed = 0
+        mock_batch.parse_failures = []
         mock_batch.results = [
-            MagicMock(record_id="1", parsed={"entities": []}),  # success
-            MagicMock(record_id="2", parsed=None),  # failure
+            MagicMock(record_id="1", success=True, parsed={"entities": []}),  # parse ok, no entities
+            MagicMock(record_id="2", success=False, parsed=None),  # parse failed
         ]
 
         mock_provider = MagicMock(spec=AIProvider)
@@ -66,10 +73,12 @@ class TestNERCompletionSummary(unittest.TestCase):
                 id_column="id", use_spacy=False, use_llm=True
             )
 
-        self.assertEqual(result.completion_summary["total_items"], 2)
-        self.assertEqual(result.completion_summary["successful_parses"], 1)
-        self.assertEqual(result.completion_summary["failed_parses"], 1)
-        self.assertAlmostEqual(result.completion_summary["success_rate"], 0.5, places=2)
+        # Typed CompletionSummary access
+        self.assertEqual(result.completion_summary.total_records, 2)
+        # succeeded = records that produced entities (not entity instances)
+        self.assertEqual(result.completion_summary.succeeded, 0)
+        # parse succeeded but no entities
+        self.assertEqual(result.completion_summary.empty_result, 1)
 
 
 class TestAffectedIdsExceptionHandling(unittest.TestCase):

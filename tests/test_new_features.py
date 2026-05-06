@@ -301,6 +301,7 @@ class TestJSONLDExport(unittest.TestCase):
         })
         ws = Workspace.create("jsonld-test")
         ws.id_column = "record_id"
+        ws.base_url = "https://example.com/collection/"
 
         ws.set_field_mapping([
             FieldMapping("record_id", "CatalogIDDigital", enabled=True),
@@ -371,6 +372,7 @@ class TestJSONLDExport(unittest.TestCase):
         df = pd.DataFrame({"record_id": ["r1"], "title": ["Test"]})
         ws = Workspace.create("empty")
         ws.id_column = "record_id"
+        ws.base_url = "https://example.com/collection/"
         doc = json.loads(export_jsonld(df, ws))
         self.assertIn("@graph", doc)
 
@@ -408,6 +410,76 @@ class TestJSONLDExport(unittest.TestCase):
         # temporal should be present since we added dates for obj_001
         if "temporal" in record:
             self.assertIsInstance(record["temporal"], list)
+
+    def test_jsonld_requires_base_url(self):
+        """EXP-BUG-06: export_jsonld raises error when base_url not provided."""
+        from kwb.export.jsonld import export_jsonld
+        df = pd.DataFrame({"record_id": ["r1"], "title": ["Test"]})
+        ws = Workspace.create("no-base-url")
+        ws.id_column = "record_id"
+        # No base_url set on workspace
+        with self.assertRaises(ValueError) as ctx:
+            export_jsonld(df, ws)
+        self.assertIn("base_url must be set", str(ctx.exception))
+
+    def test_jsonld_blocks_placeholder_urls(self):
+        """EXP-BUG-06: export_jsonld rejects placeholder example.org URLs."""
+        from kwb.export.jsonld import export_jsonld
+        df = pd.DataFrame({"record_id": ["r1"], "title": ["Test"]})
+        ws = Workspace.create("placeholder-url")
+        ws.id_column = "record_id"
+        ws.base_url = "https://example.org/collection/"
+        with self.assertRaises(ValueError) as ctx:
+            export_jsonld(df, ws)
+        self.assertIn("Placeholder URIs", str(ctx.exception))
+
+    def test_goobi_xml_files_detects_collision(self):
+        """EXP-BUG-04: dataframe_to_goobi_xml_files raises error on filename collisions."""
+        from kwb.export.goobi_xml import dataframe_to_goobi_xml_files
+        import tempfile
+
+        # Create records with IDs that sanitize to the same filename
+        df = pd.DataFrame({
+            "record_id": ["obj 001", "obj/001", "obj_002"],
+            "title": ["First", "Second", "Third"],
+        })
+        ws = Workspace.create("collision-test")
+        ws.id_column = "record_id"
+        ws.field_mapping.append(FieldMapping(
+            csv_column="title",
+            goobi_type="TitleDocMain",
+            label="Title",
+        ))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with self.assertRaises(ValueError) as ctx:
+                dataframe_to_goobi_xml_files(df, ws, tmpdir)
+            self.assertIn("Filename collision", str(ctx.exception))
+            self.assertIn("obj 001", str(ctx.exception))
+
+    def test_goobi_xml_files_no_collision_success(self):
+        """EXP-BUG-04: dataframe_to_goobi_xml_files succeeds with distinct record IDs."""
+        from kwb.export.goobi_xml import dataframe_to_goobi_xml_files
+        import tempfile
+
+        # Create records with IDs that sanitize to distinct filenames
+        df = pd.DataFrame({
+            "record_id": ["obj-001", "obj-002", "obj-003"],
+            "title": ["First", "Second", "Third"],
+        })
+        ws = Workspace.create("no-collision-test")
+        ws.id_column = "record_id"
+        ws.field_mapping.append(FieldMapping(
+            csv_column="title",
+            goobi_type="TitleDocMain",
+            label="Title",
+        ))
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            paths = dataframe_to_goobi_xml_files(df, ws, tmpdir)
+            self.assertEqual(len(paths), 3)
+            self.assertTrue(all(p.exists() for p in paths))
+            self.assertTrue(any("obj-001" in p.name for p in paths))
 
 
 # ---------------------------------------------------------------------------
@@ -534,6 +606,8 @@ class TestNewExportRoutes(unittest.TestCase):
             id_column="record_id",
         )
         deps._state["datasets"]["synthetic"] = (df, profile)
+        # Set base_url for JSON-LD export (required by EXP-BUG-06)
+        deps._state["workspace"].base_url = "https://example.com/collection/"
 
     def test_csv_export_endpoint(self):
         """POST /api/export/csv returns CSV bytes."""
