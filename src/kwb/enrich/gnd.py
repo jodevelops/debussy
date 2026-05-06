@@ -101,31 +101,96 @@ class GNDMatch:
 
 
 # ---------------------------------------------------------------------------
+# Configurable named-entity schema (CORE-ENH-05, Issue #121)
+# ---------------------------------------------------------------------------
+
+@dataclass
+class NamedEntitySchema:
+    """
+    Configurable schema for wide-format GND-merged CSVs.
+
+    Different GLAM collections use different naming conventions for their
+    flattened named-entity columns. This class lets callers override the
+    column-naming pattern instead of relying on the GIUB-specific
+    `named_entity_N` prefix.
+
+    All patterns use ``{n}`` as a placeholder for the slot number (1, 2, …).
+
+    Default values match the GIUB master CSV.
+    """
+    term_pattern: str = "named_entity_{n}"
+    id_pattern: str = "named_entity_{n}_gnd_id"
+    preferred_pattern: str = "named_entity_{n}_gnd_preferredName"
+    confidence_pattern: str = "named_entity_{n}_gnd_konfidenz"
+    type_pattern: str = "named_entity_{n}_gnd_type"
+    alternatives_pattern: str = "named_entity_{n}_gnd_alternativen"
+    record_id_column: str = "record_id"
+
+    def term_col(self, n: int) -> str:
+        return self.term_pattern.format(n=n)
+
+    def id_col(self, n: int) -> str:
+        return self.id_pattern.format(n=n)
+
+    def preferred_col(self, n: int) -> str:
+        return self.preferred_pattern.format(n=n)
+
+    def confidence_col(self, n: int) -> str:
+        return self.confidence_pattern.format(n=n)
+
+    def type_col(self, n: int) -> str:
+        return self.type_pattern.format(n=n)
+
+    def alternatives_col(self, n: int) -> str:
+        return self.alternatives_pattern.format(n=n)
+
+    def detect_max_entities(self, df: pd.DataFrame) -> int:
+        """Return the highest slot number N for which id_col(N) exists in df."""
+        n = 0
+        while self.id_col(n + 1) in df.columns:
+            n += 1
+        return n
+
+
+# Default schema preserves backward compatibility with GIUB master CSV.
+DEFAULT_NAMED_ENTITY_SCHEMA = NamedEntitySchema()
+
+
+# ---------------------------------------------------------------------------
 # Parse pre-enriched CSV (wide format: named_entity_N_gnd_* columns)
 # ---------------------------------------------------------------------------
 
-def parse_gnd_columns(df: pd.DataFrame, max_entities: int = 11) -> list[GNDMatch]:
+def parse_gnd_columns(
+    df: pd.DataFrame,
+    max_entities: int | None = None,
+    schema: NamedEntitySchema | None = None,
+) -> list[GNDMatch]:
     """
     Extract GND matches from the wide-format GND-merged CSV.
 
-    Expects columns named:
-        named_entity_N, named_entity_N_gnd_id,
-        named_entity_N_gnd_preferredName, named_entity_N_gnd_konfidenz,
-        named_entity_N_gnd_type, named_entity_N_gnd_alternativen
-
-    for N in 1..max_entities.
+    Args:
+        df: DataFrame with named-entity columns (wide format).
+        max_entities: Upper bound on slot numbers. If None, auto-detected
+            from the actual columns present in df.
+        schema: NamedEntitySchema describing the column patterns. Defaults
+            to GIUB-style ``named_entity_N_gnd_*``.
 
     Returns list of GNDMatch for all entities that have a GND ID.
     """
+    schema = schema or DEFAULT_NAMED_ENTITY_SCHEMA
+    if max_entities is None:
+        max_entities = schema.detect_max_entities(df)
+        if max_entities == 0:
+            return []
+
     matches: list[GNDMatch] = []
 
     for _, row in df.iterrows():
-        record_id = str(row.get("record_id", ""))
+        record_id = str(row.get(schema.record_id_column, ""))
 
         for n in range(1, max_entities + 1):
-            prefix = f"named_entity_{n}"
-            term_col = prefix
-            id_col = f"{prefix}_gnd_id"
+            term_col = schema.term_col(n)
+            id_col = schema.id_col(n)
 
             if id_col not in df.columns:
                 break  # no more entity columns
@@ -135,12 +200,12 @@ def parse_gnd_columns(df: pd.DataFrame, max_entities: int = 11) -> list[GNDMatch
                 continue
 
             term = str(row.get(term_col, "")).strip() if not pd.isna(row.get(term_col, "")) else ""
-            preferred = str(row.get(f"{prefix}_gnd_preferredName", "") or "").strip()
-            gnd_type = str(row.get(f"{prefix}_gnd_type", "") or "").strip()
-            conf_raw = row.get(f"{prefix}_gnd_konfidenz")
+            preferred = str(row.get(schema.preferred_col(n), "") or "").strip()
+            gnd_type = str(row.get(schema.type_col(n), "") or "").strip()
+            conf_raw = row.get(schema.confidence_col(n))
             confidence = parse_confidence(conf_raw)
 
-            alts_raw = row.get(f"{prefix}_gnd_alternativen")
+            alts_raw = row.get(schema.alternatives_col(n))
             alternatives: list[str] = []
             if pd.notna(alts_raw) and str(alts_raw).strip():
                 alternatives = [a.strip() for a in str(alts_raw).split(";") if a.strip()]
@@ -184,29 +249,43 @@ def build_dictionary_from_gnd_csv(df: pd.DataFrame) -> dict[str, DictionaryEntry
 def flag_low_confidence(
     df: pd.DataFrame,
     threshold: float = 0.75,
-    max_entities: int = 11,
+    max_entities: int | None = None,
+    schema: NamedEntitySchema | None = None,
 ) -> list[dict]:
     """
     Return records/entities where GND confidence is below threshold.
 
     Useful for the GUI's review queue: "here are 30% of matches that need
     human verification".
+
+    Args:
+        df: DataFrame with named-entity columns (wide format).
+        threshold: Minimum acceptable confidence; matches below get flagged.
+        max_entities: Upper bound on slot numbers. If None, auto-detected.
+        schema: NamedEntitySchema describing the column patterns. Defaults
+            to GIUB-style ``named_entity_N_gnd_*``.
     """
+    schema = schema or DEFAULT_NAMED_ENTITY_SCHEMA
+    if max_entities is None:
+        max_entities = schema.detect_max_entities(df)
+        if max_entities == 0:
+            return []
+
     flags = []
     for _, row in df.iterrows():
-        record_id = str(row.get("record_id", ""))
+        record_id = str(row.get(schema.record_id_column, ""))
         for n in range(1, max_entities + 1):
-            id_col = f"named_entity_{n}_gnd_id"
+            id_col = schema.id_col(n)
             if id_col not in df.columns:
                 break
             gnd_id = row.get(id_col)
             if pd.isna(gnd_id) or not str(gnd_id).strip():
                 continue
-            conf = parse_confidence(row.get(f"named_entity_{n}_gnd_konfidenz"))
+            conf = parse_confidence(row.get(schema.confidence_col(n)))
             if conf < threshold:
                 flags.append({
                     "record_id": record_id,
-                    "term": str(row.get(f"named_entity_{n}", "")),
+                    "term": str(row.get(schema.term_col(n), "")),
                     "gnd_id": str(gnd_id),
                     "confidence": conf,
                     "slot": n,

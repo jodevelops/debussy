@@ -13,10 +13,12 @@ Issues covered:
 """
 from __future__ import annotations
 
+import os
 import re
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 class TestImageReviewStats(unittest.TestCase):
@@ -151,10 +153,14 @@ class TestSaveToDotenvRoundTrip(unittest.TestCase):
             timeout_seconds=180,
             language="en",
         )
-        with tempfile.TemporaryDirectory() as d:
-            p = Path(d) / ".env"
-            cfg.save_to_dotenv(p)
-            reloaded = load_config(p)
+        # Isolate from any KWB_* env vars (CI sets some to empty, which
+        # would override dotenv values via os.environ.get precedence).
+        clean_env = {k: v for k, v in os.environ.items() if not k.startswith("KWB_")}
+        with patch.dict(os.environ, clean_env, clear=True):
+            with tempfile.TemporaryDirectory() as d:
+                p = Path(d) / ".env"
+                cfg.save_to_dotenv(p)
+                reloaded = load_config(p)
 
         self.assertEqual(reloaded.gpustack_url, cfg.gpustack_url)
         self.assertEqual(reloaded.gpustack_key, cfg.gpustack_key)

@@ -99,7 +99,11 @@ class TestWorkspacePersistence(unittest.TestCase):
         self.assertEqual(len(loaded.dates), 1)
         self.assertEqual(loaded.dates[0].edtf, "192X")
         self.assertEqual(len(loaded.dictionary), 1)
-        self.assertEqual(loaded.field_mapping["title"], ["Titel", "TitleDocMain"])
+        # Verify field_mapping was migrated from legacy dict to canonical list format
+        self.assertEqual(len(loaded.field_mapping), 1)
+        self.assertEqual(loaded.field_mapping[0].csv_column, "title")
+        self.assertEqual(loaded.field_mapping[0].label, "Titel")
+        self.assertEqual(loaded.field_mapping[0].goobi_type, "TitleDocMain")
 
         Path(path).unlink()
 

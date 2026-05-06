@@ -69,6 +69,23 @@ Siehe `debussy-core-audit-issues.md` für die vollständige Sequenzierung.
 - **Regression-Test-Suite `tests/test_phase1_stabilization.py`** — jeder
   Audit-Issue ist mit einem dedizierten Test abgedeckt; die Audit-ID
   steht im Docstring.
+- **Regression-Test-Suite `tests/test_phase2_collection_agnosticism.py`** —
+  61 dedizierte Tests für Phase 2 (Collection-Agnosticism), aufgeteilt in
+  fünf Klassen: 15 Tests für Issue #103 (field_mapping), 15 Tests für
+  Issue #110 (Provenance), 10 Tests für Issue #120 (Subject-Spalten-
+  Erkennung), 11 Tests für Issue #121 (NamedEntitySchema), 10 Tests für
+  Issue #136 (Wikidata-Mehrsprachigkeit).
+- **`Provenance` TypedDict** in `kwb.core.models` — kanonisches Schema
+  für Extraktions-Provenance. Single source of truth für die Felder
+  `source`, `method`, `model`, `extracted_at`, `reviewed_at`,
+  `reviewer`, `note`.
+- **`infer_subject_column()`** in `kwb.analyze.semantic` — Helper für
+  automatische Erkennung der Subject/Topic-Spalte aus typischen
+  Schema-Konventionen.
+- **`NamedEntitySchema`** in `kwb.enrich.gnd` — Dataclass für
+  konfigurierbare Spalten-Konventionen in flachen GND-CSVs.
+- **`DEFAULT_LANG`** in `kwb.enrich.wikidata` — Modul-Konstante mit
+  Override über `DEBUSSY_WIKIDATA_LANG` Umgebungsvariable.
 
 ### Geändert
 - **`Workspace.image_review_stats()`** — gibt jetzt einen Dict zurück,
@@ -98,6 +115,49 @@ Siehe `debussy-core-audit-issues.md` für die vollständige Sequenzierung.
   `api/routes/ai.py`, `api/routes/mds_tasks.py` nutzen jetzt
   `utc_now_iso()` statt `datetime.utcnow().isoformat()`. ISO-Strings
   enthalten den Timezone-Offset `+00:00`. (CORE-BUG-07, Issue #107)
+- **`Workspace.field_mapping`** — konsolidiert zu `list[FieldMapping]`
+  (kanonisches Format). Entfernt `_field_mapping_raw` dual-storage
+  anti-pattern. Legacy dict-Format (`{"col": (label, type)}`) wird
+  automatisch zu list-Format migriert. Alle Serialisierung nutzt jetzt
+  konsistent das list-Format. (CORE-BUG-03, Issue #103)
+- **Provenance-Felder über alle Extraktions-Typen** — `EntityReview`,
+  `CuratedDate`, `AuthorityCandidate`, `DictionaryEntry` und
+  `ImageAnalysisResult` exponieren jetzt eine einheitliche
+  `provenance() → Provenance` Methode mit kanonischem Schema:
+  `source`, `method`, `model`, `extracted_at`, `reviewed_at`,
+  `reviewer`, `note`. Vorher hatten alle Typen unterschiedliche Felder
+  und der `source`-Schlüssel hatte unterschiedliche Bedeutung.
+  Fehlende Felder (`model`, `extracted_at`, `reviewer`) wurden zu
+  `EntityReview`, `CuratedDate` und `AuthorityCandidate` hinzugefügt;
+  `extracted_at` wird in `__post_init__` automatisch gesetzt. Die neue
+  `Provenance`-TypedDict ist in `kwb.core.models` definiert.
+  (CORE-ENH-03, Issue #110)
+- **`ImageAnalysisResult.provenance`** — von einer Property zu einer
+  Methode geändert (für Konsistenz mit anderen Extraktions-Typen).
+  Aufrufer in `api/routes/export.py` entsprechend angepasst. Die
+  Rückgabe enthält jetzt zusätzlich `method` und `note` Schlüssel.
+  (CORE-ENH-03, Issue #110)
+- **`classify_subjects()`** — der hardcodierte Default
+  `subject_column="subject_extract_original"` wurde entfernt. Stattdessen
+  triggert `subject_column=None` jetzt eine Auto-Erkennung über die
+  neue Helper-Funktion `infer_subject_column()`, die typische Spalten-
+  Namen (subject, topic, keywords, schlagwort, …) case-insensitiv
+  durchsucht. Sammlungen mit anderen Schemata werden jetzt korrekt
+  unterstützt. (CORE-ENH-04, Issue #120)
+- **`parse_gnd_columns()` und `flag_low_confidence()`** — die
+  hardcodierte `named_entity_N_gnd_*` Spalten-Konvention wurde durch
+  die neue `NamedEntitySchema` Dataclass ersetzt. Default ist
+  `DEFAULT_NAMED_ENTITY_SCHEMA` (kompatibel mit GIUB Master-CSV).
+  Andere Sammlungen können `schema=NamedEntitySchema(term_pattern=…)`
+  übergeben. `max_entities` wird jetzt aus den tatsächlich vorhandenen
+  Spalten erkannt (statt fest 11). (CORE-ENH-05, Issue #121)
+- **Wikidata SPARQL-Queries** — die hardcodierte
+  `FILTER(LANG(?typeLabel) = "de")` wurde dynamisch gemacht. Alle
+  Public-Funktionen (`wikidata_search`, `wikidata_batch_search`)
+  akzeptieren jetzt `lang=None` und nutzen dann das neue
+  `DEFAULT_LANG` Modul-Konstante (steuerbar über die Umgebungsvariable
+  `DEBUSSY_WIKIDATA_LANG`). Sammlungen in anderen Sprachen erhalten
+  jetzt korrekt typisierte Labels. (CORE-ENH-06, Issue #136)
 
 ### Behoben
 - Bilder mit `review_status = ACCEPTED` wurden in `image_review_stats()`
@@ -114,11 +174,21 @@ Siehe `debussy-core-audit-issues.md` für die vollständige Sequenzierung.
   beseitigt; alle Timestamps sind timezone-aware. (#107)
 
 ### Architektur-Hinweis
-Phase 1 (Stabilize) der Core-Audit-Empfehlungen ist abgeschlossen. Die
-nächsten Phasen sind:
-- **Phase 2** — Collection-Agnosticism (Issues #103, #110, #120, #121, #136)
-- **Phase 3** — Confidence-Semantics (Issues #123, #129, #133)
-- **Phase 4** — User-Centered UX-Redesign (Issues #125, #126, #127, #132)
+Phase 1 (Stabilize) der Core-Audit-Empfehlungen ist **abgeschlossen**.
+Phase 2 (Collection-Agnosticism) hat **begonnen**:
+
+**Phase 1** (✅ abgeschlossen):
+- CORE-BUG-01 bis CORE-BUG-07 — Kern-Stabilisierung
+
+**Phase 2** (🟡 in Arbeit):
+- CORE-BUG-03 (#103) ✅ — field_mapping Konsolidierung **fertiggestellt**
+- CORE-ENH-03 (#110) ✅ — Provenance Konsistenz **fertiggestellt**
+- CORE-ENH-04 (#120) — subject_extract_original Hardcodierung (ausstehend)
+- CORE-ENH-05 (#121) — named_entity schema Konfigurierbarkeit (ausstehend)
+- CORE-ENH-06 (#136) — Multilingual Wikidata (ausstehend)
+
+**Phase 3** (geplant): Confidence-Semantics (Issues #123, #129, #133)
+**Phase 4** (geplant): User-Centered UX-Redesign (Issues #125, #126, #127, #132)
 
 Siehe `debussy-core-audit-issues.md` für die vollständige Sequenzierung.
 
