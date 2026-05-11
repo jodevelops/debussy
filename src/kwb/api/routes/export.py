@@ -371,7 +371,7 @@ async def export_mets_mods_route(request: dict):
 
     try:
         from kwb.export.mets_mods import export_mets_mods
-        mets_str = export_mets_mods(df, ws, limit=limit)
+        mets_str = export_mets_mods(df, ws, limit=limit, profile=_profile)
 
         if request.get("as_file", True):
             return Response(

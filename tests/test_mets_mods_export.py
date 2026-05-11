@@ -923,6 +923,49 @@ class TestCodexReview(unittest.TestCase):
         self.assertIn("Schiller", creator_parts)
         self.assertIn("Heine", creator_parts)
 
+    def test_profile_id_column_takes_precedence(self):
+        """Profile.id_column (from ingestion) takes precedence for ID resolution (P1)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("identifier", "CatalogIDDigital"),
+        ])
+        # Workspace defaults id_column to "record_id"
+        ws.id_column = "record_id"
+
+        df = pd.DataFrame({
+            "identifier": ["obj-001", "obj-002"],
+            "data": ["A", "B"],
+        })
+
+        # Add entity keyed to the profile's ID column
+        er = EntityReview(
+            entity_type="PER",
+            text="Test Person",
+            record_id="obj-001",  # Matches profile.id_column
+            status=ReviewStatus.ACCEPTED,
+        )
+        ws.entity_reviews.append(er)
+
+        # Create a mock profile with the correct id_column
+        profile = type("Profile", (), {"id_column": "identifier"})()
+
+        mets_str = export_mets_mods(df, ws, profile=profile)
+        root = fromstring(mets_str)
+
+        # Should have 2 dmdSecs (one per row)
+        dmd_secs = _find_elements(root, "dmdSec", _METS_NS)
+        self.assertEqual(len(dmd_secs), 2,
+                         "Should have records with correct profile ID column")
+
+        # Should have exported the person entity (proves profile ID column was used)
+        names = _find_elements(root, "name", _MODS_NS)
+        name_parts = []
+        for name in names:
+            parts = name.findall(f"{{{_MODS_NS}}}namePart")
+            name_parts.extend([p.text for p in parts if p.text])
+        self.assertIn("Test Person", name_parts,
+                      "Entity lookup must use profile.id_column for record joins")
+
 
 if __name__ == "__main__":
     unittest.main()

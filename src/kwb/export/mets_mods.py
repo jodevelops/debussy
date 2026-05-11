@@ -276,6 +276,7 @@ def export_mets_mods(
     workspace: "Workspace",
     *,
     limit: int | None = None,
+    profile: Any = None,
 ) -> str:
     """
     Export DataFrame + workspace data as METS/MODS XML.
@@ -287,13 +288,18 @@ def export_mets_mods(
     df:        Source DataFrame
     workspace: Workspace with field_mapping, entity_reviews, dates
     limit:     Maximum records to export (None = all)
+    profile:   Dataset profile with id_column (from ingestion)
 
     Returns a formatted METS XML string with DOCTYPE declaration.
     """
-    # Derive ID column from dataset, preferring workspace config if it exists in data
-    if workspace.id_column and workspace.id_column in df.columns:
+    # Derive ID column: prefer profile.id_column (from ingestion), then workspace config
+    id_col = None
+    if profile and hasattr(profile, "id_column") and profile.id_column:
+        if profile.id_column in df.columns:
+            id_col = profile.id_column
+    if not id_col and workspace.id_column and workspace.id_column in df.columns:
         id_col = workspace.id_column
-    else:
+    if not id_col:
         id_col = df.columns[0] if len(df.columns) > 0 else "record_id"
     active_mappings = workspace.active_mappings()
 
