@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from kwb.core.workspace import (
     Workspace, FieldMapping, EntityReview, ReviewStatus, CuratedDate,
 )
-from kwb.export.mets_mods import export_mets_mods, _make_mods_record
+from kwb.export.mets_mods import export_mets_mods
 
 
 # Constants for XML namespace handling
