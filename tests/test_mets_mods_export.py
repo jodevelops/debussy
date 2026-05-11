@@ -672,6 +672,69 @@ class TestCodexReview(unittest.TestCase):
         self.assertNotIn("Unreviewed description", abstract_texts,
                          "Pending image analyses must not surface in MODS")
 
+    def test_rejected_entities_excluded_from_export(self):
+        """Rejected entity reviews must NOT appear in MODS output (P1)."""
+        ws = _ws_basic()
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "title": ["Test"],
+        })
+
+        # Add both accepted and rejected entities
+        accepted = EntityReview(
+            entity_type="PER",
+            text="Accepted Person",
+            record_id="rec-001",
+            status=ReviewStatus.ACCEPTED,
+        )
+        rejected = EntityReview(
+            entity_type="LOC",
+            text="Rejected Place",
+            record_id="rec-001",
+            status=ReviewStatus.REJECTED,
+        )
+        ws.entity_reviews.append(accepted)
+        ws.entity_reviews.append(rejected)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Accepted person should appear in name elements
+        names = _find_elements(root, "name", _MODS_NS)
+        name_texts = []
+        for name_el in names:
+            parts = name_el.findall(f"{{{_MODS_NS}}}namePart")
+            name_texts.extend([p.text for p in parts if p.text])
+        self.assertIn("Accepted Person", name_texts,
+                      "Accepted entities must be in MODS output")
+
+        # Rejected place must NOT appear anywhere
+        geos = _find_elements(root, "geographic", _MODS_NS)
+        geo_texts = [g.text for g in geos]
+        self.assertNotIn("Rejected Place", geo_texts,
+                         "Rejected entities must be excluded from MODS output")
+
+    def test_zero_record_limit_respected(self):
+        """limit=0 must export 0 records, not full dataset (P2)."""
+        ws = _ws_basic()
+        df = pd.DataFrame({
+            "record_id": ["rec-001", "rec-002", "rec-003"],
+            "title": ["Title 1", "Title 2", "Title 3"],
+        })
+
+        # Export with limit=0
+        mets_str = export_mets_mods(df, ws, limit=0)
+        root = fromstring(mets_str)
+
+        # Should have 0 dmdSec elements (one per record)
+        dmd_secs = _find_elements(root, "dmdSec", _METS_NS)
+        self.assertEqual(len(dmd_secs), 0,
+                         "limit=0 must result in 0 records exported")
+
+        # Should still have valid METS structure (header, file section, struct map)
+        headers = _find_elements(root, "metsHdr", _METS_NS)
+        self.assertEqual(len(headers), 1, "METS header must be present even with limit=0")
+
 
 if __name__ == "__main__":
     unittest.main()

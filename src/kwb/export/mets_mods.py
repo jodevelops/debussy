@@ -266,9 +266,11 @@ def export_mets_mods(
     id_col = workspace.id_column or (df.columns[0] if len(df.columns) > 0 else "record_id")
     active_mappings = workspace.active_mappings()
 
-    # Build entity lookup per record
+    # Build entity lookup per record — exclude rejected entities
     entities_by_record: dict[str, list] = {}
     for er in workspace.entity_reviews:
+        if er.status.value == "rejected":
+            continue
         rid = er.record_id or ""
         entities_by_record.setdefault(rid, [])
         entities_by_record[rid].append({
@@ -314,7 +316,7 @@ def export_mets_mods(
     mets_hdr.set("RECORDSTATUS", "Complete")
 
     # Descriptive metadata section (dmdSec)
-    rows = df.head(limit) if limit else df
+    rows = df.head(limit) if limit is not None else df
     for idx, (_, row) in enumerate(rows.iterrows()):
         record_id = str(row.get(id_col, ""))
         dmd_id = f"dmd{idx}"
