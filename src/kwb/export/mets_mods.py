@@ -16,6 +16,7 @@ Includes:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from xml.etree.ElementTree import Element, SubElement, tostring, indent as et_indent
 import sys
@@ -144,12 +145,15 @@ def _make_mods_record(
         elif mods_key == "abstract":
             _subelem(mods, "abstract", ns=_MODS_NS).text = val_str
 
-        # Creator / Name
+        # Creator / Name — role must contain <roleTerm> children per MODS schema
         elif mods_key == "name":
             name_elem = _subelem(mods, "name", ns=_MODS_NS)
             name_elem.set("type", "personal")
             _subelem(name_elem, "namePart", ns=_MODS_NS).text = val_str
-            _subelem(name_elem, "role", ns=_MODS_NS).text = fm.goobi_type
+            role_elem = _subelem(name_elem, "role", ns=_MODS_NS)
+            role_term = _subelem(role_elem, "roleTerm", ns=_MODS_NS)
+            role_term.set("type", "text")
+            role_term.text = fm.goobi_type
 
         # Origin info (publication info, dates)
         elif mods_key == "originInfo":
@@ -303,9 +307,10 @@ def export_mets_mods(
     root.set("xmlns:xlink", _XLINK_NS)
     root.set("OBJID", "debussy-export")
 
-    # METS header
+    # METS header — CREATEDATE must reflect actual export time for valid provenance
     mets_hdr = _subelem(root, "metsHdr", ns=_METS_NS)
-    mets_hdr.set("CREATEDATE", "2026-05-11T00:00:00Z")
+    create_date = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    mets_hdr.set("CREATEDATE", create_date)
     mets_hdr.set("RECORDSTATUS", "Complete")
 
     # Descriptive metadata section (dmdSec)

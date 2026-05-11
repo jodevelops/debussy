@@ -578,6 +578,71 @@ class TestCodexReview(unittest.TestCase):
         self.assertIn("A historical map of the Alps.", abstract_texts,
                       "image.description must surface in MODS when mapped to Description")
 
+    def test_creator_role_uses_roleterm_child(self):
+        """MODS role element must wrap role value in <roleTerm> per schema (P1)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("creator", "Creator", label="Schöpfer"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "creator": ["Albert Einstein"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        names = _find_elements(root, "name", _MODS_NS)
+        found_role_term = False
+        for name_el in names:
+            roles = name_el.findall(f"{{{_MODS_NS}}}role")
+            for role_el in roles:
+                # role MUST contain roleTerm children, not be a text-only element
+                role_terms = role_el.findall(f"{{{_MODS_NS}}}roleTerm")
+                if role_terms:
+                    found_role_term = True
+                    for rt in role_terms:
+                        self.assertIsNotNone(
+                            rt.get("type"),
+                            "roleTerm should have type='text' or type='code'"
+                        )
+                # Direct text on <role> is NOT valid per MODS schema
+                if role_el.text and role_el.text.strip():
+                    self.fail(f"role element must not contain direct text: {role_el.text!r}")
+        self.assertTrue(found_role_term,
+                        "role element must contain roleTerm children")
+
+    def test_mets_header_createdate_is_dynamic(self):
+        """metsHdr CREATEDATE must reflect actual export time, not be hardcoded (P2)."""
+        ws = Workspace.create("Test")
+        df = pd.DataFrame({"record_id": ["rec-001"]})
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        headers = _find_elements(root, "metsHdr", _METS_NS)
+        self.assertEqual(len(headers), 1)
+        create_date = headers[0].get("CREATEDATE")
+        self.assertIsNotNone(create_date)
+
+        # Must NOT be the previously hardcoded value
+        self.assertNotEqual(create_date, "2026-05-11T00:00:00Z",
+                            "CREATEDATE must be dynamic, not hardcoded")
+
+        # Must match ISO 8601 UTC format YYYY-MM-DDTHH:MM:SSZ
+        self.assertRegex(
+            create_date,
+            r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$",
+            f"CREATEDATE must be ISO 8601 UTC format, got: {create_date}"
+        )
+
+        # Should reflect current time (within last minute)
+        from datetime import datetime, timezone
+        parsed = datetime.strptime(create_date, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc)
+        delta_seconds = abs((now - parsed).total_seconds())
+        self.assertLess(delta_seconds, 60,
+                        "CREATEDATE should be within 1 minute of export time")
+
     def test_image_mapped_field_only_for_accepted_review(self):
         """Pending/rejected image analyses must NOT appear in MODS output."""
         ws = Workspace.create("Test")
