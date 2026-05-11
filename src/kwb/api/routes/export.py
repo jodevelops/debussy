@@ -339,6 +339,53 @@ async def export_jsonld_route(request: dict):
 
 
 
+@router.post("/api/export/mets-mods")
+async def export_mets_mods_route(request: dict):
+    """
+    Export METS/MODS XML (Phase 3): Standardized metadata interchange for digital libraries.
+
+    Request body:
+        dataset: str        — dataset name (required)
+        limit: int          — max records (default 1000)
+        as_file: bool       — return as downloadable file (default true)
+    """
+    dsn = request.get("dataset", "")
+    if not dsn:
+        datasets = get_datasets()
+        if datasets:
+            dsn = next(iter(datasets))
+    ds = get_datasets().get(dsn)
+    if not ds:
+        return JSONResponse({"error": "Datensatz nicht geladen"}, 400)
+
+    df, _profile = ds
+    ws = get_workspace()
+    review_block = _ensure_ai_review_completed(ws)
+    if review_block:
+        return review_block
+    limit = request.get("limit", 1000)
+    # Validate limit type before comparison to avoid TypeError
+    if not isinstance(limit, int) or limit < 0:
+        return JSONResponse({"error": "limit muss eine nicht-negative ganze Zahl sein"}, 400)
+    limit = min(limit, 50_000)
+
+    try:
+        from kwb.export.mets_mods import export_mets_mods
+        mets_str = export_mets_mods(df, ws, limit=limit, profile=_profile)
+
+        if request.get("as_file", True):
+            return Response(
+                content=mets_str.encode("utf-8"),
+                media_type="application/xml",
+                headers={"Content-Disposition": f'attachment; filename="{dsn}_mets.xml"'},
+            )
+
+        return {"mets": mets_str, "record_count": min(len(df), limit)}
+    except Exception as e:
+        logger.exception("METS/MODS export failed")
+        return JSONResponse({"error": str(e)}, 500)
+
+
 @router.post("/api/export/image-results")
 async def export_image_results(request: dict):
     """Export image analysis results including review status and provenance."""
