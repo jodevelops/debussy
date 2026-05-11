@@ -29,7 +29,7 @@ MAX_FILE_BYTES = 50 * 1024 * 1024       # 50 MB
 MAX_WORKSPACE_BYTES = 20 * 1024 * 1024  # 20 MB
 MAX_CSV_ROWS = 500_000
 MAX_CSV_COLS = 2000
-ALLOWED_EXTENSIONS = {".csv", ".tsv", ".xlsx", ".xls", ".xml", ".pdf"}
+ALLOWED_EXTENSIONS = {".csv", ".tsv", ".xlsx", ".xls", ".xml", ".pdf", ".zip"}
 ALLOWED_WS_EXT = {".json"}
 ALLOWED_IMAGE_EXT = {
     ".jpg", ".jpeg", ".png", ".tif", ".tiff", ".webp", ".img",

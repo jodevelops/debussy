@@ -10,7 +10,9 @@ Uses stdlib xml.etree.ElementTree — no extra dependencies.
 from __future__ import annotations
 
 import logging
+import tempfile
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -150,31 +152,26 @@ def _extract_mods_record(mods: ET.Element) -> dict[str, str]:
 
 
 def load_mets_mods(path: str | Path, max_rows: int = MAX_ROWS) -> pd.DataFrame:
-    """Parse a METS/MODS XML file into a DataFrame."""
+    """Parse a METS/MODS XML file into a DataFrame (streaming parse)."""
     path = Path(path)
     if not path.exists():
         raise XMLLoadError(f"File not found: {path}")
 
+    mods_records = []
     try:
-        tree = ET.parse(path)
-    except ET.ParseError as e:
-        raise XMLLoadError(f"Invalid XML: {e}") from e
-
-    root = tree.getroot()
-
-    # Find all mods:mods elements (can be inside mets:dmdSec or standalone)
-    mods_records = root.findall(".//mods:mods", NS)
-
-    # If no namespaced MODS found, try without namespace
-    if not mods_records:
-        mods_records = root.findall(".//{http://www.loc.gov/mods/v3}mods")
-
-    # Also try plain (no namespace) as fallback
-    if not mods_records:
-        for el in root.iter():
+        # Stream-parse to avoid loading entire DOM into memory
+        for event, el in ET.iterparse(str(path), events=("end",)):
             tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
             if tag == "mods":
                 mods_records.append(el)
+                # Check max_rows limit as we parse
+                if len(mods_records) > max_rows:
+                    raise XMLLoadError(
+                        f"XML contains more than {max_rows:,} records, "
+                        f"stopping parse."
+                    )
+    except ET.ParseError as e:
+        raise XMLLoadError(f"Invalid XML: {e}") from e
 
     if not mods_records:
         raise XMLLoadError(
@@ -237,18 +234,30 @@ def _lido_find(parent: ET.Element, path: str) -> ET.Element | None:
 
 
 def _lido_findall(parent: ET.Element, path: str) -> list[ET.Element]:
-    """Find all elements matching a LIDO path; fall back to local-name match."""
+    """Find all elements matching a LIDO path; fall back to path-based traversal."""
     els = parent.findall(path, NS)
     if els:
         return els
-    # Fallback: match only by terminal local name
-    terminal = path.split("/")[-1].split(":")[-1]
-    out: list[ET.Element] = []
-    for el in parent.iter():
-        tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
-        if tag == terminal:
-            out.append(el)
-    return out
+    # Fallback: traverse path step by step, collecting all terminal matches
+    parts = [p.split(":")[-1] for p in path.split("/")]
+
+    def collect_at_depth(current: ET.Element, remaining_parts: list[str]) -> list[ET.Element]:
+        """Recursively collect all elements matching the remaining path."""
+        if not remaining_parts:
+            return [current]
+
+        target = remaining_parts[0]
+        rest = remaining_parts[1:]
+        results = []
+
+        for child in current:
+            tag = child.tag.split("}")[-1] if "}" in child.tag else child.tag
+            if tag == target:
+                results.extend(collect_at_depth(child, rest))
+
+        return results
+
+    return collect_at_depth(parent, parts)
 
 
 def _extract_lido_record(lido: ET.Element) -> dict[str, str]:
@@ -379,26 +388,26 @@ def _extract_lido_record(lido: ET.Element) -> dict[str, str]:
 
 
 def load_lido(path: str | Path, max_rows: int = MAX_ROWS) -> pd.DataFrame:
-    """Parse a LIDO XML file into a DataFrame (one row per lido:lido)."""
+    """Parse a LIDO XML file into a DataFrame (one row per lido:lido, streaming)."""
     path = Path(path)
     if not path.exists():
         raise XMLLoadError(f"File not found: {path}")
 
+    lido_records = []
     try:
-        tree = ET.parse(path)
-    except ET.ParseError as e:
-        raise XMLLoadError(f"Invalid XML: {e}") from e
-
-    root = tree.getroot()
-
-    lido_records = root.findall(".//lido:lido", NS)
-    if not lido_records:
-        lido_records = root.findall(".//{http://www.lido-schema.org}lido")
-    if not lido_records:
-        for el in root.iter():
+        # Stream-parse to avoid loading entire DOM into memory
+        for event, el in ET.iterparse(str(path), events=("end",)):
             tag = el.tag.split("}")[-1] if "}" in el.tag else el.tag
             if tag == "lido":
                 lido_records.append(el)
+                # Check max_rows limit as we parse
+                if len(lido_records) > max_rows:
+                    raise XMLLoadError(
+                        f"XML contains more than {max_rows:,} records, "
+                        f"stopping parse."
+                    )
+    except ET.ParseError as e:
+        raise XMLLoadError(f"Invalid XML: {e}") from e
 
     if not lido_records:
         raise XMLLoadError(
@@ -472,6 +481,57 @@ def ingest_xml(
         raise XMLLoadError(
             f"Unrecognized XML format (root not METS/MODS or LIDO): {path.name}"
         )
+
+    id_col = detect_id_column(df)
+    columns = [profile_column(df[c]) for c in df.columns]
+
+    profile = DatasetProfile(
+        source_path=str(path),
+        source_name=path.stem,
+        row_count=len(df),
+        column_count=len(df.columns),
+        columns=columns,
+        id_column=id_col,
+        encoding_detected="utf-8",
+        has_bom=False,
+    )
+    return df, profile
+
+
+def ingest_zip(
+    path: str | Path,
+    max_rows: int = MAX_ROWS,
+) -> tuple[pd.DataFrame, "DatasetProfile"]:
+    """
+    Load all XML files from a ZIP archive and concatenate them into one DataFrame.
+    Useful for Goobi exports which contain one METS/MODS per record.
+    """
+    from kwb.core.models import DatasetProfile
+
+    path = Path(path)
+    dfs = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        with zipfile.ZipFile(path, "r") as z:
+            z.extractall(tmpdir)
+
+        xml_files = sorted(Path(tmpdir).glob("**/*.xml"))
+        if not xml_files:
+            raise XMLLoadError(f"No XML files found in ZIP: {path.name}")
+
+        for xml_file in xml_files:
+            try:
+                df, _ = ingest_xml(xml_file, max_rows=max_rows)
+                dfs.append(df)
+            except Exception as e:
+                logger.warning(f"Failed to load {xml_file.name} from ZIP: {e}")
+
+    if not dfs:
+        raise XMLLoadError(f"No valid XML files in ZIP: {path.name}")
+
+    df = pd.concat(dfs, ignore_index=True)
+    if len(df) > max_rows:
+        df = df.iloc[:max_rows]
 
     id_col = detect_id_column(df)
     columns = [profile_column(df[c]) for c in df.columns]

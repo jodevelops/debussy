@@ -153,6 +153,9 @@ class DictionaryEntry:
     gnd_type: str = ""                 # "Geographic", "Person", "SubjectHeading", …
     gnd_uri: str = ""                  # full URI
     wikidata_id: str = ""              # "Q64"
+    wikidata_preferred: str = ""       # Wikidata preferred label
+    wikidata_type: str = ""            # Wikidata type/instance of
+    wikidata_uri: str = ""             # full URI: https://www.wikidata.org/wiki/Q<id>
     geonames_id: str = ""              # GeoNames ID, e.g. "2950159"
     geonames_preferred: str = ""       # GeoNames preferred name
     geonames_type: str = ""            # Feature class (P=populated, A=admin, …)
@@ -208,6 +211,9 @@ class DictionaryEntry:
             "gnd_type": self.gnd_type,
             "gnd_uri": self.gnd_uri,
             "wikidata_id": self.wikidata_id,
+            "wikidata_preferred": self.wikidata_preferred,
+            "wikidata_type": self.wikidata_type,
+            "wikidata_uri": self.wikidata_uri,
             "geonames_id": self.geonames_id,
             "geonames_preferred": self.geonames_preferred,
             "geonames_type": self.geonames_type,

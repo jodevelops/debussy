@@ -29,7 +29,7 @@ from kwb.api.deps import (
 )
 from kwb.ingest.csv_loader import ingest_csv
 from kwb.ingest.xlsx_loader import ingest_xlsx
-from kwb.ingest.xml_loader import ingest_xml
+from kwb.ingest.xml_loader import ingest_xml, ingest_zip
 from kwb.analyze.structural import analyze_datasets
 from kwb.analyze.ner import ner_hybrid, scan_problematic_terms
 from kwb.analyze.quality_report import build_quality_analysis_report
@@ -291,6 +291,8 @@ async def analyze(files: list[UploadFile] = File(...)):
                 df, pr = ingest_xlsx(tp)
             elif suffix == ".xml":
                 df, pr = ingest_xml(tp)
+            elif suffix == ".zip":
+                df, pr = ingest_zip(tp)
             else:
                 df, pr = ingest_csv(tp)
             if len(df) > MAX_CSV_ROWS:

@@ -421,9 +421,15 @@ class TestGNDEndpoints(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("NER", r.json()["error"])
 
+    @patch("kwb.api.routes.enrich.get_config")
     @patch("kwb.enrich.geonames.urlopen")
-    def test_geonames_batch_creates_candidate_with_full_fields(self, mock_urlopen):
+    def test_geonames_batch_creates_candidate_with_full_fields(self, mock_urlopen, mock_get_config):
         """GeoNames batch must create AuthorityCandidate with preferred_name, type, uri."""
+        # Mock config with geonames_username set
+        from kwb.core.config import KWBConfig
+        cfg = KWBConfig(geonames_username="test_user")
+        mock_get_config.return_value = cfg
+
         mock_resp = MagicMock()
         mock_resp.read.return_value = _fake_geonames_response()
         mock_resp.__enter__ = lambda s: s
@@ -461,6 +467,60 @@ class TestGNDEndpoints(unittest.TestCase):
         r = self.client.post("/api/geonames/batch", json={})
         self.assertEqual(r.status_code, 400)
         self.assertIn("NER", r.json()["error"])
+
+    @patch("kwb.api.routes.enrich.get_config")
+    @patch("kwb.enrich.geonames.urlopen")
+    def test_full_geonames_workflow_via_api(self, mock_urlopen, mock_get_config):
+        """Full E2E: GeoNames batch → candidate creation → commit → dictionary."""
+        from kwb.core.workspace import ReviewStatus
+        from kwb.core.config import KWBConfig
+
+        # Mock config with geonames_username set
+        cfg = KWBConfig(geonames_username="test_user")
+        mock_get_config.return_value = cfg
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = _fake_geonames_response()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        _state = _get_state()
+        ws = _state["workspace"]
+        ws.add_entities([
+            {"text": "Berlin", "type": "LOC", "confidence": 0.9,
+             "source": "llm", "record_id": "R001"},
+        ])
+
+        # 1. Run GeoNames batch
+        r = self.client.post("/api/geonames/batch", json={"limit": 5})
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["matched"], 1)
+
+        # 2. Verify candidate was created
+        candidates = [c for c in ws.authority_candidates if c.source == "geonames"]
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate.authority_id, "2950159")
+        self.assertEqual(candidate.preferred_name, "Berlin")
+        self.assertEqual(candidate.status, ReviewStatus.PENDING)
+
+        # 3. Mark candidate as accepted
+        candidate.status = ReviewStatus.ACCEPTED
+
+        # 4. Commit the candidate
+        r = self.client.post("/api/authority/commit", json={})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["committed"], 1)
+
+        # 5. Verify dictionary entry was updated with GeoNames fields
+        entry = ws.lookup("Berlin")
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.geonames_id, "2950159")
+        self.assertEqual(entry.geonames_preferred, "Berlin")
+        self.assertEqual(entry.geonames_type, "PPLC")
+        self.assertEqual(entry.geonames_uri, "https://www.geonames.org/2950159")
 
 
 # ---------------------------------------------------------------------------
