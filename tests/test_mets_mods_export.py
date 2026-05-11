@@ -837,6 +837,92 @@ class TestCodexReview(unittest.TestCase):
         self.assertIn("Test Person", name_parts,
                       "Entity lookup must work with correct ID column fallback")
 
+    def test_subject_corporation_mapping(self):
+        """SubjectCorporation field maps to MODS subject/name[@type=corporate] (P2)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("corp_subject", "SubjectCorporation", label="Unternehmensthema"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "corp_subject": ["Deutsche Nationalbibliothek"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find subject elements with nested corporate names
+        subjects = _find_elements(root, "subject", _MODS_NS)
+        found = False
+        for subj in subjects:
+            names = subj.findall(f"{{{_MODS_NS}}}name")
+            for name in names:
+                if name.get("type") == "corporate":
+                    parts = name.findall(f"{{{_MODS_NS}}}namePart")
+                    for p in parts:
+                        if p.text == "Deutsche Nationalbibliothek":
+                            found = True
+        self.assertTrue(found, "SubjectCorporation must map to subject/name[@type=corporate]")
+
+    def test_repeatable_subjects_split_on_semicolon(self):
+        """Repeatable subject fields split on semicolon create separate MODS nodes (P2)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("subjects", "SubjectTopic", label="Themen", repeatable=True),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "subjects": ["Kartographie; Geographie; Linguistik"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find all topic elements
+        topics = _find_elements(root, "topic", _MODS_NS)
+        topic_texts = [t.text for t in topics]
+
+        # Should have 3 separate topic elements, not one combined
+        self.assertEqual(len(topic_texts), 3, "Repeatable subjects must split into separate nodes")
+        self.assertIn("Kartographie", topic_texts)
+        self.assertIn("Geographie", topic_texts)
+        self.assertIn("Linguistik", topic_texts)
+
+    def test_repeatable_creators_split_on_semicolon(self):
+        """Repeatable creator fields split on semicolon create separate name nodes (P2)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("creators", "Creator", label="Schöpfer", repeatable=True),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "creators": ["Goethe; Schiller; Heine"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find all personal name elements with Creator role
+        names = _find_elements(root, "name", _MODS_NS)
+        creator_parts = []
+        for name in names:
+            if name.get("type") == "personal":
+                roles = name.findall(f"{{{_MODS_NS}}}role")
+                # Check if this is a Creator role
+                is_creator = any(
+                    r.findall(f"{{{_MODS_NS}}}roleTerm")
+                    for r in roles
+                )
+                if is_creator:
+                    parts = name.findall(f"{{{_MODS_NS}}}namePart")
+                    creator_parts.extend([p.text for p in parts if p.text])
+
+        # Should have 3 separate creator names
+        self.assertEqual(len(creator_parts), 3, "Repeatable creators must split into separate nodes")
+        self.assertIn("Goethe", creator_parts)
+        self.assertIn("Schiller", creator_parts)
+        self.assertIn("Heine", creator_parts)
+
 
 if __name__ == "__main__":
     unittest.main()

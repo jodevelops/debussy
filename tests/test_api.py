@@ -510,6 +510,26 @@ class TestExportEndpoints(unittest.TestCase):
         # Should still return valid METS XML, just with no records
         self.assertIn("mets", body)
 
+    def test_mets_mods_limit_type_validation(self):
+        """METS/MODS export must validate limit type before comparison (P2)."""
+        # Test with null limit
+        r = self.client.post("/api/export/mets-mods", json={
+            "dataset": "export.csv",
+            "limit": None,
+        })
+        self.assertEqual(r.status_code, 400)
+        body = r.json()
+        self.assertIn("error", body)
+
+        # Test with string limit
+        r = self.client.post("/api/export/mets-mods", json={
+            "dataset": "export.csv",
+            "limit": "abc",
+        })
+        self.assertEqual(r.status_code, 400)
+        body = r.json()
+        self.assertIn("error", body)
+
 
     def test_goobi_status_not_configured(self):
         with patch("kwb.api.routes.export._goobi_client") as mk:

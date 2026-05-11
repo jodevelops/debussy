@@ -107,6 +107,7 @@ def _make_mods_record(
         "SubjectTopic": "subject",
         "SubjectGeographic": "subject",
         "SubjectPerson": "subject",
+        "SubjectCorporation": "subject",
         "InventoryNumber": "identifier",
         "CatalogIDDigital": "recordInfo",
     }
@@ -147,13 +148,18 @@ def _make_mods_record(
 
         # Creator / Name — role must contain <roleTerm> children per MODS schema
         elif mods_key == "name":
-            name_elem = _subelem(mods, "name", ns=_MODS_NS)
-            name_elem.set("type", "personal")
-            _subelem(name_elem, "namePart", ns=_MODS_NS).text = val_str
-            role_elem = _subelem(name_elem, "role", ns=_MODS_NS)
-            role_term = _subelem(role_elem, "roleTerm", ns=_MODS_NS)
-            role_term.set("type", "text")
-            role_term.text = fm.goobi_type
+            # Split repeatable values: handle multiple creators delimited by semicolon
+            values = [v.strip() for v in val_str.split(";")] if fm.repeatable else [val_str]
+            for v in values:
+                if not v:
+                    continue
+                name_elem = _subelem(mods, "name", ns=_MODS_NS)
+                name_elem.set("type", "personal")
+                _subelem(name_elem, "namePart", ns=_MODS_NS).text = v
+                role_elem = _subelem(name_elem, "role", ns=_MODS_NS)
+                role_term = _subelem(role_elem, "roleTerm", ns=_MODS_NS)
+                role_term.set("type", "text")
+                role_term.text = fm.goobi_type
 
         # Origin info (publication info, dates)
         elif mods_key == "originInfo":
@@ -175,17 +181,27 @@ def _make_mods_record(
 
         # Subject / Keywords — preserve semantic type
         elif mods_key == "subject":
-            subj = _subelem(mods, "subject", ns=_MODS_NS)
-            if fm.goobi_type == "SubjectGeographic":
-                sub_child = _subelem(subj, "geographic", ns=_MODS_NS)
-            elif fm.goobi_type == "SubjectPerson":
-                # Personal subjects: use nested <name type="personal"><namePart>
-                name_elem = _subelem(subj, "name", ns=_MODS_NS)
-                name_elem.set("type", "personal")
-                sub_child = _subelem(name_elem, "namePart", ns=_MODS_NS)
-            else:
-                sub_child = _subelem(subj, "topic", ns=_MODS_NS)
-            sub_child.text = val_str
+            # Split repeatable values: handle multi-valued subjects delimited by semicolon
+            values = [v.strip() for v in val_str.split(";")] if fm.repeatable else [val_str]
+            for v in values:
+                if not v:
+                    continue
+                subj = _subelem(mods, "subject", ns=_MODS_NS)
+                if fm.goobi_type == "SubjectGeographic":
+                    sub_child = _subelem(subj, "geographic", ns=_MODS_NS)
+                elif fm.goobi_type == "SubjectPerson":
+                    # Personal subjects: use nested <name type="personal"><namePart>
+                    name_elem = _subelem(subj, "name", ns=_MODS_NS)
+                    name_elem.set("type", "personal")
+                    sub_child = _subelem(name_elem, "namePart", ns=_MODS_NS)
+                elif fm.goobi_type == "SubjectCorporation":
+                    # Corporate subjects: use nested <name type="corporate"><namePart>
+                    name_elem = _subelem(subj, "name", ns=_MODS_NS)
+                    name_elem.set("type", "corporate")
+                    sub_child = _subelem(name_elem, "namePart", ns=_MODS_NS)
+                else:
+                    sub_child = _subelem(subj, "topic", ns=_MODS_NS)
+                sub_child.text = v
 
         # Identifier
         elif mods_key == "identifier":

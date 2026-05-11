@@ -364,8 +364,9 @@ async def export_mets_mods_route(request: dict):
     if review_block:
         return review_block
     limit = request.get("limit", 1000)
-    if limit < 0:
-        return JSONResponse({"error": "limit muss >= 0 sein"}, 400)
+    # Validate limit type before comparison to avoid TypeError
+    if not isinstance(limit, int) or limit < 0:
+        return JSONResponse({"error": "limit muss eine nicht-negative ganze Zahl sein"}, 400)
     limit = min(limit, 50_000)
 
     try:
