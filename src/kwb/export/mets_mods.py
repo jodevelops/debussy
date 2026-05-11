@@ -113,15 +113,23 @@ def _make_mods_record(
     # Track which elements have been added (for complex types like originInfo)
     added_sections: set[str] = set()
 
-    # Process field mappings
+    # Process field mappings — both regular CSV columns and image.* virtual columns
+    # image.* fields come from accepted image analyses (image_by_record), not the CSV row
+    img_values = image_by_record.get(record_id, {})
     for fm in field_mapping:
         if fm.is_ignored:
             continue
         col = fm.csv_column
-        if col not in row:
+
+        # Resolve value: image.* fields come from image_by_record, others from row
+        if col.startswith("image."):
+            val = img_values.get(col, "")
+        elif col in row:
+            val = row[col]
+        else:
             continue
-        val = row[col]
-        if pd.isna(val) or str(val).strip() == "":
+
+        if val is None or (isinstance(val, float) and pd.isna(val)) or str(val).strip() == "":
             continue
 
         val_str = str(val).strip()
@@ -161,11 +169,19 @@ def _make_mods_record(
                 pub_elem = _subelem(origin, "publisher", ns=_MODS_NS)
                 pub_elem.text = val_str
 
-        # Subject / Keywords
+        # Subject / Keywords — preserve semantic type
         elif mods_key == "subject":
             subj = _subelem(mods, "subject", ns=_MODS_NS)
-            topic = _subelem(subj, "topic", ns=_MODS_NS)
-            topic.text = val_str
+            if fm.goobi_type == "SubjectGeographic":
+                sub_child = _subelem(subj, "geographic", ns=_MODS_NS)
+            elif fm.goobi_type == "SubjectPerson":
+                # Personal subjects: use nested <name type="personal"><namePart>
+                name_elem = _subelem(subj, "name", ns=_MODS_NS)
+                name_elem.set("type", "personal")
+                sub_child = _subelem(name_elem, "namePart", ns=_MODS_NS)
+            else:
+                sub_child = _subelem(subj, "topic", ns=_MODS_NS)
+            sub_child.text = val_str
 
         # Identifier
         elif mods_key == "identifier":
@@ -188,12 +204,12 @@ def _make_mods_record(
     # Add NER-extracted subjects
     ents = entities_by_record.get(record_id, [])
     if ents:
-        # Extract place/geo names
+        # Extract place/geo names — only flag as GND authority if a GND ID is present
         places = [e for e in ents if e["type"] in ("LOC", "GPE")]
         for place in places:
             subj = _subelem(mods, "subject", ns=_MODS_NS)
-            subj.set("authority", "gnd")
             if place.get("gnd_id"):
+                subj.set("authority", "gnd")
                 subj.set("valueURI", f"http://d-nb.info/gnd/{place['gnd_id']}")
             geog = _subelem(subj, "geographic", ns=_MODS_NS)
             geog.text = place.get("name", "")

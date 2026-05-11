@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from kwb.core.workspace import (
     Workspace, FieldMapping, EntityReview, ReviewStatus, CuratedDate,
+    ImageAnalysisResult, ImageReviewStatus,
 )
 from kwb.export.mets_mods import export_mets_mods
 
@@ -409,6 +410,202 @@ class TestEmptyAndNull(unittest.TestCase):
         mets_str = export_mets_mods(df, ws)
         root = fromstring(mets_str)
         self.assertEqual(root.tag, f"{{{_METS_NS}}}mets")
+
+
+class TestCodexReview(unittest.TestCase):
+    """Regression tests for Codex review feedback on PR #205."""
+
+    def test_subject_geographic_uses_geographic_element(self):
+        """SubjectGeographic field maps to mods:geographic, not mods:topic."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("place", "SubjectGeographic", label="Ort"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "place": ["Berlin"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Should produce <subject><geographic>Berlin</geographic></subject>
+        geos = _find_elements(root, "geographic", _MODS_NS)
+        geo_texts = [g.text for g in geos]
+        self.assertIn("Berlin", geo_texts,
+                      "SubjectGeographic must map to mods:geographic")
+
+        # And NOT to <topic>
+        topics = _find_elements(root, "topic", _MODS_NS)
+        topic_texts = [t.text for t in topics]
+        self.assertNotIn("Berlin", topic_texts,
+                         "SubjectGeographic must NOT map to mods:topic")
+
+    def test_subject_person_uses_name_personal(self):
+        """SubjectPerson field maps to mods:name[@type=personal]/namePart."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("person", "SubjectPerson", label="Person"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "person": ["Albert Einstein"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find subject > name > namePart
+        subjects = _find_elements(root, "subject", _MODS_NS)
+        found = False
+        for subj in subjects:
+            names = subj.findall(f"{{{_MODS_NS}}}name")
+            for name in names:
+                if name.get("type") == "personal":
+                    parts = name.findall(f"{{{_MODS_NS}}}namePart")
+                    for p in parts:
+                        if p.text == "Albert Einstein":
+                            found = True
+        self.assertTrue(found, "SubjectPerson must map to <subject><name type='personal'><namePart>")
+
+    def test_subject_topic_still_uses_topic(self):
+        """SubjectTopic (regular subject) still maps to mods:topic."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("subject", "SubjectTopic", label="Thema"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "subject": ["Kartographie"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        topics = _find_elements(root, "topic", _MODS_NS)
+        topic_texts = [t.text for t in topics]
+        self.assertIn("Kartographie", topic_texts,
+                      "SubjectTopic must map to mods:topic")
+
+    def test_place_without_gnd_has_no_authority_attribute(self):
+        """LOC entities without a GND ID must NOT have authority='gnd' on subject."""
+        ws = _ws_basic()
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "title": ["Test"],
+        })
+
+        # Place entity WITHOUT GND ID
+        er = EntityReview(
+            entity_type="LOC",
+            text="UnknownPlace",
+            record_id="rec-001",
+            status=ReviewStatus.ACCEPTED,
+        )
+        ws.entity_reviews.append(er)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find the subject that contains "UnknownPlace"
+        subjects = _find_elements(root, "subject", _MODS_NS)
+        for subj in subjects:
+            geos = subj.findall(f"{{{_MODS_NS}}}geographic")
+            for g in geos:
+                if g.text == "UnknownPlace":
+                    self.assertIsNone(
+                        subj.get("authority"),
+                        "Unlinked place must not have authority='gnd'"
+                    )
+                    self.assertIsNone(
+                        subj.get("valueURI"),
+                        "Unlinked place must not have valueURI"
+                    )
+
+    def test_place_with_gnd_has_authority_attribute(self):
+        """LOC entities with GND ID still get authority='gnd' (no regression)."""
+        ws = _ws_basic()
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "title": ["Test"],
+        })
+
+        er = EntityReview(
+            entity_type="LOC",
+            text="Berlin",
+            gnd_id="4005728-7",
+            record_id="rec-001",
+            status=ReviewStatus.ACCEPTED,
+        )
+        ws.entity_reviews.append(er)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # At least one subject should have authority="gnd"
+        subjects = _find_elements(root, "subject", _MODS_NS)
+        gnd_subjects = [s for s in subjects if s.get("authority") == "gnd"]
+        self.assertGreater(len(gnd_subjects), 0,
+                           "Linked place must have authority='gnd'")
+
+    def test_image_mapped_field_appears_in_mods(self):
+        """Accepted image.* field mapping must surface in MODS output (P1)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("image.description", "Description", label="Bildbeschreibung"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+        })
+
+        # Add accepted image analysis with description
+        img = ImageAnalysisResult(
+            image_id="img-001",
+            filename="test.jpg",
+            record_id="rec-001",
+            review_status=ImageReviewStatus.ACCEPTED,
+            result={"description": "A historical map of the Alps."},
+        )
+        ws.image_analyses.append(img)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # The description should appear as mods:abstract
+        abstracts = _find_elements(root, "abstract", _MODS_NS)
+        abstract_texts = [a.text for a in abstracts]
+        self.assertIn("A historical map of the Alps.", abstract_texts,
+                      "image.description must surface in MODS when mapped to Description")
+
+    def test_image_mapped_field_only_for_accepted_review(self):
+        """Pending/rejected image analyses must NOT appear in MODS output."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("image.description", "Description", label="Bildbeschreibung"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+        })
+
+        # PENDING image analysis (not yet reviewed)
+        img = ImageAnalysisResult(
+            image_id="img-001",
+            filename="test.jpg",
+            record_id="rec-001",
+            review_status=ImageReviewStatus.PENDING,
+            result={"description": "Unreviewed description"},
+        )
+        ws.image_analyses.append(img)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        abstracts = _find_elements(root, "abstract", _MODS_NS)
+        abstract_texts = [a.text for a in abstracts]
+        self.assertNotIn("Unreviewed description", abstract_texts,
+                         "Pending image analyses must not surface in MODS")
 
 
 if __name__ == "__main__":
