@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from kwb.ai.provider import ProviderConfig
+from kwb.ai.provider import PROVIDER_TYPE_GPUSTACK, ProviderConfig
 
 def _load_dotenv(path=None):
     if path is None:
@@ -50,6 +50,7 @@ class KWBConfig:
             base_url=self.gpustack_url, api_key=self.gpustack_key,
             default_model=self.gpustack_model_text,
             timeout_seconds=self.timeout_seconds, max_retries=self.max_retries,
+            provider_type=PROVIDER_TYPE_GPUSTACK,
         )
 
     def save_to_dotenv(self, path=None) -> None:

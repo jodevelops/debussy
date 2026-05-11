@@ -352,9 +352,9 @@ class TestGPUStackProvider(unittest.TestCase):
         err.read = lambda: b"bad request"
         mock_urlopen.side_effect = err
 
-        from kwb.ai.provider import AIMessage
+        from kwb.ai.provider import AIMessage, ProviderBadRequestError
         prov = self._make_provider()
-        with self.assertRaises(HTTPError):
+        with self.assertRaises(ProviderBadRequestError):
             prov.complete([AIMessage.user("test")])
         # Kein Retry bei 4xx
         self.assertEqual(mock_urlopen.call_count, 1)

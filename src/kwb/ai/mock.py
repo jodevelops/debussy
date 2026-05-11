@@ -10,7 +10,13 @@ from __future__ import annotations
 import json
 from typing import Any, Callable
 
-from kwb.ai.provider import AIMessage, AIProvider, AIResponse, ProviderConfig
+from kwb.ai.provider import (
+    AIMessage,
+    AIProvider,
+    AIResponse,
+    PROVIDER_TYPE_MOCK,
+    ProviderConfig,
+)
 
 
 class MockProvider(AIProvider):
@@ -28,7 +34,10 @@ class MockProvider(AIProvider):
         rules: list[tuple[Callable[[list[AIMessage]], bool], str]] | None = None,
         default_response: str = '{"status": "ok"}',
     ):
-        super().__init__(config or ProviderConfig(base_url="mock://localhost"))
+        super().__init__(
+            config
+            or ProviderConfig(base_url="mock://localhost", provider_type=PROVIDER_TYPE_MOCK)
+        )
         self.rules = rules or []
         self.default_response = default_response
         self.call_log: list[dict[str, Any]] = []
@@ -79,11 +88,31 @@ class MockProvider(AIProvider):
     def with_defaults() -> "MockProvider":
         """Create a mock that returns realistic GLAM responses."""
         def _is_vision(msgs: list[AIMessage]) -> bool:
-            return isinstance(msgs[-1].content, list)
+            # Only match when an actual image_url part is present.
+            # Previous check (isinstance(content, list)) matched any
+            # multimodal-shaped message even if no image was attached (#144).
+            content = msgs[-1].content
+            if not isinstance(content, list):
+                return False
+            return any(
+                isinstance(part, dict) and part.get("type") == "image_url"
+                for part in content
+            )
 
         def _classify_rule(msgs: list[AIMessage]) -> bool:
-            last = msgs[-1].content if isinstance(msgs[-1].content, str) else ""
-            return "classif" in last.lower() or "klassif" in last.lower()
+            # Inspect all text parts, not just the last message's content,
+            # so a multimodal message with text "klassifiziere" still routes
+            # correctly when no image is attached.
+            content = msgs[-1].content
+            if isinstance(content, str):
+                text = content
+            else:
+                text = " ".join(
+                    part.get("text", "") for part in content
+                    if isinstance(part, dict) and part.get("type") == "text"
+                )
+            text_lower = text.lower()
+            return "classif" in text_lower or "klassif" in text_lower
 
         classify_response = json.dumps({
             "category": "Architecture_Infrastructure",

@@ -20,25 +20,19 @@ from typing import Any
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from kwb.ai.provider import AIMessage, AIProvider, AIResponse
+from kwb.ai.provider import (
+    AIMessage,
+    AIProvider,
+    AIResponse,
+    ProviderAuthError,
+    ProviderBadRequestError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderServerError,
+    message_to_openai_dict,
+)
 
 logger = logging.getLogger(__name__)
-
-
-def _message_to_dict(msg: AIMessage) -> dict[str, Any]:
-    """Convert AIMessage to OpenAI API format (same as GPUStack)."""
-    if isinstance(msg.content, str):
-        return {"role": msg.role, "content": msg.content}
-    parts = []
-    for item in msg.content:
-        if item.get("type") == "text":
-            parts.append({"type": "text", "text": item["text"]})
-        elif item.get("type") == "image_url":
-            parts.append({
-                "type": "image_url",
-                "image_url": {"url": item["image_url"]["url"]},
-            })
-    return {"role": msg.role, "content": parts}
 
 
 class OllamaProvider(AIProvider):
@@ -73,7 +67,7 @@ class OllamaProvider(AIProvider):
 
         payload = {
             "model": model,
-            "messages": [_message_to_dict(m) for m in messages],
+            "messages": [message_to_openai_dict(m) for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
             **kwargs,
@@ -87,6 +81,7 @@ class OllamaProvider(AIProvider):
         req = Request(url, data=data, headers=headers, method="POST")
 
         last_error = None
+        last_body = ""
         for attempt in range(1, self.config.max_retries + 1):
             try:
                 with urlopen(req, timeout=self.config.timeout_seconds) as resp:
@@ -102,31 +97,52 @@ class OllamaProvider(AIProvider):
 
             except HTTPError as e:
                 last_error = e
-                body = e.read().decode("utf-8", errors="replace")
-                logger.warning(f"Attempt {attempt} failed: HTTP {e.code} — {body[:200]}")
+                last_body = e.read().decode("utf-8", errors="replace")
+                logger.warning(f"Attempt {attempt} failed: HTTP {e.code} — {last_body[:200]}")
+                if e.code in (401, 403):
+                    raise ProviderAuthError(
+                        f"Ollama auth failed (HTTP {e.code}): {last_body[:200]}"
+                    ) from e
                 if e.code == 429:
                     time.sleep(2 ** attempt)
+                    continue
                 elif e.code >= 500:
                     time.sleep(1)
+                    continue
                 else:
-                    raise
+                    raise ProviderBadRequestError(
+                        f"Ollama bad request (HTTP {e.code}): {last_body[:200]}"
+                    ) from e
 
             except (URLError, TimeoutError) as e:
                 last_error = e
                 logger.warning(f"Attempt {attempt} failed: {e}")
                 time.sleep(1)
 
-        raise ConnectionError(
-            f"Ollama: Failed after {self.config.max_retries} attempts: {last_error}"
-        )
+        # Retries exhausted — classify the final error so callers can triage.
+        if isinstance(last_error, HTTPError):
+            if last_error.code == 429:
+                raise ProviderRateLimitError(
+                    f"Ollama rate limit after {self.config.max_retries} retries: {last_body[:200]}"
+                ) from last_error
+            raise ProviderServerError(
+                f"Ollama server error after {self.config.max_retries} retries "
+                f"(HTTP {last_error.code}): {last_body[:200]}"
+            ) from last_error
+        raise ProviderNetworkError(
+            f"Ollama unreachable after {self.config.max_retries} attempts: {last_error}"
+        ) from last_error
 
     def is_available(self) -> bool:
-        """Ping Ollama's root endpoint."""
-        url = f"{self.config.base_url.rstrip('/')}/"
+        """Check if Ollama is available via /api/tags endpoint (Ollama-specific)."""
+        url = f"{self.config.base_url.rstrip('/')}/api/tags"
         try:
             req = Request(url)
             with urlopen(req, timeout=5) as resp:
-                return resp.status == 200
+                if resp.status != 200:
+                    return False
+                result = json.loads(resp.read().decode("utf-8"))
+                return "models" in result
         except Exception:
             return False
 

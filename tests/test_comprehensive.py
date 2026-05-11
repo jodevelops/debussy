@@ -20,7 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from kwb.ai.provider import AIMessage, AIResponse, ProviderConfig
 from kwb.ai.mock import MockProvider
 from kwb.ai.gpustack import GPUStackProvider
-from kwb.ai.prompts import prompt_ocr_analysis
+from kwb.ai.prompts import prompt_ocr_transcription_quality
 
 
 # ---------------------------------------------------------------------------
@@ -266,14 +266,14 @@ class TestOCRPrompt(unittest.TestCase):
 
     def test_ocr_prompt_contains_transcription(self):
         """OCR prompt should contain 'transcription' (the JSON key)."""
-        msgs = prompt_ocr_analysis()
+        msgs = prompt_ocr_transcription_quality()
         user_text = msgs[1].content
         # The prompt requests JSON with "transcription" key
         self.assertIn("transcription", user_text)
 
     def test_ocr_prompt_has_expected_json_keys(self):
         """OCR prompt should request specific JSON structure."""
-        msgs = prompt_ocr_analysis()
+        msgs = prompt_ocr_transcription_quality()
         user_text = msgs[1].content
         for key in ["text_found", "text_type", "language", "transcription",
                      "text_regions", "overall_confidence"]:
