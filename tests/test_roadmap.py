@@ -15,11 +15,12 @@ FIXTURE_CATALOG = Path("tests/fixtures/roadmap_small_catalog.md")
 def test_parse_function_catalog_reads_known_feature():
     entries = parse_function_catalog("docs/FUNKTIONSKATALOG.md")
     feature_ids = {entry.feature_id for entry in entries}
-    assert "F31" in feature_ids
-    f31 = next(e for e in entries if e.feature_id == "F31")
-    assert f31.status == "Geplant"
-    assert f31.tests_done == 0
-    assert f31.tests_total == 0
+    # F37 PDF-Import remains a stable "Geplant" reference point
+    assert "F37" in feature_ids
+    f37 = next(e for e in entries if e.feature_id == "F37")
+    assert f37.status == "Geplant"
+    assert f37.tests_done == 0
+    assert f37.tests_total == 0
 
 
 def test_proposals_prioritize_unimplemented_features():

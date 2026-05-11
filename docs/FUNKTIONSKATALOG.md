@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 980/1123 Tests bestanden, 0 fehlgeschlagen, 143 übersprungen
+**Gesamtstatus:** 993/1136 Tests bestanden, 0 fehlgeschlagen, 143 übersprungen
 
 ---
 
@@ -21,7 +21,7 @@
 | ID | Funktion | Status | Tests | Modul | Hinweis |
 |----|----------|--------|-------|-------|---------|
 | F01 | CSV/TSV Ingest | ✅ Umgesetzt | 5/5 | `ingest/csv_loader.py` | Automatische Encoding-Erkennung (UTF-8, Latin-1, BOM), Zeilenende-Erkennung, Profiling aller Spalten |
-| F31 | XML-Import (METS/MODS, LIDO, EAD) | 🔴 Geplant | 0/0 | `ingest/` | Parsing mit lxml, Mapping auf internes Schema |
+| F31 | XML-Import (METS/MODS, LIDO, EAD) | 🟡 Teilweise | 21/21 | `ingest/xml_loader.py` | METS/MODS + LIDO via stdlib xml.etree; Format-Auto-Detection; EAD (hierarchisch) geplant |
 | F36 | Bild-Ingest (TIFF/JPEG/PNG) | ✅ Umgesetzt | 2/2 | `ingest/image_loader.py` | EXIF, Dimensionen, SHA-256, Base64 ohne Pillow |
 | F37 | PDF-Import | 🔴 Geplant | 0/0 | `ingest/` | Text + Seitenbilder extrahieren |
 
@@ -276,8 +276,8 @@
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
-| test_xml_loader.py | 8/8 | 0 | 0 | ✅ |
-| **Gesamt** | **980/1123** | **0** | **143** | **✅** |
+| test_xml_loader.py | 21/21 | 0 | 0 | ✅ |
+| **Gesamt** | **993/1136** | **0** | **143** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
