@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -98,6 +99,20 @@ class AIResponse:
     raw: dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass
+class AIStreamChunk:
+    """A single chunk from a streamed completion (#154).
+
+    delta: incremental text since the previous chunk (may be empty)
+    finish_reason: provider-reported reason when the stream ends ("stop",
+        "length", etc.); None for intermediate chunks
+    """
+    delta: str
+    finish_reason: str | None = None
+    model: str = ""
+    raw: dict[str, Any] = field(default_factory=dict)
+
+
 # Discriminator values for ProviderConfig.provider_type.
 # Used by factory code to dispatch to the correct provider class without
 # guessing from base_url (which is fragile — Ollama and GPUStack URLs look
@@ -157,6 +172,30 @@ class AIProvider(ABC):
 
     @abstractmethod
     def list_models(self) -> list[str]: ...
+
+    def stream(
+        self,
+        messages: list[AIMessage],
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> Iterator[AIStreamChunk]:
+        """Stream incremental chunks from a completion (#154).
+
+        Default implementation falls back to a non-streaming complete() call
+        that emits a single chunk. Providers should override for true SSE.
+        """
+        response = self.complete(
+            messages=messages, model=model, temperature=temperature,
+            max_tokens=max_tokens, **kwargs,
+        )
+        yield AIStreamChunk(
+            delta=response.content,
+            finish_reason="stop",
+            model=response.model,
+            raw=response.raw,
+        )
 
     @property
     def name(self) -> str:

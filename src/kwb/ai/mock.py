@@ -14,6 +14,7 @@ from kwb.ai.provider import (
     AIMessage,
     AIProvider,
     AIResponse,
+    AIStreamChunk,
     PROVIDER_TYPE_MOCK,
     ProviderConfig,
 )
@@ -73,6 +74,29 @@ class MockProvider(AIProvider):
             model=resolved_model,
             usage={"prompt_tokens": 10, "completion_tokens": 20},
         )
+
+    def stream(
+        self,
+        messages: list[AIMessage],
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ):
+        """Stream the mock response one word per chunk for deterministic tests."""
+        response = self.complete(
+            messages=messages, model=model, temperature=temperature,
+            max_tokens=max_tokens, **kwargs,
+        )
+        words = response.content.split(" ")
+        for i, word in enumerate(words):
+            delta = word if i == 0 else " " + word
+            is_last = i == len(words) - 1
+            yield AIStreamChunk(
+                delta=delta,
+                finish_reason="stop" if is_last else None,
+                model=response.model,
+            )
 
     def is_available(self) -> bool:
         return True

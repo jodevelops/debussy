@@ -650,3 +650,164 @@ class TestMockProviderRuleOrder:
         parsed = json.loads(resp.content)
         assert "description" in parsed
         assert "objects" in parsed
+
+
+# ---------------------------------------------------------------------------
+# Streaming support tests (#154)
+# ---------------------------------------------------------------------------
+
+class TestStreaming:
+    """Test stream() method on AIProvider implementations (#154)."""
+
+    def test_mock_stream_yields_chunks(self):
+        """MockProvider.stream() emits AIStreamChunks word by word."""
+        from kwb.ai.provider import AIStreamChunk
+        mock = MockProvider(default_response="hallo welt foo")
+        chunks = list(mock.stream([AIMessage.user("test")]))
+        assert len(chunks) == 3
+        assert all(isinstance(c, AIStreamChunk) for c in chunks)
+        # Reassembling should reconstruct the original response
+        assembled = "".join(c.delta for c in chunks)
+        assert assembled == "hallo welt foo"
+
+    def test_mock_stream_finish_reason_only_last(self):
+        """Only the last chunk has a finish_reason."""
+        mock = MockProvider(default_response="a b c")
+        chunks = list(mock.stream([AIMessage.user("test")]))
+        assert chunks[0].finish_reason is None
+        assert chunks[1].finish_reason is None
+        assert chunks[2].finish_reason == "stop"
+
+    def test_mock_stream_with_defaults(self):
+        """with_defaults mock streams the matched rule's response."""
+        mock = MockProvider.with_defaults()
+        chunks = list(mock.stream([AIMessage.user("Klassifiziere: test")]))
+        assembled = "".join(c.delta for c in chunks)
+        parsed = json.loads(assembled)
+        assert "category" in parsed
+
+    def test_stream_chunk_dataclass(self):
+        """AIStreamChunk has the expected fields."""
+        from kwb.ai.provider import AIStreamChunk
+        chunk = AIStreamChunk(delta="hi", finish_reason="stop", model="m")
+        assert chunk.delta == "hi"
+        assert chunk.finish_reason == "stop"
+        assert chunk.model == "m"
+
+    def test_provider_default_stream_fallback(self):
+        """Default stream() falls back to complete() and emits single chunk."""
+        from kwb.ai.provider import AIProvider, AIResponse, ProviderConfig
+
+        class _SyncOnlyProvider(AIProvider):
+            def complete(self, messages, model=None, temperature=0.0,
+                         max_tokens=1024, **kwargs):
+                return AIResponse(content="done", model="sync")
+
+            def is_available(self):
+                return True
+
+            def list_models(self):
+                return []
+
+        prov = _SyncOnlyProvider(ProviderConfig(base_url="http://x", provider_type="mock"))
+        chunks = list(prov.stream([AIMessage.user("test")]))
+        assert len(chunks) == 1
+        assert chunks[0].delta == "done"
+        assert chunks[0].finish_reason == "stop"
+
+
+# ---------------------------------------------------------------------------
+# Temperature tuning tests (#155)
+# ---------------------------------------------------------------------------
+
+class TestTemperatureConfig:
+    """Test default_temperature in KWBConfig (#155)."""
+
+    def test_default_temperature_value(self):
+        """Default temperature is 0.0 (deterministic)."""
+        from kwb.core.config import KWBConfig
+        cfg = KWBConfig()
+        assert cfg.default_temperature == 0.0
+
+    def test_temperature_roundtrips_through_dotenv(self):
+        """Setting and saving temperature persists through .env."""
+        from kwb.core.config import KWBConfig, load_config
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            env_path = os.path.join(tmp, ".env")
+            cfg = KWBConfig(default_temperature=0.7)
+            cfg.save_to_dotenv(env_path)
+            loaded = load_config(env_path)
+            assert loaded.default_temperature == 0.7
+
+    def test_temperature_passed_to_provider(self):
+        """Temperature is forwarded to provider.complete()."""
+        mock = MockProvider.with_defaults()
+        mock.complete([AIMessage.user("test")], temperature=0.5)
+        assert mock.call_log[-1]["temperature"] == 0.5
+
+
+# ---------------------------------------------------------------------------
+# Prompt catalog tests (#148)
+# ---------------------------------------------------------------------------
+
+class TestPromptCatalog:
+    """Test prompts-as-data catalog (#148)."""
+
+    def test_catalog_lists_known_prompts(self):
+        """PROMPT_CATALOG contains the expected prompts."""
+        from kwb.ai.prompts import PROMPT_CATALOG
+        names = {entry.name for entry in PROMPT_CATALOG}
+        # At least these must exist
+        for required in ("classify_subject", "image_description",
+                         "ocr_transcription_quality", "entity_extraction_normdata"):
+            assert required in names, f"Missing prompt: {required}"
+
+    def test_get_prompt_returns_entry(self):
+        """get_prompt() returns a usable entry."""
+        from kwb.ai.prompts import get_prompt
+        entry = get_prompt("image_description")
+        assert entry.label == "Bildbeschreibung"
+        assert entry.version == "1.0.0"
+        assert len(entry.parameters) >= 1
+
+    def test_get_prompt_raises_on_unknown(self):
+        """get_prompt() with unknown name raises KeyError."""
+        from kwb.ai.prompts import get_prompt
+        try:
+            get_prompt("does_not_exist")
+        except KeyError as e:
+            assert "does_not_exist" in str(e)
+        else:
+            raise AssertionError("KeyError not raised")
+
+    def test_list_prompts_serializes_dicts(self):
+        """list_prompts() returns plain dicts for API serialization."""
+        from kwb.ai.prompts import list_prompts
+        prompts = list_prompts()
+        assert isinstance(prompts, list)
+        for p in prompts:
+            assert "name" in p
+            assert "label" in p
+            assert "version" in p
+            assert "parameters" in p
+            assert isinstance(p["parameters"], list)
+
+    def test_prompt_preview_renders_text(self):
+        """preview() returns system + user text for the given parameters."""
+        from kwb.ai.prompts import get_prompt
+        entry = get_prompt("image_description")
+        preview = entry.preview(additional_context="test.jpg")
+        assert preview["system"]  # non-empty
+        assert preview["user"]
+        assert "JSON" in preview["user"]
+
+    def test_prompt_render_produces_messages(self):
+        """render() returns valid AIMessage list."""
+        from kwb.ai.prompts import get_prompt
+        entry = get_prompt("classify_subject")
+        msgs = entry.render(subject_text="Minarett")
+        assert len(msgs) == 2
+        assert msgs[0].role == "system"
+        assert msgs[1].role == "user"
+        assert "Minarett" in msgs[1].content

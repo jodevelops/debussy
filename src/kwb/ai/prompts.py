@@ -1,5 +1,15 @@
-"""GLAM-specific prompt templates."""
+"""GLAM-specific prompt templates.
+
+#148: Prompts are exposed as data through ``PROMPT_CATALOG`` so the UI can
+list, preview and (eventually) override them. Each entry is a self-
+describing record — name, version, description, parameters, factory —
+so callers can render prompts without importing the underlying Python
+functions.
+"""
 from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Callable
 
 from kwb.ai.provider import AIMessage
 
@@ -167,6 +177,159 @@ def prompt_normalize_term(term, field_name="", language="de"):
     system = SYSTEM_METADATA_EXPERT_DE if language == "de" else SYSTEM_METADATA_EXPERT_EN
     user = f'Normalisiere: "{term}"\n{f"Feld: {field_name}" if field_name else ""}\n\nJSON: {{"original":"...","normalized":"...","changes":[],"gnd_candidate":null,"confidence":0.0}}'
     return [AIMessage.system(system), AIMessage.user(user)]
+
+
+# ---------------------------------------------------------------------------
+# Prompt catalog (#148) — self-describing metadata for every prompt
+# ---------------------------------------------------------------------------
+
+@dataclass
+class PromptParameter:
+    name: str
+    label: str
+    default: str = ""
+    required: bool = False
+    description: str = ""
+
+
+@dataclass
+class PromptCatalogEntry:
+    name: str
+    label: str
+    version: str
+    description: str
+    factory: Callable[..., list[AIMessage]]
+    parameters: list[PromptParameter] = field(default_factory=list)
+    output_schema: dict[str, Any] = field(default_factory=dict)
+    tags: list[str] = field(default_factory=list)
+
+    def render(self, **kwargs: Any) -> list[AIMessage]:
+        """Render the prompt with the given parameters."""
+        return self.factory(**kwargs)
+
+    def preview(self, **kwargs: Any) -> dict[str, Any]:
+        """Return system + user text without wrapping in AIMessage objects.
+
+        Useful for the UI to display the rendered prompt before sending.
+        """
+        msgs = self.render(**kwargs)
+        result = {"system": "", "user": ""}
+        for m in msgs:
+            content = m.content if isinstance(m.content, str) else ""
+            if m.role == "system":
+                result["system"] = content
+            elif m.role == "user":
+                result["user"] = content
+        return result
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "label": self.label,
+            "version": self.version,
+            "description": self.description,
+            "parameters": [
+                {
+                    "name": p.name, "label": p.label, "default": p.default,
+                    "required": p.required, "description": p.description,
+                }
+                for p in self.parameters
+            ],
+            "output_schema": self.output_schema,
+            "tags": self.tags,
+        }
+
+
+PROMPT_CATALOG: list[PromptCatalogEntry] = [
+    PromptCatalogEntry(
+        name="classify_subject",
+        label="Klassifikation: Schlagwort",
+        version="1.0.0",
+        description="Klassifiziert ein Schlagwort in die GLAM-Kategorien (NER + Sachthemen).",
+        factory=prompt_classify_subject,
+        parameters=[
+            PromptParameter("subject_text", "Schlagwort", required=True),
+            PromptParameter("context", "Kontext (Record-ID)", default=""),
+            PromptParameter("language", "Sprache", default="de"),
+        ],
+        tags=["classification", "ner"],
+    ),
+    PromptCatalogEntry(
+        name="image_description",
+        label="Bildbeschreibung",
+        version=PROMPT_VERSIONS["image_description"],
+        description="Erstellt eine Bildbeschreibung mit Alt-Text und Objekt-Liste.",
+        factory=prompt_image_description,
+        parameters=[
+            PromptParameter("additional_context", "Zusätzlicher Kontext", default=""),
+            PromptParameter("language", "Sprache", default="de"),
+        ],
+        tags=["vision", "description"],
+    ),
+    PromptCatalogEntry(
+        name="person_face_visibility",
+        label="Personen-/Gesichtssichtbarkeit",
+        version=PROMPT_VERSIONS["person_face_visibility"],
+        description="Bewertet, ob und wie deutlich Personen/Gesichter im Bild sichtbar sind.",
+        factory=prompt_person_face_visibility,
+        parameters=[
+            PromptParameter("additional_context", "Zusätzlicher Kontext", default=""),
+            PromptParameter("language", "Sprache", default="de"),
+        ],
+        tags=["vision", "ethics"],
+    ),
+    PromptCatalogEntry(
+        name="ocr_transcription_quality",
+        label="OCR-Transkription",
+        version=PROMPT_VERSIONS["ocr_transcription_quality"],
+        description="Transkribiert Text aus Bildern und bewertet die OCR-Qualität.",
+        factory=prompt_ocr_transcription_quality,
+        parameters=[
+            PromptParameter("additional_context", "Zusätzlicher Kontext", default=""),
+            PromptParameter("language", "Sprache", default="de"),
+        ],
+        tags=["vision", "ocr"],
+    ),
+    PromptCatalogEntry(
+        name="entity_extraction_normdata",
+        label="Entitäten-Extraktion (Normdaten)",
+        version=PROMPT_VERSIONS["entity_extraction_normdata"],
+        description="Extrahiert Entitäten aus Text und schlägt GND/Wikidata-Kandidaten vor.",
+        factory=prompt_entity_extraction_normdata,
+        parameters=[
+            PromptParameter("source_text", "Quelltext", required=True),
+            PromptParameter("context", "Kontext", default=""),
+            PromptParameter("language", "Sprache", default="de"),
+        ],
+        tags=["ner", "enrichment"],
+    ),
+    PromptCatalogEntry(
+        name="normalize_term",
+        label="Term-Normalisierung",
+        version="1.0.0",
+        description="Normalisiert einen Begriff und schlägt einen GND-Kandidaten vor.",
+        factory=prompt_normalize_term,
+        parameters=[
+            PromptParameter("term", "Begriff", required=True),
+            PromptParameter("field_name", "Feldname", default=""),
+            PromptParameter("language", "Sprache", default="de"),
+        ],
+        tags=["normalization", "enrichment"],
+    ),
+]
+
+
+def get_prompt(name: str) -> PromptCatalogEntry:
+    """Look up a prompt entry by name. Raises KeyError if not found."""
+    for entry in PROMPT_CATALOG:
+        if entry.name == name:
+            return entry
+    raise KeyError(f"Unknown prompt: {name!r}. Available: {[p.name for p in PROMPT_CATALOG]}")
+
+
+def list_prompts() -> list[dict[str, Any]]:
+    """Return all prompt entries as plain dicts (for API serialization)."""
+    return [entry.to_dict() for entry in PROMPT_CATALOG]
 
 
 # ---------------------------------------------------------------------------
