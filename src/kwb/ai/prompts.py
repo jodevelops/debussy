@@ -163,18 +163,10 @@ def prompt_entity_extraction_normdata(source_text, context="", language="de"):
     return [AIMessage.system(system), AIMessage.user(user)]
 
 
-def prompt_describe_image(additional_context="", language="de"):
-    return prompt_image_description(additional_context=additional_context, language=language)
-
-
 def prompt_normalize_term(term, field_name="", language="de"):
     system = SYSTEM_METADATA_EXPERT_DE if language == "de" else SYSTEM_METADATA_EXPERT_EN
     user = f'Normalisiere: "{term}"\n{f"Feld: {field_name}" if field_name else ""}\n\nJSON: {{"original":"...","normalized":"...","changes":[],"gnd_candidate":null,"confidence":0.0}}'
     return [AIMessage.system(system), AIMessage.user(user)]
-
-
-def prompt_ocr_analysis(additional_context="", language="de"):
-    return prompt_ocr_transcription_quality(additional_context=additional_context, language=language)
 
 
 # ---------------------------------------------------------------------------

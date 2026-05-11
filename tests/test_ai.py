@@ -12,9 +12,9 @@ from kwb.ai.provider import AIMessage
 from kwb.ai.mock import MockProvider
 from kwb.ai.prompts import (
     prompt_classify_subject,
-    prompt_describe_image,
+    prompt_image_description,
     prompt_normalize_term,
-    prompt_ocr_analysis,
+    prompt_ocr_transcription_quality,
 )
 from kwb.ai.batch import process_batch, _try_parse_json
 from kwb.analyze.semantic import classify_subjects, describe_images
@@ -81,7 +81,7 @@ class TestPrompts:
         assert "dcb-001" in msgs[1].content
 
     def test_describe_image_structure(self):
-        msgs = prompt_describe_image(additional_context="test.jpg")
+        msgs = prompt_image_description(additional_context="test.jpg")
         assert len(msgs) == 2
         assert "JSON" in msgs[0].content
 
@@ -91,7 +91,7 @@ class TestPrompts:
         assert "Architecture" in msgs[1].content
 
     def test_ocr_analysis(self):
-        msgs = prompt_ocr_analysis()
+        msgs = prompt_ocr_transcription_quality()
         assert len(msgs) == 2
         assert "transcription" in msgs[1].content
 
@@ -546,3 +546,107 @@ class TestRetryLogic:
         source = inspect.getsource(OllamaProvider.is_available)
         assert "/api/tags" in source
         assert '"models" in result' in source or "'models' in result" in source
+
+
+# ---------------------------------------------------------------------------
+# ProviderConfig discriminator tests (fix #147)
+# ---------------------------------------------------------------------------
+
+class TestProviderConfigDiscriminator:
+    """Test provider_type discriminator on ProviderConfig (#147)."""
+
+    def test_default_provider_type(self):
+        """Default provider_type is gpustack for back-compat."""
+        from kwb.ai.provider import PROVIDER_TYPE_GPUSTACK, ProviderConfig
+
+        cfg = ProviderConfig(base_url="http://example.com")
+        assert cfg.provider_type == PROVIDER_TYPE_GPUSTACK
+
+    def test_explicit_ollama_type(self):
+        """Can construct ollama-typed config."""
+        from kwb.ai.provider import PROVIDER_TYPE_OLLAMA, ProviderConfig
+
+        cfg = ProviderConfig(
+            base_url="http://localhost:11434",
+            provider_type=PROVIDER_TYPE_OLLAMA,
+        )
+        assert cfg.provider_type == "ollama"
+
+    def test_invalid_type_raises(self):
+        """Invalid provider_type raises ValueError loudly."""
+        from kwb.ai.provider import ProviderConfig
+
+        try:
+            ProviderConfig(base_url="http://x", provider_type="bogus")
+        except ValueError as e:
+            assert "bogus" in str(e)
+        else:
+            raise AssertionError("ValueError not raised for invalid provider_type")
+
+    def test_mock_provider_uses_mock_type(self):
+        """MockProvider self-configures with provider_type='mock'."""
+        mock = MockProvider.with_defaults()
+        assert mock.config.provider_type == "mock"
+
+
+# ---------------------------------------------------------------------------
+# Provider error taxonomy tests (fix #149)
+# ---------------------------------------------------------------------------
+
+class TestProviderErrorTaxonomy:
+    """Test typed provider exceptions (#149)."""
+
+    def test_exception_hierarchy(self):
+        """All provider errors inherit from ProviderError."""
+        from kwb.ai.provider import (
+            ProviderAuthError, ProviderBadRequestError,
+            ProviderError, ProviderNetworkError,
+            ProviderRateLimitError, ProviderServerError,
+        )
+        for exc_cls in (
+            ProviderAuthError, ProviderBadRequestError,
+            ProviderNetworkError, ProviderRateLimitError,
+            ProviderServerError,
+        ):
+            assert issubclass(exc_cls, ProviderError)
+
+    def test_network_error_is_connection_error(self):
+        """ProviderNetworkError is back-compat with ConnectionError."""
+        from kwb.ai.provider import ProviderNetworkError
+        assert issubclass(ProviderNetworkError, ConnectionError)
+
+
+# ---------------------------------------------------------------------------
+# MockProvider rule order tests (fix #144)
+# ---------------------------------------------------------------------------
+
+class TestMockProviderRuleOrder:
+    """Test MockProvider correctly identifies vision vs text inputs (#144)."""
+
+    def test_text_only_with_klassif_routes_to_classify(self):
+        """Pure-text message with 'klassif' routes to classify rule."""
+        mock = MockProvider.with_defaults()
+        resp = mock.complete([AIMessage.user("Klassifiziere: Minarett")])
+        parsed = json.loads(resp.content)
+        assert "category" in parsed
+
+    def test_multimodal_no_image_with_klassif_still_classifies(self):
+        """Multimodal-shaped content WITHOUT image_url should NOT trigger vision."""
+        mock = MockProvider.with_defaults()
+        # Build a list-content message but with only text parts
+        msg = AIMessage(role="user", content=[
+            {"type": "text", "text": "Klassifiziere diese Elemente"},
+        ])
+        resp = mock.complete([msg])
+        parsed = json.loads(resp.content)
+        # Without an image_url, this should fall through to classify, not vision
+        assert "category" in parsed
+
+    def test_real_image_message_routes_to_vision(self):
+        """Multimodal message WITH image_url triggers vision response."""
+        mock = MockProvider.with_defaults()
+        msg = AIMessage.user_with_image("Beschreibe dieses Bild", "AAAA", "image/jpeg")
+        resp = mock.complete([msg])
+        parsed = json.loads(resp.content)
+        assert "description" in parsed
+        assert "objects" in parsed

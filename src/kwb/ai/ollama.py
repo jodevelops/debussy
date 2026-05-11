@@ -20,7 +20,17 @@ from typing import Any
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from kwb.ai.provider import AIMessage, AIProvider, AIResponse, message_to_openai_dict
+from kwb.ai.provider import (
+    AIMessage,
+    AIProvider,
+    AIResponse,
+    ProviderAuthError,
+    ProviderBadRequestError,
+    ProviderNetworkError,
+    ProviderRateLimitError,
+    ProviderServerError,
+    message_to_openai_dict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +81,7 @@ class OllamaProvider(AIProvider):
         req = Request(url, data=data, headers=headers, method="POST")
 
         last_error = None
+        last_body = ""
         for attempt in range(1, self.config.max_retries + 1):
             try:
                 with urlopen(req, timeout=self.config.timeout_seconds) as resp:
@@ -86,8 +97,12 @@ class OllamaProvider(AIProvider):
 
             except HTTPError as e:
                 last_error = e
-                body = e.read().decode("utf-8", errors="replace")
-                logger.warning(f"Attempt {attempt} failed: HTTP {e.code} — {body[:200]}")
+                last_body = e.read().decode("utf-8", errors="replace")
+                logger.warning(f"Attempt {attempt} failed: HTTP {e.code} — {last_body[:200]}")
+                if e.code in (401, 403):
+                    raise ProviderAuthError(
+                        f"Ollama auth failed (HTTP {e.code}): {last_body[:200]}"
+                    ) from e
                 if e.code == 429:
                     time.sleep(2 ** attempt)
                     continue
@@ -95,16 +110,28 @@ class OllamaProvider(AIProvider):
                     time.sleep(1)
                     continue
                 else:
-                    raise
+                    raise ProviderBadRequestError(
+                        f"Ollama bad request (HTTP {e.code}): {last_body[:200]}"
+                    ) from e
 
             except (URLError, TimeoutError) as e:
                 last_error = e
                 logger.warning(f"Attempt {attempt} failed: {e}")
                 time.sleep(1)
 
-        raise ConnectionError(
-            f"Ollama: Failed after {self.config.max_retries} attempts: {last_error}"
-        )
+        # Retries exhausted — classify the final error so callers can triage.
+        if isinstance(last_error, HTTPError):
+            if last_error.code == 429:
+                raise ProviderRateLimitError(
+                    f"Ollama rate limit after {self.config.max_retries} retries: {last_body[:200]}"
+                ) from last_error
+            raise ProviderServerError(
+                f"Ollama server error after {self.config.max_retries} retries "
+                f"(HTTP {last_error.code}): {last_body[:200]}"
+            ) from last_error
+        raise ProviderNetworkError(
+            f"Ollama unreachable after {self.config.max_retries} attempts: {last_error}"
+        ) from last_error
 
     def is_available(self) -> bool:
         """Check if Ollama is available via /api/tags endpoint (Ollama-specific)."""

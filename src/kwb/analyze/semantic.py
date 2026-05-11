@@ -4,7 +4,7 @@ import logging
 import pandas as pd
 from kwb.core.models import Finding, FindingCategory, Severity
 from kwb.ai.provider import AIMessage
-from kwb.ai.prompts import prompt_classify_subject, prompt_describe_image
+from kwb.ai.prompts import prompt_classify_subject, prompt_image_description
 from kwb.ai.batch import BatchReport, process_batch
 
 logger = logging.getLogger(__name__)
@@ -105,7 +105,7 @@ def describe_images(images, provider, model=None):
     items = [{"record_id": img.filename, "base64": img.base64_data, "mime": img.mime_type} for img in processable]
 
     def _make_prompt(item):
-        msgs = prompt_describe_image(additional_context=item["record_id"])
+        msgs = prompt_image_description(additional_context=item["record_id"])
         text_content = msgs[-1].content if isinstance(msgs[-1].content, str) else ""
         return [msgs[0], AIMessage.user_with_image(text_content, item["base64"], item["mime"])]
 
