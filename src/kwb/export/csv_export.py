@@ -160,6 +160,9 @@ def export_enriched_csv(
 
     # ------------------------------------------------------------------
     # GND columns — add gnd_id / gnd_preferred for known terms
+    # EXP-BUG-08 (#193): iterate over ALL ner_* columns, not just
+    # ner_persons. A curator's GND-enriched place gazetteer must surface
+    # in the export the same way as person IDs do.
     # ------------------------------------------------------------------
     if include_gnd and workspace.dictionary:
         term_to_gnd: dict[str, str] = {
@@ -168,20 +171,39 @@ def export_enriched_csv(
             if e.gnd_id
         }
         if term_to_gnd:
-            # Only add if NER columns exist — map preferred terms to GND IDs
-            if "ner_persons" in out.columns:
-                def _map_gnd(cell: str) -> str:
-                    if not cell:
-                        return ""
-                    ids = []
-                    for term in cell.split(separator.strip()):
-                        t = term.strip()
-                        gnd = term_to_gnd.get(t.lower(), "")
-                        if gnd:
-                            ids.append(gnd)
-                    return separator.join(ids)
+            sep_token = separator.strip()
 
-                out["gnd_ids"] = out["ner_persons"].map(_map_gnd)
+            def _gnd_ids_for_cell(cell: str) -> list[str]:
+                if not cell:
+                    return []
+                ids: list[str] = []
+                for term in cell.split(sep_token):
+                    t = term.strip()
+                    gnd = term_to_gnd.get(t.lower(), "")
+                    if gnd and gnd not in ids:
+                        ids.append(gnd)
+                return ids
+
+            # Combined column across all entity types (curator-friendly).
+            ner_cols = [c for c in out.columns if c.startswith("ner_")]
+            if ner_cols:
+                def _combined_gnd(row: pd.Series) -> str:
+                    seen: list[str] = []
+                    for col in ner_cols:
+                        for gnd in _gnd_ids_for_cell(str(row.get(col, "") or "")):
+                            if gnd not in seen:
+                                seen.append(gnd)
+                    return separator.join(seen)
+
+                out["gnd_ids"] = out.apply(_combined_gnd, axis=1)
+
+                # Also per-type columns so Goobi-style consumers can pick
+                # the IDs they need (gnd_persons_ids, gnd_places_ids, …).
+                for col in ner_cols:
+                    suffix = col[len("ner_"):]  # "persons", "places", ...
+                    out[f"gnd_{suffix}_ids"] = out[col].map(
+                        lambda cell: separator.join(_gnd_ids_for_cell(str(cell or "")))
+                    )
 
     # ------------------------------------------------------------------
     # Serialise to CSV string

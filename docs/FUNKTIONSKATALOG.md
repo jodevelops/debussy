@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 902/1040 Tests bestanden, 0 fehlgeschlagen, 138 übersprungen
+**Gesamtstatus:** 916/1054 Tests bestanden, 0 fehlgeschlagen, 138 übersprungen
 
 ---
 
@@ -257,7 +257,7 @@
 | test_llm_quality.py | 55/55 | 0 | 0 | ✅ |
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
 | test_ner_edtf.py | 31/31 | 0 | 0 | ✅ |
-| test_new_features.py | 33/45 | 0 | 12 | ✅ |
+| test_new_features.py | 47/59 | 0 | 12 | ✅ |
 | test_open_issues.py | 24/32 | 0 | 8 | ✅ |
 | test_pdf_loader.py | 3/3 | 0 | 0 | ✅ |
 | test_phase1_stabilization.py | 11/11 | 0 | 0 | ✅ |
@@ -275,7 +275,7 @@
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 8/8 | 0 | 0 | ✅ |
-| **Gesamt** | **902/1040** | **0** | **138** | **✅** |
+| **Gesamt** | **916/1054** | **0** | **138** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
