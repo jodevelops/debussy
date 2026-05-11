@@ -22,6 +22,7 @@ SUPPORTED ELEMENT TYPES (from Goobi schema):
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,8 @@ from xml.etree.ElementTree import (
 import sys
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 from kwb.core.workspace import (
     FieldMapping, DictionaryEntry, Workspace
@@ -98,18 +101,45 @@ def _split_repeatable(value: str, sep: str = ";") -> list[str]:
     return [v.strip() for v in value.split(sep) if v.strip()]
 
 
+# EXP-BUG-07 (#192): Nobiliary / surname particles in DE, NL, FR, IT, ES.
+# When parsing "Firstname Lastname" form, these tokens stick to the surname
+# rather than ending up as part of the first name.
+_NOBILIARY_PARTICLES = frozenset({
+    # German / Dutch
+    "von", "vom", "zu", "zur", "van", "ten", "ter", "der",
+    # French
+    "de", "du", "des", "le", "la",
+    # Italian / Spanish
+    "del", "della", "di", "da", "dal", "dalla", "lo", "los", "las",
+})
+
+
 def _parse_name(full_name: str) -> tuple[str, str]:
     """
     Split 'Lastname, Firstname' or 'Firstname Lastname' into parts.
     Returns (firstname, lastname).
+
+    Handles nobiliary particles (#192): "von Goethe" → ("", "von Goethe"),
+    "Johann Wolfgang von Goethe" → ("Johann Wolfgang", "von Goethe").
     """
     if "," in full_name:
         parts = full_name.split(",", 1)
         return parts[1].strip(), parts[0].strip()
-    parts = full_name.rsplit(" ", 1)
-    if len(parts) == 2:
-        return parts[0], parts[1]
-    return "", full_name.strip()
+
+    tokens = full_name.split()
+    if len(tokens) < 2:
+        return "", full_name.strip()
+
+    # Walk from the right collecting particle tokens into the surname.
+    # The surname always starts at the index where the last particle begins
+    # (or, if no particle precedes the final token, just the final token).
+    surname_start = len(tokens) - 1
+    while surname_start > 0 and tokens[surname_start - 1].lower() in _NOBILIARY_PARTICLES:
+        surname_start -= 1
+
+    firstname = " ".join(tokens[:surname_start]).strip()
+    lastname = " ".join(tokens[surname_start:]).strip()
+    return firstname, lastname
 
 
 
@@ -304,16 +334,54 @@ def export_goobi_xml(
     df: pd.DataFrame,
     workspace: Workspace,
     doc_type: str = "MuseumObject",
+    auto_add_catalog_id: bool = True,
 ) -> list[tuple[str, str]]:
     """
     Export each row of a DataFrame to individual Goobi XML strings.
 
-    Returns a list of (record_id, xml_string) tuples.
+    Parameters
+    ----------
+    df:                   Source DataFrame
+    workspace:            Workspace with field_mapping
+    doc_type:             Goobi document type attribute
+    auto_add_catalog_id:  EXP-BUG-02 (#187). When True (default for
+        back-compat), the function injects a record_id → CatalogIDDigital
+        mapping if the curator has not mapped it. Each injection logs a
+        warning so it is no longer silent. Set to False to fail-fast when
+        CatalogIDDigital is unmapped — recommended for production exports
+        where any silent transformation undermines trust.
+
+    Returns
+    -------
+    A list of (record_id, xml_string) tuples.
+
+    Raises
+    ------
+    ValueError if auto_add_catalog_id=False and CatalogIDDigital is not
+    mapped in the workspace.
     """
     mappings = workspace.active_mappings()
     dict_lookup: dict[str, DictionaryEntry] = {}
     for d in workspace.dictionary:
         dict_lookup.setdefault(d.term.lower(), d)
+
+    # EXP-BUG-02 (#187): surface CatalogIDDigital handling up-front rather
+    # than silently injecting per-row. Either fail-fast or warn once.
+    mapped_goobi_types = {m.goobi_type for m in mappings}
+    catalog_id_mapped = "CatalogIDDigital" in mapped_goobi_types
+    if not catalog_id_mapped:
+        if not auto_add_catalog_id:
+            raise ValueError(
+                "CatalogIDDigital is not mapped in the workspace. "
+                "Either map a column to CatalogIDDigital in the field-mapping "
+                "screen, or pass auto_add_catalog_id=True to auto-inject "
+                "record_id (which will produce a warning per record)."
+            )
+        logger.warning(
+            "EXP-BUG-02: CatalogIDDigital was not mapped explicitly; "
+            "auto-injecting record_id → CatalogIDDigital. Map it explicitly "
+            "to silence this warning."
+        )
 
     for ent in workspace.entities:
         if getattr(ent.status, "value", ent.status) != "rejected" and ent.gnd_id:
@@ -335,10 +403,17 @@ def export_goobi_xml(
                     if isinstance(val, str) and val.strip() == dt.original:
                         row_dict[col_name] = dt.edtf
 
-        # Auto-add CatalogIDDigital for record_id if not already mapped
+        # EXP-BUG-02 (#187): Inject record_id → CatalogIDDigital only when
+        # auto_add was approved at the function level and the workspace has
+        # no explicit mapping. The function-level warning above already
+        # surfaced this once.
         auto_mappings = list(mappings)
-        mapped_cols = {m.csv_column for m in auto_mappings}
-        if "record_id" not in mapped_cols and "record_id" in row_dict:
+        if (
+            auto_add_catalog_id
+            and not catalog_id_mapped
+            and "record_id" in row_dict
+            and "record_id" not in {m.csv_column for m in auto_mappings}
+        ):
             auto_mappings.insert(0, FieldMapping(
                 csv_column="record_id",
                 goobi_type="CatalogIDDigital",

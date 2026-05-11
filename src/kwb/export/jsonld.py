@@ -60,9 +60,14 @@ def _make_entity_node(entity_review) -> dict[str, Any]:
         "@type": schema_type,
         "name": entity_review.text,
     }
+    # EXP-BUG-05 (#190): sameAs is always a list so new authorities can be
+    # appended without overwriting earlier ones.
+    same_as: list[str] = []
     if entity_review.gnd_id:
         node["@id"] = f"gnd:{entity_review.gnd_id}"
-        node["sameAs"] = f"https://d-nb.info/gnd/{entity_review.gnd_id}"
+        same_as.append(f"https://d-nb.info/gnd/{entity_review.gnd_id}")
+    if same_as:
+        node["sameAs"] = same_as
     if entity_review.gnd_preferred and entity_review.gnd_preferred != entity_review.text:
         node["alternateName"] = entity_review.text
         node["name"] = entity_review.gnd_preferred
@@ -120,19 +125,32 @@ def _make_record_node(
         else:
             node[schema_key] = str_val
 
-    # Add NER entities
+    # Add NER entities — EXP-BUG-03 (#188): merge with field-mapping values
+    # rather than silently overwriting. Field-mapped values keep precedence as
+    # the first entry; NER-derived entries are appended with _source="ner" so
+    # downstream consumers can distinguish.
+    def _merge_into(key: str, ner_entries: list[dict[str, Any]]) -> None:
+        if not ner_entries:
+            return
+        existing = node.get(key)
+        merged: list[Any] = []
+        if existing is not None:
+            if isinstance(existing, list):
+                merged.extend(existing)
+            else:
+                merged.append(existing)
+        for entry in ner_entries:
+            merged.append({**entry, "_source": "ner"})
+        node[key] = merged if len(merged) > 1 else merged[0]
+
     ents = entities_by_record.get(record_id, [])
     if ents:
-        # Group by type
         persons = [e for e in ents if e["type"] in ("PER",)]
         places = [e for e in ents if e["type"] in ("LOC", "GPE")]
         orgs = [e for e in ents if e["type"] in ("ORG",)]
-        if persons:
-            node["mentions"] = persons if len(persons) > 1 else persons[0]
-        if places:
-            node["contentLocation"] = places if len(places) > 1 else places[0]
-        if orgs:
-            node["accountablePerson"] = orgs if len(orgs) > 1 else orgs[0]
+        _merge_into("mentions", persons)
+        _merge_into("contentLocation", places)
+        _merge_into("accountablePerson", orgs)
 
     # Add EDTF dates
     dates = dates_by_record.get(record_id, [])
@@ -237,6 +255,9 @@ def export_jsonld(
         items.append(node)
 
     # Build authority entities from dictionary
+    # EXP-BUG-05 (#190): sameAs starts empty and authorities append, so adding
+    # a third authority (e.g. VIAF) is a one-line change with no risk of
+    # silently dropping earlier URIs.
     authority_graph = []
     for entry in workspace.dictionary:
         if not entry.has_authority:
@@ -245,15 +266,14 @@ def export_jsonld(
             "@type": "DefinedTerm",
             "name": entry.gnd_preferred or entry.term,
         }
+        same_as: list[str] = []
         if entry.gnd_id:
             anode["@id"] = f"gnd:{entry.gnd_id}"
-            anode["sameAs"] = f"https://d-nb.info/gnd/{entry.gnd_id}"
+            same_as.append(f"https://d-nb.info/gnd/{entry.gnd_id}")
         if entry.wikidata_id:
-            anode["sameAs"] = [
-                f"https://d-nb.info/gnd/{entry.gnd_id}" if entry.gnd_id else None,
-                f"https://www.wikidata.org/wiki/{entry.wikidata_id}",
-            ]
-            anode["sameAs"] = [s for s in anode["sameAs"] if s]
+            same_as.append(f"https://www.wikidata.org/wiki/{entry.wikidata_id}")
+        if same_as:
+            anode["sameAs"] = same_as
         authority_graph.append(anode)
 
     doc: dict[str, Any] = {

@@ -483,6 +483,192 @@ class TestJSONLDExport(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Phase 3 Export Bugfixes (#188, #190, #192, #193, #187)
+# ---------------------------------------------------------------------------
+
+class TestPhase3JsonLdSameAs(unittest.TestCase):
+    """EXP-BUG-05 (#190): JSON-LD sameAs is always a list, never overwritten."""
+
+    def _make_workspace(self, **kwargs):
+        from kwb.core.workspace import Workspace, DictionaryEntry
+        ws = Workspace.create("sameAs-test")
+        ws.base_url = "https://kwb.example/collection/"
+        ws.dictionary = [DictionaryEntry(term="Goethe", **kwargs)]
+        return ws
+
+    def test_gnd_only_produces_list(self):
+        """Dictionary entry with only GND ID still produces list-shaped sameAs."""
+        from kwb.export.jsonld import export_jsonld
+        ws = self._make_workspace(gnd_id="118540238")
+        out = export_jsonld(pd.DataFrame({"record_id": ["r1"]}), ws)
+        doc = json.loads(out)
+        authority = [n for n in doc["@graph"] if n.get("@type") == "DefinedTerm"][0]
+        self.assertIsInstance(authority["sameAs"], list)
+        self.assertEqual(len(authority["sameAs"]), 1)
+        self.assertIn("d-nb.info", authority["sameAs"][0])
+
+    def test_gnd_plus_wikidata_lists_both(self):
+        """Both authority URIs appear in sameAs without overwrite."""
+        from kwb.export.jsonld import export_jsonld
+        ws = self._make_workspace(gnd_id="118540238", wikidata_id="Q5879")
+        out = export_jsonld(pd.DataFrame({"record_id": ["r1"]}), ws)
+        doc = json.loads(out)
+        authority = [n for n in doc["@graph"] if n.get("@type") == "DefinedTerm"][0]
+        self.assertEqual(len(authority["sameAs"]), 2)
+        joined = " ".join(authority["sameAs"])
+        self.assertIn("d-nb.info", joined)
+        self.assertIn("wikidata.org", joined)
+
+    def test_wikidata_only_no_overwrite_loss(self):
+        """Wikidata-only entry has its URI in sameAs list."""
+        from kwb.export.jsonld import export_jsonld
+        ws = self._make_workspace(wikidata_id="Q5879")
+        out = export_jsonld(pd.DataFrame({"record_id": ["r1"]}), ws)
+        doc = json.loads(out)
+        authority = [n for n in doc["@graph"] if n.get("@type") == "DefinedTerm"][0]
+        self.assertIsInstance(authority["sameAs"], list)
+        self.assertEqual(len(authority["sameAs"]), 1)
+        self.assertIn("wikidata.org", authority["sameAs"][0])
+
+
+class TestPhase3JsonLdMentionsMerge(unittest.TestCase):
+    """EXP-BUG-03 (#188): NER entities merge with field-mapping values."""
+
+    def test_ner_appends_to_field_mapping_mentions(self):
+        """NER-derived mentions append rather than overwrite mapped value."""
+        from kwb.core.workspace import Workspace, FieldMapping, EntityReview
+        from kwb.core.models import ReviewStatus
+        from kwb.export.jsonld import export_jsonld
+
+        ws = Workspace.create("merge-test")
+        ws.base_url = "https://kwb.example/collection/"
+        ws.id_column = "record_id"
+        ws.field_mapping = [
+            FieldMapping(csv_column="people", goobi_type="SubjectPerson",
+                         label="Personen"),
+        ]
+        ws.entity_reviews = [
+            EntityReview(
+                text="Schiller", entity_type="PER", record_id="r1",
+                status=ReviewStatus.ACCEPTED,
+            ),
+        ]
+
+        df = pd.DataFrame({"record_id": ["r1"], "people": ["Goethe"]})
+        out = export_jsonld(df, ws)
+        doc = json.loads(out)
+        record = [n for n in doc["@graph"] if n.get("@type") == "CreativeWork"][0]
+        mentions = record["mentions"]
+        self.assertIsInstance(mentions, list, "Should be list with both values")
+        # First entry is field-mapped, second is NER-derived
+        rendered = json.dumps(mentions)
+        self.assertIn("Goethe", rendered)
+        self.assertIn("Schiller", rendered)
+        # NER source annotation present on NER entry
+        ner_entries = [m for m in mentions if isinstance(m, dict) and m.get("_source") == "ner"]
+        self.assertEqual(len(ner_entries), 1)
+        self.assertEqual(ner_entries[0]["name"], "Schiller")
+
+
+class TestPhase3ParseName(unittest.TestCase):
+    """EXP-BUG-07 (#192): _parse_name handles nobiliary particles."""
+
+    def test_von_goethe(self):
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("von Goethe")
+        self.assertEqual(fn, "")
+        self.assertEqual(ln, "von Goethe")
+
+    def test_full_name_with_particle(self):
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("Johann Wolfgang von Goethe")
+        self.assertEqual(fn, "Johann Wolfgang")
+        self.assertEqual(ln, "von Goethe")
+
+    def test_de_la_roche(self):
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("Maria de la Roche")
+        self.assertEqual(fn, "Maria")
+        self.assertEqual(ln, "de la Roche")
+
+    def test_van_der_berg(self):
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("Pieter van der Berg")
+        self.assertEqual(fn, "Pieter")
+        self.assertEqual(ln, "van der Berg")
+
+    def test_comma_form_unchanged(self):
+        """Comma-form parsing must keep its existing behavior."""
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("Goethe, Johann Wolfgang")
+        self.assertEqual(fn, "Johann Wolfgang")
+        self.assertEqual(ln, "Goethe")
+
+    def test_simple_name_unchanged(self):
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("Albert Einstein")
+        self.assertEqual(fn, "Albert")
+        self.assertEqual(ln, "Einstein")
+
+    def test_single_token_returns_lastname(self):
+        from kwb.export.goobi_xml import _parse_name
+        fn, ln = _parse_name("Cher")
+        self.assertEqual(fn, "")
+        self.assertEqual(ln, "Cher")
+
+
+class TestPhase3CsvGndIds(unittest.TestCase):
+    """EXP-BUG-08 (#193): CSV gnd_ids covers all ner_* columns."""
+
+    def test_places_gnd_ids_appear(self):
+        from kwb.core.workspace import Workspace, DictionaryEntry
+        from kwb.export.csv_export import export_enriched_csv
+
+        ws = Workspace.create("gnd-test")
+        ws.dictionary = [
+            DictionaryEntry(term="Bern", gnd_id="4005831-9"),
+            DictionaryEntry(term="Goethe", gnd_id="118540238"),
+        ]
+        df = pd.DataFrame({
+            "record_id": ["r1", "r2"],
+            "ner_persons": ["Goethe", ""],
+            "ner_places": ["", "Bern"],
+        })
+        out_csv = export_enriched_csv(df, ws, include_gnd=True)
+        self.assertIn("4005831-9", out_csv, "Place GND ID missing from output")
+        self.assertIn("118540238", out_csv, "Person GND ID missing from output")
+        # Per-type columns should exist
+        self.assertIn("gnd_persons_ids", out_csv)
+        self.assertIn("gnd_places_ids", out_csv)
+
+
+class TestPhase3CatalogIdFailFast(unittest.TestCase):
+    """EXP-BUG-02 (#187): CatalogIDDigital injection is opt-in and visible."""
+
+    def test_fail_fast_raises_when_unmapped(self):
+        from kwb.core.workspace import Workspace
+        from kwb.export.goobi_xml import export_goobi_xml
+
+        ws = Workspace.create("catalog-test")
+        df = pd.DataFrame({"record_id": ["r1"], "title": ["x"]})
+        with self.assertRaises(ValueError) as ctx:
+            export_goobi_xml(df, ws, auto_add_catalog_id=False)
+        self.assertIn("CatalogIDDigital", str(ctx.exception))
+
+    def test_auto_add_default_still_works(self):
+        """Back-compat: default behavior keeps injecting record_id."""
+        from kwb.core.workspace import Workspace
+        from kwb.export.goobi_xml import export_goobi_xml
+
+        ws = Workspace.create("catalog-test")
+        df = pd.DataFrame({"record_id": ["r1"], "title": ["x"]})
+        results = export_goobi_xml(df, ws)  # default auto_add_catalog_id=True
+        self.assertEqual(len(results), 1)
+        # The injected mapping puts record_id into a CatalogIDDigital element
+        self.assertIn("CatalogIDDigital", results[0][1])
+
+
+# ---------------------------------------------------------------------------
 # F30: OCR API Endpoint (via TestClient)
 # ---------------------------------------------------------------------------
 
