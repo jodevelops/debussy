@@ -75,6 +75,44 @@ async def gpu_status():
         return {"status": "error", "configured": True, "message": str(e)}
 
 
+@router.post("/api/gpu/stream")
+async def gpu_stream(request: dict):
+    """Stream a completion as SSE chunks (#154).
+
+    Request: {"prompt": "...", "system_prompt": "...", "model": "...",
+              "temperature": 0.0, "max_tokens": 1024}
+    Response: text/event-stream with chunks {"delta": "..."} until {"done": true}
+    """
+    prompt = request.get("prompt", "")
+    system_prompt = request.get("system_prompt", "")
+    mod = request.get("model", "")
+    temperature = float(request.get("temperature", 0.0))
+    max_tokens = int(request.get("max_tokens", 1024))
+    prov = get_provider(mod)
+
+    messages = []
+    if system_prompt:
+        messages.append(AIMessage.system(system_prompt))
+    messages.append(AIMessage.user(prompt))
+
+    def generate():
+        try:
+            for chunk in prov.stream(
+                messages, model=mod or None,
+                temperature=temperature, max_tokens=max_tokens,
+            ):
+                if chunk.delta:
+                    yield _sse_event({"delta": chunk.delta})
+                if chunk.finish_reason:
+                    yield _sse_event({"done": True, "finish_reason": chunk.finish_reason})
+                    return
+            yield _sse_event({"done": True})
+        except Exception as e:
+            yield _sse_event({"error": str(e), "error_type": type(e).__name__})
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
 @router.post("/api/gpu/test")
 async def gpu_test(request: dict | None = None):
     request = request or {}
@@ -92,6 +130,117 @@ async def gpu_test(request: dict | None = None):
 
 
 # ---------------------------------------------------------------------------
+# Prompt catalog (#148)
+# ---------------------------------------------------------------------------
+
+@router.get("/api/prompts")
+async def prompts_list():
+    """Return all registered prompts as data (#148).
+
+    Each entry includes name, label, version, description, parameters,
+    and tags — enough for the UI to render a prompt picker with help text.
+    """
+    from kwb.ai.prompts import list_prompts
+    return {"prompts": list_prompts()}
+
+
+@router.post("/api/prompts/preview")
+async def prompts_preview(request: dict):
+    """Render a prompt with given parameters; return the system + user text.
+
+    Lets curators inspect what a prompt actually sends to the model
+    before kicking off a batch (#148).
+    """
+    from kwb.ai.prompts import get_prompt
+    name = request.get("name", "")
+    params = request.get("parameters", {}) or {}
+    try:
+        entry = get_prompt(name)
+    except KeyError as e:
+        return JSONResponse({"status": "error", "message": str(e)}, 404)
+    try:
+        preview = entry.preview(**params)
+    except TypeError as e:
+        return JSONResponse(
+            {"status": "error", "message": f"Invalid parameters: {e}"}, 400,
+        )
+    return {
+        "status": "ok",
+        "name": entry.name,
+        "version": entry.version,
+        "system": preview["system"],
+        "user": preview["user"],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Temperature tuning info (#155)
+# ---------------------------------------------------------------------------
+
+# Presets to surface in the UI so curators understand the determinism /
+# creativity tradeoff instead of seeing a bare number input.
+TEMPERATURE_PRESETS = [
+    {
+        "value": 0.0,
+        "label": "Deterministisch (0.0)",
+        "description": "Wiederholbare Ausgaben. Empfohlen für Extraktion, "
+                       "Klassifikation, EDTF — wo dieselbe Eingabe dieselbe "
+                       "Ausgabe ergeben soll.",
+        "use_cases": ["NER", "EDTF", "Klassifikation", "OCR"],
+    },
+    {
+        "value": 0.3,
+        "label": "Konservativ (0.3)",
+        "description": "Leichte Variation. Gut für Zusammenfassungen, wenn "
+                       "etwas Flexibilität gewünscht ist.",
+        "use_cases": ["Beschreibungen", "Normalisierung"],
+    },
+    {
+        "value": 0.7,
+        "label": "Ausgewogen (0.7)",
+        "description": "Standard-Kreativität. Für freie Bildbeschreibungen "
+                       "oder kuratorische Vorschläge.",
+        "use_cases": ["Vorschläge", "Bildbeschreibungen"],
+    },
+    {
+        "value": 1.0,
+        "label": "Kreativ (1.0)",
+        "description": "Hohe Variation. Selten sinnvoll für GLAM-Metadaten — "
+                       "wichtige Felder können bei jedem Lauf anders sein.",
+        "use_cases": ["Exploration"],
+    },
+]
+
+
+@router.get("/api/gpu/temperature")
+async def gpu_temperature_get():
+    """Return current default temperature + presets (#155)."""
+    c = get_config()
+    return {
+        "default_temperature": c.default_temperature,
+        "presets": TEMPERATURE_PRESETS,
+    }
+
+
+@router.post("/api/gpu/temperature")
+async def gpu_temperature_set(request: dict):
+    """Update default temperature and persist to .env (#155)."""
+    from dataclasses import replace as dc_replace
+    try:
+        new_temp = float(request.get("default_temperature", 0.0))
+    except (TypeError, ValueError):
+        return JSONResponse({"status": "error", "message": "default_temperature must be numeric"}, 400)
+    if not 0.0 <= new_temp <= 2.0:
+        return JSONResponse(
+            {"status": "error", "message": "default_temperature must be in [0.0, 2.0]"}, 400,
+        )
+    c = get_config()
+    set_config(dc_replace(c, default_temperature=new_temp))
+    get_config().save_to_dotenv()
+    return {"status": "ok", "default_temperature": new_temp}
+
+
+# ---------------------------------------------------------------------------
 # GPU / Provider configuration (read + update)
 # ---------------------------------------------------------------------------
 
@@ -105,6 +254,7 @@ async def gpu_config_get():
         "gpustack_key_masked": mask_secret(c.gpustack_key) if c.gpustack_key else "",
         "gpustack_model_text": c.gpustack_model_text,
         "gpustack_model_vision": c.gpustack_model_vision,
+        "default_temperature": c.default_temperature,
     }
 
 

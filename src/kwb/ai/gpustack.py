@@ -8,6 +8,7 @@ from urllib.error import URLError, HTTPError
 from kwb.ai.provider import (
     AIProvider,
     AIResponse,
+    AIStreamChunk,
     ProviderAuthError,
     ProviderBadRequestError,
     ProviderNetworkError,
@@ -71,6 +72,72 @@ class GPUStackProvider(AIProvider):
         raise ProviderNetworkError(
             f"GPUStack unreachable after {self.config.max_retries} attempts: {last_error}"
         ) from last_error
+
+    def stream(self, messages, model=None, temperature=0.0, max_tokens=1024, **kwargs):
+        """Stream incremental chunks via OpenAI-compatible SSE (#154).
+
+        Yields AIStreamChunk objects as soon as the server emits them.
+        No retry logic: streaming requests do not benefit from retry on
+        mid-stream errors. Use complete() for retryable single-shot calls.
+        """
+        model = model or self.config.default_model
+        url = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [message_to_openai_dict(m) for m in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            **kwargs,
+        }
+        headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        req = Request(url, data=json.dumps(payload).encode(), headers=headers, method="POST")
+        try:
+            with urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    data = line[5:].strip()
+                    if data == "[DONE]":
+                        return
+                    try:
+                        chunk = json.loads(data)
+                    except json.JSONDecodeError:
+                        logger.warning("Could not parse SSE chunk: %s", data[:200])
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}).get("content", "") or ""
+                    finish_reason = choices[0].get("finish_reason")
+                    yield AIStreamChunk(
+                        delta=delta,
+                        finish_reason=finish_reason,
+                        model=chunk.get("model", model),
+                        raw=chunk,
+                    )
+        except HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code in (401, 403):
+                raise ProviderAuthError(
+                    f"GPUStack auth failed (HTTP {e.code}): {body[:200]}"
+                ) from e
+            if e.code == 429:
+                raise ProviderRateLimitError(
+                    f"GPUStack rate limit (HTTP 429): {body[:200]}"
+                ) from e
+            if e.code >= 500:
+                raise ProviderServerError(
+                    f"GPUStack server error (HTTP {e.code}): {body[:200]}"
+                ) from e
+            raise ProviderBadRequestError(
+                f"GPUStack bad request (HTTP {e.code}): {body[:200]}"
+            ) from e
+        except (URLError, TimeoutError) as e:
+            raise ProviderNetworkError(f"GPUStack stream unreachable: {e}") from e
 
     def is_available(self):
         url = f"{self.config.base_url.rstrip('/')}/v1/models"

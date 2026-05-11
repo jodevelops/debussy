@@ -24,6 +24,7 @@ from kwb.ai.provider import (
     AIMessage,
     AIProvider,
     AIResponse,
+    AIStreamChunk,
     ProviderAuthError,
     ProviderBadRequestError,
     ProviderNetworkError,
@@ -132,6 +133,78 @@ class OllamaProvider(AIProvider):
         raise ProviderNetworkError(
             f"Ollama unreachable after {self.config.max_retries} attempts: {last_error}"
         ) from last_error
+
+    def stream(
+        self,
+        messages: list[AIMessage],
+        model: str | None = None,
+        temperature: float = 0.0,
+        max_tokens: int = 1024,
+        **kwargs: Any,
+    ) -> "Any":
+        """Stream incremental chunks via OpenAI-compatible SSE (#154).
+
+        Ollama's /v1/chat/completions endpoint supports stream=true and
+        emits SSE chunks identical in shape to OpenAI/GPUStack.
+        """
+        model = model or self.config.default_model
+        url = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
+        payload = {
+            "model": model,
+            "messages": [message_to_openai_dict(m) for m in messages],
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+            **kwargs,
+        }
+        headers = {"Content-Type": "application/json", "Accept": "text/event-stream"}
+        if self.config.api_key:
+            headers["Authorization"] = f"Bearer {self.config.api_key}"
+        data = json.dumps(payload).encode("utf-8")
+        req = Request(url, data=data, headers=headers, method="POST")
+        try:
+            with urlopen(req, timeout=self.config.timeout_seconds) as resp:
+                for raw_line in resp:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                    if not line or not line.startswith("data:"):
+                        continue
+                    payload_str = line[5:].strip()
+                    if payload_str == "[DONE]":
+                        return
+                    try:
+                        chunk = json.loads(payload_str)
+                    except json.JSONDecodeError:
+                        logger.warning("Could not parse SSE chunk: %s", payload_str[:200])
+                        continue
+                    choices = chunk.get("choices", [])
+                    if not choices:
+                        continue
+                    delta = choices[0].get("delta", {}).get("content", "") or ""
+                    yield AIStreamChunk(
+                        delta=delta,
+                        finish_reason=choices[0].get("finish_reason"),
+                        model=chunk.get("model", model),
+                        raw=chunk,
+                    )
+        except HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code in (401, 403):
+                raise ProviderAuthError(
+                    f"Ollama auth failed (HTTP {e.code}): {body[:200]}"
+                ) from e
+            if e.code == 429:
+                raise ProviderRateLimitError(
+                    f"Ollama rate limit (HTTP 429): {body[:200]}"
+                ) from e
+            if e.code >= 500:
+                raise ProviderServerError(
+                    f"Ollama server error (HTTP {e.code}): {body[:200]}"
+                ) from e
+            raise ProviderBadRequestError(
+                f"Ollama bad request (HTTP {e.code}): {body[:200]}"
+            ) from e
+        except (URLError, TimeoutError) as e:
+            raise ProviderNetworkError(f"Ollama stream unreachable: {e}") from e
 
     def is_available(self) -> bool:
         """Check if Ollama is available via /api/tags endpoint (Ollama-specific)."""
