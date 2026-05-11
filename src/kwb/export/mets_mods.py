@@ -229,6 +229,17 @@ def _make_mods_record(
             np = _subelem(name_elem, "namePart", ns=_MODS_NS)
             np.text = person.get("name", "")
 
+        # Extract organizations
+        orgs = [e for e in ents if e["type"] == "ORG"]
+        for org in orgs:
+            name_elem = _subelem(mods, "name", ns=_MODS_NS)
+            name_elem.set("type", "corporate")
+            if org.get("gnd_id"):
+                name_elem.set("authority", "gnd")
+                name_elem.set("valueURI", f"http://d-nb.info/gnd/{org['gnd_id']}")
+            np = _subelem(name_elem, "namePart", ns=_MODS_NS)
+            np.text = org.get("name", "")
+
     # Add EDTF dates
     dates = dates_by_record.get(record_id, [])
     if dates:
@@ -263,7 +274,11 @@ def export_mets_mods(
 
     Returns a formatted METS XML string with DOCTYPE declaration.
     """
-    id_col = workspace.id_column or (df.columns[0] if len(df.columns) > 0 else "record_id")
+    # Derive ID column from dataset, preferring workspace config if it exists in data
+    if workspace.id_column and workspace.id_column in df.columns:
+        id_col = workspace.id_column
+    else:
+        id_col = df.columns[0] if len(df.columns) > 0 else "record_id"
     active_mappings = workspace.active_mappings()
 
     # Build entity lookup per record — exclude rejected entities

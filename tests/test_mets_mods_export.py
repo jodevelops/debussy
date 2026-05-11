@@ -763,6 +763,80 @@ class TestCodexReview(unittest.TestCase):
         self.assertNotIn("NaT", full_text,
                          "NaT placeholders must be filtered, not serialized")
 
+    def test_organization_entities_exported(self):
+        """ORG entities must map to MODS names[@type=corporate] (P2)."""
+        ws = _ws_basic()
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "title": ["Test"],
+        })
+
+        # Add organization entity
+        er = EntityReview(
+            entity_type="ORG",
+            text="Deutsche Nationalbibliothek",
+            record_id="rec-001",
+            status=ReviewStatus.ACCEPTED,
+        )
+        ws.entity_reviews.append(er)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find corporate names
+        names = _find_elements(root, "name", _MODS_NS)
+        corp_names = [n for n in names if n.get("type") == "corporate"]
+        self.assertGreater(len(corp_names), 0,
+                           "ORG entities must create corporate name elements")
+
+        # Verify name part contains the organization
+        name_parts = []
+        for corp in corp_names:
+            parts = corp.findall(f"{{{_MODS_NS}}}namePart")
+            name_parts.extend([p.text for p in parts if p.text])
+        self.assertIn("Deutsche Nationalbibliothek", name_parts,
+                      "Organization name must appear in namePart")
+
+    def test_id_column_fallback_to_first_column(self):
+        """When workspace.id_column doesn't exist in data, fallback to first column (P1)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("identifier", "CatalogIDDigital"),
+        ])
+        # Set id_column to a name that doesn't exist in the DataFrame
+        ws.id_column = "record_id"
+
+        df = pd.DataFrame({
+            "identifier": ["obj-001", "obj-002"],
+            "data": ["A", "B"],
+        })
+
+        # Add entities keyed to the actual first column (identifier)
+        er = EntityReview(
+            entity_type="PER",
+            text="Test Person",
+            record_id="obj-001",  # Matches first column, not "record_id"
+            status=ReviewStatus.ACCEPTED,
+        )
+        ws.entity_reviews.append(er)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Should have 2 dmdSecs (one per row)
+        dmd_secs = _find_elements(root, "dmdSec", _METS_NS)
+        self.assertEqual(len(dmd_secs), 2,
+                         "Should have records despite id_column mismatch")
+
+        # Should have exported the person entity (proves record ID matched correctly)
+        names = _find_elements(root, "name", _MODS_NS)
+        name_parts = []
+        for name in names:
+            parts = name.findall(f"{{{_MODS_NS}}}namePart")
+            name_parts.extend([p.text for p in parts if p.text])
+        self.assertIn("Test Person", name_parts,
+                      "Entity lookup must work with correct ID column fallback")
+
 
 if __name__ == "__main__":
     unittest.main()
