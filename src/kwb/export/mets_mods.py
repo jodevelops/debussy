@@ -137,22 +137,24 @@ def _make_mods_record(
         val_str = str(val).strip()
         mods_key = type_to_mods.get(fm.goobi_type, fm.goobi_type)
 
-        # Title
-        if mods_key == "titleInfo":
-            title_info = _subelem(mods, "titleInfo", ns=_MODS_NS)
-            _subelem(title_info, "title", ns=_MODS_NS).text = val_str
+        # Split repeatable values universally: apply to all field types (P2)
+        values = [v.strip() for v in val_str.split(";")] if fm.repeatable else [val_str]
 
-        # Abstract / Description
-        elif mods_key == "abstract":
-            _subelem(mods, "abstract", ns=_MODS_NS).text = val_str
+        for v in values:
+            if not v:
+                continue
 
-        # Creator / Name — role must contain <roleTerm> children per MODS schema
-        elif mods_key == "name":
-            # Split repeatable values: handle multiple creators delimited by semicolon
-            values = [v.strip() for v in val_str.split(";")] if fm.repeatable else [val_str]
-            for v in values:
-                if not v:
-                    continue
+            # Title
+            if mods_key == "titleInfo":
+                title_info = _subelem(mods, "titleInfo", ns=_MODS_NS)
+                _subelem(title_info, "title", ns=_MODS_NS).text = v
+
+            # Abstract / Description
+            elif mods_key == "abstract":
+                _subelem(mods, "abstract", ns=_MODS_NS).text = v
+
+            # Creator / Name — role must contain <roleTerm> children per MODS schema
+            elif mods_key == "name":
                 name_elem = _subelem(mods, "name", ns=_MODS_NS)
                 name_elem.set("type", "personal")
                 _subelem(name_elem, "namePart", ns=_MODS_NS).text = v
@@ -161,31 +163,26 @@ def _make_mods_record(
                 role_term.set("type", "text")
                 role_term.text = fm.goobi_type
 
-        # Origin info (publication info, dates)
-        elif mods_key == "originInfo":
-            # Reuse existing or create new originInfo
-            origin = None
-            for child in mods:
-                if child.tag == f"{{{_MODS_NS}}}originInfo":
-                    origin = child
-                    break
-            if origin is None:
-                origin = _subelem(mods, "originInfo", ns=_MODS_NS)
+            # Origin info (publication info, dates)
+            elif mods_key == "originInfo":
+                # Reuse existing or create new originInfo
+                origin = None
+                for child in mods:
+                    if child.tag == f"{{{_MODS_NS}}}originInfo":
+                        origin = child
+                        break
+                if origin is None:
+                    origin = _subelem(mods, "originInfo", ns=_MODS_NS)
 
-            if fm.goobi_type in ("DateCreated", "DateIssued"):
-                date_elem = _subelem(origin, "dateIssued", ns=_MODS_NS)
-                date_elem.text = val_str
-            else:
-                pub_elem = _subelem(origin, "publisher", ns=_MODS_NS)
-                pub_elem.text = val_str
+                if fm.goobi_type in ("DateCreated", "DateIssued"):
+                    date_elem = _subelem(origin, "dateIssued", ns=_MODS_NS)
+                    date_elem.text = v
+                else:
+                    pub_elem = _subelem(origin, "publisher", ns=_MODS_NS)
+                    pub_elem.text = v
 
-        # Subject / Keywords — preserve semantic type
-        elif mods_key == "subject":
-            # Split repeatable values: handle multi-valued subjects delimited by semicolon
-            values = [v.strip() for v in val_str.split(";")] if fm.repeatable else [val_str]
-            for v in values:
-                if not v:
-                    continue
+            # Subject / Keywords — preserve semantic type
+            elif mods_key == "subject":
                 subj = _subelem(mods, "subject", ns=_MODS_NS)
                 if fm.goobi_type == "SubjectGeographic":
                     sub_child = _subelem(subj, "geographic", ns=_MODS_NS)
@@ -203,23 +200,23 @@ def _make_mods_record(
                     sub_child = _subelem(subj, "topic", ns=_MODS_NS)
                 sub_child.text = v
 
-        # Identifier
-        elif mods_key == "identifier":
-            ident = _subelem(mods, "identifier", ns=_MODS_NS)
-            ident.set("type", fm.goobi_type.lower())
-            ident.text = val_str
+            # Identifier
+            elif mods_key == "identifier":
+                ident = _subelem(mods, "identifier", ns=_MODS_NS)
+                ident.set("type", fm.goobi_type.lower())
+                ident.text = v
 
-        # Record Info / Catalog ID (special handling)
-        elif mods_key == "recordInfo":
-            ident = _subelem(mods, "identifier", ns=_MODS_NS)
-            ident.set("type", "catalog")
-            ident.text = val_str
+            # Record Info / Catalog ID (special handling)
+            elif mods_key == "recordInfo":
+                ident = _subelem(mods, "identifier", ns=_MODS_NS)
+                ident.set("type", "catalog")
+                ident.text = v
 
-        # Access condition / Rights
-        elif mods_key == "accessCondition":
-            acc = _subelem(mods, "accessCondition", ns=_MODS_NS)
-            acc.set("type", "use and reproduction")
-            acc.text = val_str
+            # Access condition / Rights
+            elif mods_key == "accessCondition":
+                acc = _subelem(mods, "accessCondition", ns=_MODS_NS)
+                acc.set("type", "use and reproduction")
+                acc.text = v
 
     # Add NER-extracted subjects
     ents = entities_by_record.get(record_id, [])
@@ -337,7 +334,12 @@ def export_mets_mods(
             else:
                 rendered = str(value)
             if rendered.strip():
-                image_by_record[img.record_id][f"image.{key}"] = rendered
+                field_key = f"image.{key}"
+                # Accumulate multiple values from different analyses (P1)
+                if field_key in image_by_record[img.record_id]:
+                    image_by_record[img.record_id][field_key] += "; " + rendered
+                else:
+                    image_by_record[img.record_id][field_key] = rendered
 
     # Root element: METS document
     root = _elem("mets", ns=_METS_NS)

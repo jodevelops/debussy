@@ -966,6 +966,94 @@ class TestCodexReview(unittest.TestCase):
         self.assertIn("Test Person", name_parts,
                       "Entity lookup must use profile.id_column for record joins")
 
+    def test_multiple_image_analyses_accumulate(self):
+        """Multiple accepted image analyses for same record/field are accumulated (P1)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("image.description", "Description", label="Beschreibung"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+        })
+
+        # Add two image analyses with same field but different values
+        img1 = ImageAnalysisResult(
+            image_id="img-001",
+            filename="photo1.jpg",
+            record_id="rec-001",
+            review_status=ImageReviewStatus.ACCEPTED,
+            result={"description": "Historic building facade"},
+        )
+        img2 = ImageAnalysisResult(
+            image_id="img-002",
+            filename="photo2.jpg",
+            record_id="rec-001",
+            review_status=ImageReviewStatus.ACCEPTED,
+            result={"description": "Interior courtyard"},
+        )
+        ws.image_analyses.append(img1)
+        ws.image_analyses.append(img2)
+
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Should have both descriptions, accumulated with semicolon
+        abstracts = _find_elements(root, "abstract", _MODS_NS)
+        abstract_texts = [a.text for a in abstracts]
+        self.assertGreater(len(abstract_texts), 0)
+        # Should contain both values (might be split into separate nodes or concatenated)
+        combined = " ".join(abstract_texts)
+        self.assertIn("Historic building facade", combined)
+        self.assertIn("Interior courtyard", combined)
+
+    def test_repeatable_description_splits(self):
+        """Repeatable Description field splits on semicolon (P2)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("desc", "Description", label="Beschreibung", repeatable=True),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "desc": ["Part A; Part B; Part C"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Should create 3 separate abstract elements
+        abstracts = _find_elements(root, "abstract", _MODS_NS)
+        abstract_texts = [a.text for a in abstracts]
+        self.assertEqual(len(abstract_texts), 3,
+                         "Repeatable Description must split into separate abstract nodes")
+        self.assertIn("Part A", abstract_texts)
+        self.assertIn("Part B", abstract_texts)
+        self.assertIn("Part C", abstract_texts)
+
+    def test_repeatable_identifier_splits(self):
+        """Repeatable Identifier field splits on semicolon (P2)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("ids", "InventoryNumber", label="Nummern", repeatable=True),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001"],
+            "ids": ["ID-001; ID-002; ID-003"],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Should create 3 separate inventory identifier elements (plus 1 for catalog)
+        idents = _find_elements(root, "identifier", _MODS_NS)
+        ident_texts = [i.text for i in idents]
+        inv_ids = [t for t in ident_texts if t and t.startswith("ID-")]
+        self.assertEqual(len(inv_ids), 3,
+                         "Repeatable Identifier must split into separate identifier nodes")
+        self.assertIn("ID-001", ident_texts)
+        self.assertIn("ID-002", ident_texts)
+        self.assertIn("ID-003", ident_texts)
+
 
 if __name__ == "__main__":
     unittest.main()
