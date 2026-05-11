@@ -125,6 +125,9 @@ class TestAuthorityCommit(unittest.TestCase):
 
         c = AuthorityCandidate(
             entry_id="e1", source="geonames", authority_id="2950159",
+            preferred_name="Berlin",
+            authority_type="PPLC",
+            uri="https://www.geonames.org/2950159",
         )
         c.accept()
         ws.add_authority_candidate(c)
@@ -135,9 +138,15 @@ class TestAuthorityCommit(unittest.TestCase):
             entry = ws.lookup_by_id(candidate.entry_id)
             if entry and candidate.source == "geonames":
                 entry.geonames_id = candidate.authority_id
+                entry.geonames_preferred = candidate.preferred_name
+                entry.geonames_type = candidate.authority_type
+                entry.geonames_uri = candidate.uri
 
         berlin = ws.lookup_by_id("e1")
         self.assertEqual(berlin.geonames_id, "2950159")
+        self.assertEqual(berlin.geonames_preferred, "Berlin")
+        self.assertEqual(berlin.geonames_type, "PPLC")
+        self.assertEqual(berlin.geonames_uri, "https://www.geonames.org/2950159")
 
     def test_pending_not_committed(self):
         ws = Workspace.create("test")
@@ -158,6 +167,32 @@ class TestAuthorityCommit(unittest.TestCase):
         self.assertEqual(committed, 0)
         berlin = ws.lookup_by_id("e1")
         self.assertEqual(berlin.gnd_id, "")
+
+    def test_geonames_fields_roundtrip(self):
+        """DictionaryEntry geonames_* fields survive to_dict/from_dict roundtrip."""
+        e = DictionaryEntry(
+            term="Berlin", entry_id="e1",
+            geonames_id="2950159",
+            geonames_preferred="Berlin",
+            geonames_type="PPLC",
+            geonames_uri="https://www.geonames.org/2950159",
+        )
+        d = e.to_dict()
+        self.assertEqual(d["geonames_preferred"], "Berlin")
+        self.assertEqual(d["geonames_type"], "PPLC")
+        self.assertEqual(d["geonames_uri"], "https://www.geonames.org/2950159")
+
+        e2 = DictionaryEntry.from_dict(d)
+        self.assertEqual(e2.geonames_preferred, "Berlin")
+        self.assertEqual(e2.geonames_type, "PPLC")
+        self.assertEqual(e2.geonames_uri, "https://www.geonames.org/2950159")
+
+        # Legacy entries (older persisted workspaces) load with empty new fields
+        legacy = DictionaryEntry.from_dict({"term": "Bern", "geonames_id": "2661552"})
+        self.assertEqual(legacy.geonames_id, "2661552")
+        self.assertEqual(legacy.geonames_preferred, "")
+        self.assertEqual(legacy.geonames_type, "")
+        self.assertEqual(legacy.geonames_uri, "")
 
     def test_full_workspace_roundtrip(self):
         """Full serialization roundtrip with authority candidates."""

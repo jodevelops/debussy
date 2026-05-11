@@ -153,7 +153,10 @@ class DictionaryEntry:
     gnd_type: str = ""                 # "Geographic", "Person", "SubjectHeading", …
     gnd_uri: str = ""                  # full URI
     wikidata_id: str = ""              # "Q64"
-    geonames_id: str = ""             # GeoNames ID
+    geonames_id: str = ""              # GeoNames ID, e.g. "2950159"
+    geonames_preferred: str = ""       # GeoNames preferred name
+    geonames_type: str = ""            # Feature class (P=populated, A=admin, …)
+    geonames_uri: str = ""             # full URI: http://sws.geonames.org/<id>/
     alternatives: list[str] = field(default_factory=list)
     confidence: float = 1.0
     source: str = "manual"            # "manual" | "api" | "llm" | "ner" | "ocr"
@@ -206,6 +209,9 @@ class DictionaryEntry:
             "gnd_uri": self.gnd_uri,
             "wikidata_id": self.wikidata_id,
             "geonames_id": self.geonames_id,
+            "geonames_preferred": self.geonames_preferred,
+            "geonames_type": self.geonames_type,
+            "geonames_uri": self.geonames_uri,
             "alternatives": self.alternatives,
             "confidence": self.confidence,
             "source": self.source,
