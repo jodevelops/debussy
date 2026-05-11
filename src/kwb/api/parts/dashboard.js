@@ -188,14 +188,35 @@ function markTestReviewed(){
 
 // GeoNames lookup
 async function runGeoNamesLookup(){
-  sp('GeoNames-Suche …','');
+  sp('GeoNames-Suche …','api.geonames.org');
   try{
     const r=await(await fetch('/api/geonames/batch',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({limit:20})})).json();
     if(r.error){alert('GeoNames-Fehler: '+r.error);hp();return;}
-    alert('GeoNames: '+(r.matched||0)+' Orte gefunden und im Wörterbuch gespeichert.');
+    renderGeoNamesResults(r);
     updWS();
   }catch(e){alert('Fehler: '+e.message);}finally{hp();}
+}
+
+function renderGeoNamesResults(r){
+  if($('geonames-r'))$('geonames-r').style.display='block';
+  const results=r.results||[];
+  $('geonames-body').innerHTML=results.map(gr=>{
+    const tm=gr.top_match;
+    let coords='';
+    if(tm&&(tm.lat||tm.lng)){
+      const lat=Number(tm.lat).toFixed(4),lng=Number(tm.lng).toFixed(4);
+      coords='<a href="https://www.openstreetmap.org/?mlat='+lat+'&mlon='+lng+'#map=10/'+lat+'/'+lng+'" target="_blank" rel="noopener" style="font-size:.68rem">'+lat+', '+lng+'</a>';
+    }
+    return '<tr>'+
+      '<td style="font-weight:600">'+esc(gr.text||'')+'</td>'+
+      '<td><span class="etype etype-'+esc(gr.type||'LOC')+'">'+esc(gr.type||'')+'</span></td>'+
+      '<td>'+(tm?'<a class="gnd-match" href="'+esc(tm.uri||'')+'" target="_blank" rel="noopener">'+esc(tm.geonames_id)+'</a>':'<span class="gnd-none">—</span>')+'</td>'+
+      '<td>'+(tm?esc(tm.name||''):'')+'</td>'+
+      '<td style="font-size:.68rem">'+(tm?esc(tm.country||''):'')+'</td>'+
+      '<td>'+coords+'</td>'+
+    '</tr>';
+  }).join('');
 }
 
 // Dictionary JSON rendering
@@ -2025,7 +2046,7 @@ async function showDictDetail(entryId){
     +'<strong>Normdaten:</strong>'
     +(entry.gnd_id?'<br>GND: <a href="https://d-nb.info/gnd/'+esc(entry.gnd_id)+'" target="_blank">'+esc(entry.gnd_id)+'</a> '+esc(entry.gnd_preferred||''):'<br>GND: —')
     +(entry.wikidata_id?'<br>Wikidata: <a href="https://www.wikidata.org/wiki/'+esc(entry.wikidata_id)+'" target="_blank">'+esc(entry.wikidata_id)+'</a>':'')
-    +(entry.geonames_id?'<br>GeoNames: '+esc(entry.geonames_id):'')
+    +(entry.geonames_id?'<br>GeoNames: <a href="'+esc(entry.geonames_uri||('https://www.geonames.org/'+entry.geonames_id))+'" target="_blank" rel="noopener">'+esc(entry.geonames_id)+'</a>'+(entry.geonames_preferred?' '+esc(entry.geonames_preferred):'')+(entry.geonames_type?' <span style="font-size:.7rem;color:#666">['+esc(entry.geonames_type)+']</span>':''):'')
     +'<hr style="border:none;border-top:1px solid var(--brd);margin:.4rem 0">'
     +'<div style="display:flex;gap:.3rem;flex-wrap:wrap">'
     +'<button class="btn sm" onclick="enrichDictGND(\''+esc(entryId)+'\',\''+esc(entry.term)+'\')">🔍 GND suchen</button>'

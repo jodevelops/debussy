@@ -352,6 +352,24 @@ def _fake_gnd_response():
     }).encode("utf-8")
 
 
+def _fake_geonames_response():
+    """Fake api.geonames.org JSON response."""
+    return json.dumps({
+        "totalResultsCount": 1,
+        "geonames": [{
+            "geonameId": 2950159,
+            "name": "Berlin",
+            "countryName": "Deutschland",
+            "countryCode": "DE",
+            "fcl": "P",
+            "fcode": "PPLC",
+            "lat": "52.52437",
+            "lng": "13.41053",
+            "population": 3426354,
+        }],
+    }).encode("utf-8")
+
+
 @_skip_no_fastapi
 class TestGNDEndpoints(unittest.TestCase):
     def setUp(self):
@@ -400,6 +418,47 @@ class TestGNDEndpoints(unittest.TestCase):
 
     def test_gnd_batch_no_entities(self):
         r = self.client.post("/api/gnd/batch", json={})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("NER", r.json()["error"])
+
+    @patch("kwb.enrich.geonames.urlopen")
+    def test_geonames_batch_creates_candidate_with_full_fields(self, mock_urlopen):
+        """GeoNames batch must create AuthorityCandidate with preferred_name, type, uri."""
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = _fake_geonames_response()
+        mock_resp.__enter__ = lambda s: s
+        mock_resp.__exit__ = MagicMock(return_value=False)
+        mock_urlopen.return_value = mock_resp
+
+        _state = _get_state()
+        ws = _state["workspace"]
+        ws.add_entities([
+            {"text": "Berlin", "type": "LOC", "confidence": 0.9,
+             "source": "llm", "record_id": "R001"},
+        ])
+
+        r = self.client.post("/api/geonames/batch", json={"limit": 5})
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["matched"], 1)
+        self.assertEqual(body["candidates_created"], 1)
+
+        # Verify the candidate has all GeoNames fields populated
+        candidates = [c for c in ws.authority_candidates if c.source == "geonames"]
+        self.assertEqual(len(candidates), 1)
+        c = candidates[0]
+        self.assertEqual(c.authority_id, "2950159")
+        self.assertEqual(c.preferred_name, "Berlin")
+        self.assertEqual(c.authority_type, "PPLC")  # feature_code, not generic
+        self.assertEqual(c.uri, "https://www.geonames.org/2950159")
+        # Extra metadata preserved for UI display
+        self.assertEqual(c.extra.get("country"), "Deutschland")
+        self.assertEqual(c.extra.get("country_code"), "DE")
+        self.assertEqual(c.extra.get("feature_class"), "P")
+        self.assertGreater(c.extra.get("population", 0), 0)
+
+    def test_geonames_batch_no_entities(self):
+        r = self.client.post("/api/geonames/batch", json={})
         self.assertEqual(r.status_code, 400)
         self.assertIn("NER", r.json()["error"])
 

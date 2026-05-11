@@ -236,18 +236,23 @@ async def geonames_batch_api(request: dict):
                 entry = ws.lookup(gr["text"])
 
             if entry:
+                # Use feature_code (e.g. "PPLC", "ADM1") if present, fallback to feature_class
+                geo_type = tm.get("feature_code") or tm.get("feature_class") or "PlaceOrGeographicName"
                 ws.add_authority_candidate(AuthorityCandidate(
                     entry_id=entry.entry_id,
                     source="geonames",
                     authority_id=tm["geonames_id"],
                     preferred_name=tm["name"],
-                    authority_type="PlaceOrGeographicName",
+                    authority_type=geo_type,
                     uri=tm.get("uri", ""),
                     score=0.8,
                     extra={
                         "country": tm.get("country", ""),
+                        "country_code": tm.get("country_code", ""),
                         "lat": tm.get("lat", 0),
                         "lng": tm.get("lng", 0),
+                        "feature_class": tm.get("feature_class", ""),
+                        "population": tm.get("population", 0),
                     },
                 ))
             matched += 1
@@ -360,6 +365,9 @@ async def authority_commit(request: dict = {}):
                 entry.gnd_id = candidate.extra["gnd_id"]
         elif candidate.source == "geonames":
             entry.geonames_id = candidate.authority_id
+            entry.geonames_preferred = candidate.preferred_name
+            entry.geonames_type = candidate.authority_type
+            entry.geonames_uri = candidate.uri
 
         if candidate.preferred_name and not entry.preferred_name:
             entry.preferred_name = candidate.preferred_name
