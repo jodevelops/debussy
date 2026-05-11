@@ -735,6 +735,34 @@ class TestCodexReview(unittest.TestCase):
         headers = _find_elements(root, "metsHdr", _METS_NS)
         self.assertEqual(len(headers), 1, "METS header must be present even with limit=0")
 
+    def test_nat_datetime_filtered_as_null(self):
+        """pd.NaT (datetime null) must be filtered out, not serialized as 'NaT' (P2)."""
+        ws = Workspace.create("Test")
+        ws.set_field_mapping([
+            FieldMapping("record_id", "CatalogIDDigital"),
+            FieldMapping("date", "DateCreated", label="Datierung"),
+        ])
+        df = pd.DataFrame({
+            "record_id": ["rec-001", "rec-002"],
+            "date": [pd.Timestamp("2020-01-01"), pd.NaT],
+        })
+        mets_str = export_mets_mods(df, ws)
+        root = fromstring(mets_str)
+
+        # Find all dateIssued elements
+        dates = _find_elements(root, "dateIssued", _MODS_NS)
+        date_texts = [d.text for d in dates if d.text]
+
+        # Should have the valid date
+        self.assertEqual(len(date_texts), 1,
+                         "Only 1 valid date should be present (NaT filtered)")
+        self.assertIn("2020-01-01", date_texts[0],
+                      "Valid date must appear in output")
+        # NaT must NOT appear as a literal string
+        full_text = " ".join(date_texts)
+        self.assertNotIn("NaT", full_text,
+                         "NaT placeholders must be filtered, not serialized")
+
 
 if __name__ == "__main__":
     unittest.main()

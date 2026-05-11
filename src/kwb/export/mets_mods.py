@@ -130,7 +130,7 @@ def _make_mods_record(
         else:
             continue
 
-        if val is None or (isinstance(val, float) and pd.isna(val)) or str(val).strip() == "":
+        if pd.isna(val) or str(val).strip() == "":
             continue
 
         val_str = str(val).strip()

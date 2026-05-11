@@ -363,7 +363,10 @@ async def export_mets_mods_route(request: dict):
     review_block = _ensure_ai_review_completed(ws)
     if review_block:
         return review_block
-    limit = min(request.get("limit", 1000), 50_000)
+    limit = request.get("limit", 1000)
+    if limit < 0:
+        return JSONResponse({"error": "limit muss >= 0 sein"}, 400)
+    limit = min(limit, 50_000)
 
     try:
         from kwb.export.mets_mods import export_mets_mods

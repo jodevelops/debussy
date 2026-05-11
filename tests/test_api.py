@@ -486,6 +486,30 @@ class TestExportEndpoints(unittest.TestCase):
         self.assertIn("jsonld", body)
         self.assertIn("@graph", body["jsonld"])
 
+    def test_mets_mods_negative_limit_rejected(self):
+        """METS/MODS export must reject negative limits with 400 (P2)."""
+        r = self.client.post("/api/export/mets-mods", json={
+            "dataset": "export.csv",
+            "limit": -1,
+        })
+        self.assertEqual(r.status_code, 400)
+        body = r.json()
+        self.assertIn("error", body)
+        self.assertIn("limit", body["error"].lower())
+
+    def test_mets_mods_zero_limit_accepted(self):
+        """METS/MODS export must accept limit=0 (zero records)."""
+        r = self.client.post("/api/export/mets-mods", json={
+            "dataset": "export.csv",
+            "limit": 0,
+            "as_file": False,
+        })
+        self.assertEqual(r.status_code, 200)
+        body = r.json()
+        self.assertEqual(body["record_count"], 0)
+        # Should still return valid METS XML, just with no records
+        self.assertIn("mets", body)
+
 
     def test_goobi_status_not_configured(self):
         with patch("kwb.api.routes.export._goobi_client") as mk:
