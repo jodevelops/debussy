@@ -7,6 +7,30 @@ from dataclasses import dataclass, field
 from typing import Any
 
 
+def message_to_openai_dict(msg: "AIMessage") -> dict[str, Any]:
+    """Convert AIMessage to OpenAI API format.
+
+    Handles both text-only and multimodal (text+image) messages.
+    Unknown content types are silently dropped (#145).
+    """
+    if isinstance(msg.content, str):
+        return {"role": msg.role, "content": msg.content}
+
+    parts = []
+    for item in msg.content:
+        item_type = item.get("type")
+        if item_type == "text":
+            parts.append({"type": "text", "text": item["text"]})
+        elif item_type == "image_url":
+            parts.append({
+                "type": "image_url",
+                "image_url": {"url": item["image_url"]["url"]},
+            })
+        # else: unknown type, silently dropped
+
+    return {"role": msg.role, "content": parts}
+
+
 @dataclass
 class AIMessage:
     role: str

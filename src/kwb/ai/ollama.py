@@ -20,25 +20,9 @@ from typing import Any
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
 
-from kwb.ai.provider import AIMessage, AIProvider, AIResponse
+from kwb.ai.provider import AIMessage, AIProvider, AIResponse, message_to_openai_dict
 
 logger = logging.getLogger(__name__)
-
-
-def _message_to_dict(msg: AIMessage) -> dict[str, Any]:
-    """Convert AIMessage to OpenAI API format (same as GPUStack)."""
-    if isinstance(msg.content, str):
-        return {"role": msg.role, "content": msg.content}
-    parts = []
-    for item in msg.content:
-        if item.get("type") == "text":
-            parts.append({"type": "text", "text": item["text"]})
-        elif item.get("type") == "image_url":
-            parts.append({
-                "type": "image_url",
-                "image_url": {"url": item["image_url"]["url"]},
-            })
-    return {"role": msg.role, "content": parts}
 
 
 class OllamaProvider(AIProvider):
@@ -73,7 +57,7 @@ class OllamaProvider(AIProvider):
 
         payload = {
             "model": model,
-            "messages": [_message_to_dict(m) for m in messages],
+            "messages": [message_to_openai_dict(m) for m in messages],
             "temperature": temperature,
             "max_tokens": max_tokens,
             **kwargs,
@@ -106,8 +90,10 @@ class OllamaProvider(AIProvider):
                 logger.warning(f"Attempt {attempt} failed: HTTP {e.code} — {body[:200]}")
                 if e.code == 429:
                     time.sleep(2 ** attempt)
+                    continue
                 elif e.code >= 500:
                     time.sleep(1)
+                    continue
                 else:
                     raise
 
@@ -121,12 +107,15 @@ class OllamaProvider(AIProvider):
         )
 
     def is_available(self) -> bool:
-        """Ping Ollama's root endpoint."""
-        url = f"{self.config.base_url.rstrip('/')}/"
+        """Check if Ollama is available via /api/tags endpoint (Ollama-specific)."""
+        url = f"{self.config.base_url.rstrip('/')}/api/tags"
         try:
             req = Request(url)
             with urlopen(req, timeout=5) as resp:
-                return resp.status == 200
+                if resp.status != 200:
+                    return False
+                result = json.loads(resp.read().decode("utf-8"))
+                return "models" in result
         except Exception:
             return False
 

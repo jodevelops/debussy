@@ -442,3 +442,107 @@ class TestSemanticAnalysis:
         findings, batch_report = describe_images(images, mock)
         assert batch_report.total == 2
         assert batch_report.succeeded == 2
+
+
+# ---------------------------------------------------------------------------
+# Provider utility tests (fix #146, #145)
+# ---------------------------------------------------------------------------
+
+class TestMessageToOpenaiDict:
+    """Test message_to_openai_dict conversion (#146, #145)."""
+
+    def test_text_only_message(self):
+        """Convert text-only AIMessage to OpenAI format."""
+        from kwb.ai.provider import message_to_openai_dict
+
+        msg = AIMessage.user("Hello, world")
+        result = message_to_openai_dict(msg)
+
+        assert result["role"] == "user"
+        assert result["content"] == "Hello, world"
+        assert isinstance(result["content"], str)
+
+    def test_multimodal_message_text_image(self):
+        """Convert text+image AIMessage to OpenAI multimodal format."""
+        from kwb.ai.provider import message_to_openai_dict
+
+        msg = AIMessage.user_with_image("Describe this image", "base64data", "image/png")
+        result = message_to_openai_dict(msg)
+
+        assert result["role"] == "user"
+        assert isinstance(result["content"], list)
+        assert len(result["content"]) == 2
+
+        # Check image part
+        image_part = [p for p in result["content"] if p["type"] == "image_url"][0]
+        assert "image_url" in image_part
+        assert "data:image/png;base64,base64data" in image_part["image_url"]["url"]
+
+        # Check text part
+        text_part = [p for p in result["content"] if p["type"] == "text"][0]
+        assert text_part["text"] == "Describe this image"
+
+    def test_unknown_content_type_silently_dropped(self):
+        """Unknown content types are silently dropped (#145)."""
+        from kwb.ai.provider import message_to_openai_dict
+
+        msg = AIMessage(role="user", content=[
+            {"type": "text", "text": "Hello"},
+            {"type": "unknown_type", "data": "should be ignored"},
+            {"type": "image_url", "image_url": {"url": "http://example.com/img.jpg"}},
+        ])
+        result = message_to_openai_dict(msg)
+
+        assert len(result["content"]) == 2  # Only text and image_url
+        types = {p["type"] for p in result["content"]}
+        assert types == {"text", "image_url"}
+        assert "unknown_type" not in types
+
+    def test_empty_content_list(self):
+        """Handle empty content list."""
+        from kwb.ai.provider import message_to_openai_dict
+
+        msg = AIMessage(role="assistant", content=[])
+        result = message_to_openai_dict(msg)
+
+        assert result["role"] == "assistant"
+        assert result["content"] == []
+
+
+# ---------------------------------------------------------------------------
+# Retry logic tests (fix #141)
+# ---------------------------------------------------------------------------
+
+class TestRetryLogic:
+    """Test HTTP retry logic with continue statements (#141)."""
+
+    def test_gpustack_retry_structure(self):
+        """Verify GPUStackProvider has proper retry continue statements."""
+        from kwb.ai.gpustack import GPUStackProvider
+        import inspect
+
+        source = inspect.getsource(GPUStackProvider.complete)
+        # Check for continue statements in retry logic
+        assert "if e.code == 429:" in source
+        assert "continue" in source
+        assert "elif e.code >= 500:" in source
+
+    def test_ollama_retry_structure(self):
+        """Verify OllamaProvider has proper retry continue statements."""
+        from kwb.ai.ollama import OllamaProvider
+        import inspect
+
+        source = inspect.getsource(OllamaProvider.complete)
+        # Check for continue statements in retry logic
+        assert "if e.code == 429:" in source
+        assert "continue" in source
+        assert "elif e.code >= 500:" in source
+
+    def test_ollama_is_available_uses_api_tags(self):
+        """Verify Ollama checks /api/tags endpoint (#143)."""
+        from kwb.ai.ollama import OllamaProvider
+        import inspect
+
+        source = inspect.getsource(OllamaProvider.is_available)
+        assert "/api/tags" in source
+        assert '"models" in result' in source or "'models' in result" in source

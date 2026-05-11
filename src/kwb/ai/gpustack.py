@@ -5,26 +5,15 @@ import logging
 import time
 from urllib.request import Request, urlopen
 from urllib.error import URLError, HTTPError
-from kwb.ai.provider import AIProvider, AIResponse
+from kwb.ai.provider import AIProvider, AIResponse, message_to_openai_dict
 
 logger = logging.getLogger(__name__)
-
-def _message_to_dict(msg):
-    if isinstance(msg.content, str):
-        return {"role": msg.role, "content": msg.content}
-    parts = []
-    for item in msg.content:
-        if item.get("type") == "text":
-            parts.append({"type": "text", "text": item["text"]})
-        elif item.get("type") == "image_url":
-            parts.append({"type": "image_url", "image_url": {"url": item["image_url"]["url"]}})
-    return {"role": msg.role, "content": parts}
 
 class GPUStackProvider(AIProvider):
     def complete(self, messages, model=None, temperature=0.0, max_tokens=1024, **kwargs):
         model = model or self.config.default_model
         url = f"{self.config.base_url.rstrip('/')}/v1/chat/completions"
-        payload = {"model": model, "messages": [_message_to_dict(m) for m in messages],
+        payload = {"model": model, "messages": [message_to_openai_dict(m) for m in messages],
                    "temperature": temperature, "max_tokens": max_tokens, **kwargs}
         headers = {"Content-Type": "application/json"}
         if self.config.api_key:
@@ -42,9 +31,14 @@ class GPUStackProvider(AIProvider):
             except HTTPError as e:
                 last_error = e; body = e.read().decode("utf-8", errors="replace")
                 logger.warning(f"Attempt {attempt} HTTP {e.code}: {body[:200]}")
-                if e.code == 429: time.sleep(2 ** attempt)
-                elif e.code >= 500: time.sleep(1)
-                else: raise
+                if e.code == 429:
+                    time.sleep(2 ** attempt)
+                    continue
+                elif e.code >= 500:
+                    time.sleep(1)
+                    continue
+                else:
+                    raise
             except (URLError, TimeoutError) as e:
                 last_error = e; logger.warning(f"Attempt {attempt}: {e}"); time.sleep(1)
         raise ConnectionError(f"Failed after {self.config.max_retries} attempts: {last_error}")
