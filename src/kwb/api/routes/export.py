@@ -386,6 +386,38 @@ async def export_mets_mods_route(request: dict):
         return JSONResponse({"error": str(e)}, 500)
 
 
+@router.get("/api/report/html")
+async def export_html_report(as_file: bool = True, title: str = "Debussy Kuratierungsbericht"):
+    """
+    Render the workspace as a self-contained interactive HTML report (F42).
+
+    Includes summary statistics, NER entities, EDTF dates, dictionary
+    entries with authority links, image analyses, and field mappings.
+    Single HTML file with embedded CSS/JS — no external dependencies.
+
+    Query params:
+        as_file: bool   — return as downloadable file (default true)
+        title: str      — report title (default "Debussy Kuratierungsbericht")
+    """
+    ws = get_workspace()
+    try:
+        from kwb.report.html import render_html_report
+        html_str = render_html_report(ws, title=title)
+        if as_file:
+            return Response(
+                content=html_str.encode("utf-8"),
+                media_type="text/html; charset=utf-8",
+                headers={"Content-Disposition": 'attachment; filename="kuratierungsbericht.html"'},
+            )
+        return Response(
+            content=html_str.encode("utf-8"),
+            media_type="text/html; charset=utf-8",
+        )
+    except Exception as e:
+        logger.exception("HTML report rendering failed")
+        return JSONResponse({"error": str(e)}, 500)
+
+
 @router.post("/api/export/image-results")
 async def export_image_results(request: dict):
     """Export image analysis results including review status and provenance."""
