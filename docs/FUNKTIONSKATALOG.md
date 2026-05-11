@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 958/1099 Tests bestanden, 0 fehlgeschlagen, 141 übersprungen
+**Gesamtstatus:** 979/1120 Tests bestanden, 0 fehlgeschlagen, 141 übersprungen
 
 ---
 
@@ -252,6 +252,7 @@
 | test_goobi_api.py | 4/4 | 0 | 0 | ✅ |
 | test_goobi_export.py | 32/32 | 0 | 0 | ✅ |
 | test_gpu_config_api.py | 0/10 | 0 | 10 | ✅ |
+| test_html_report.py | 21/21 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
 | test_image_upload.py | 0/31 | 0 | 31 | ✅ |
 | test_llm_quality.py | 55/55 | 0 | 0 | ✅ |
@@ -276,7 +277,7 @@
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 8/8 | 0 | 0 | ✅ |
-| **Gesamt** | **958/1099** | **0** | **141** | **✅** |
+| **Gesamt** | **979/1120** | **0** | **141** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---
