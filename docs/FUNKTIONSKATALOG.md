@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 993/1137 Tests bestanden, 0 fehlgeschlagen, 144 übersprungen
+**Gesamtstatus:** 996/1140 Tests bestanden, 0 fehlgeschlagen, 144 übersprungen
 
 ---
 
@@ -263,7 +263,7 @@
 | test_open_issues.py | 24/32 | 0 | 8 | ✅ |
 | test_pdf_loader.py | 3/3 | 0 | 0 | ✅ |
 | test_phase1_stabilization.py | 11/11 | 0 | 0 | ✅ |
-| test_phase1b_stabilization.py | 9/9 | 0 | 0 | ✅ |
+| test_phase1b_stabilization.py | 12/12 | 0 | 0 | ✅ |
 | test_phase2_collection_agnosticism.py | 62/62 | 0 | 0 | ✅ |
 | test_pipeline.py | 18/18 | 0 | 0 | ✅ |
 | test_pipeline_steps.py | 10/10 | 0 | 0 | ✅ |
@@ -277,7 +277,7 @@
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 21/21 | 0 | 0 | ✅ |
-| **Gesamt** | **993/1137** | **0** | **144** | **✅** |
+| **Gesamt** | **996/1140** | **0** | **144** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

@@ -119,6 +119,55 @@ class TestAffectedIdsExceptionHandling(unittest.TestCase):
         result = _get_affected_ids(df, mask, None, limit=2)
         self.assertEqual(result, [])
 
+    def test_get_affected_ids_subset_index_mask(self):
+        """Issue #209: mask with subset index (from dropna) must not raise AssertionError."""
+        from kwb.analyze.structural import _get_affected_ids
+
+        df = pd.DataFrame({
+            "id": ["a", "b", "c", "d"],
+            "col": ["x;", "", "y,", "z;,"],
+        })
+        vals = df["col"].replace("", pd.NA).dropna().astype(str)
+        mask = vals.str.contains(";", na=False) & vals.str.contains(",", na=False)
+        # mask has subset index {0, 2, 3} — must align safely to df.index
+        result = _get_affected_ids(df, mask, "id", limit=5)
+        self.assertEqual(result, ["d"])
+
+    def test_get_affected_ids_duplicate_id_columns(self):
+        """Issue #209: df with duplicate column names must not raise AttributeError."""
+        from kwb.analyze.structural import _get_affected_ids
+
+        df = pd.DataFrame(
+            [["a", "x", "y"], ["b", "x", "y"], ["c", "x", "y"]],
+            columns=["id", "col", "id"],
+        )
+        mask = pd.Series([True, False, True])
+        result = _get_affected_ids(df, mask, "id", limit=5)
+        self.assertEqual(result, ["a", "c"])
+
+    def test_check_format_inconsistency_does_not_raise(self):
+        """Issue #209: check_format_inconsistency must not raise on mixed-delimiter rows."""
+        from kwb.analyze.structural import check_format_inconsistency
+        from kwb.core.models import DatasetProfile
+        from kwb.ingest.csv_loader import detect_id_column, profile_column
+
+        df = pd.DataFrame({
+            "id": ["1", "2", "3", "4"],
+            "tags": ["a;b", "", "c,d", "e;f,g"],
+        })
+        df_analysis = df.replace("", pd.NA)
+        profile = DatasetProfile(
+            source_path="test.csv",
+            source_name="test",
+            row_count=len(df),
+            column_count=len(df.columns),
+            columns=[profile_column(df_analysis[c]) for c in df.columns],
+            id_column=detect_id_column(df),
+        )
+        # Must not raise (was: AssertionError → HTTP 500 → frontend JSON parse error)
+        findings = check_format_inconsistency(df, profile)
+        self.assertIsInstance(findings, list)
+
 
 class TestLobidConfidenceRank(unittest.TestCase):
     """EXT-BUG-08: LobidGNDClient.search() must use rank-based confidence."""
