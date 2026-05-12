@@ -359,11 +359,20 @@ async def ai_describe_columns(request: dict | None = None):
 # Image storage directory — configurable via KWB_IMAGE_DIR env var.
 # Falls back to system temp dir if not set.
 import os as _os
+_IMAGE_DIR_FROM_ENV = bool(_os.environ.get("KWB_IMAGE_DIR"))
 _IMAGE_DIR = Path(_os.environ.get(
     "KWB_IMAGE_DIR",
     str(Path(_tempfile.gettempdir()) / "debussy_uploads"),
 ))
 _IMAGE_DIR.mkdir(exist_ok=True)
+
+# Optional Pillow import for server-side TIFF/odd-format thumbnails.
+try:
+    from PIL import Image as _PILImage  # type: ignore
+    _HAS_PIL = True
+except ImportError:
+    _PILImage = None  # type: ignore[assignment]
+    _HAS_PIL = False
 
 # In-memory metadata index (rebuilt from disk on demand, see _sync_index)
 _uploaded_images: dict[str, dict] = {}
@@ -510,6 +519,66 @@ async def image_data(img_id: str):
     if not img_path.exists():
         return JSONResponse({"error": "Datei nicht gefunden"}, 404)
     return Response(content=img_path.read_bytes(), media_type=img["media_type"])
+
+
+# In-memory thumbnail cache (keyed by hash_sha256 or img_id, value = JPEG bytes)
+_thumb_cache: dict[str, bytes] = {}
+_THUMB_MAX_DIM = 384
+_THUMB_CACHE_LIMIT = 512
+
+
+def _render_thumb_jpeg(img_path: Path) -> bytes | None:
+    """Render a JPEG thumbnail from any Pillow-supported image. Returns None on failure."""
+    if not _HAS_PIL:
+        return None
+    try:
+        with _PILImage.open(img_path) as im:
+            im = im.convert("RGB") if im.mode not in ("RGB", "L") else im
+            im.thumbnail((_THUMB_MAX_DIM, _THUMB_MAX_DIM))
+            import io
+            buf = io.BytesIO()
+            im.save(buf, format="JPEG", quality=80, optimize=True)
+            return buf.getvalue()
+    except (OSError, ValueError) as e:
+        # Pillow raises OSError for truncated/corrupt images, ValueError for unknown modes.
+        # Log via stdlib logger so the cause is visible without breaking the request.
+        import logging
+        logging.getLogger(__name__).warning(
+            "Thumbnail render failed for %s: %s", img_path, e,
+        )
+        return None
+
+
+@router.get("/api/images/{img_id}/thumb")
+async def image_thumb(img_id: str):
+    """
+    Serve a server-rendered JPEG thumbnail.
+
+    Useful for formats browsers can't display natively (TIFF) and for large
+    originals. Falls back to the raw bytes when Pillow is not installed and
+    the format is browser-renderable; returns 415 when neither works.
+    """
+    img = _uploaded_images.get(img_id)
+    if not img:
+        return JSONResponse({"error": "Nicht gefunden"}, 404)
+    img_path = Path(img["path"])
+    if not img_path.exists():
+        return JSONResponse({"error": "Datei nicht gefunden"}, 404)
+    cache_key = img.get("hash_sha256") or img_id
+    cached = _thumb_cache.get(cache_key)
+    if cached is not None:
+        return Response(content=cached, media_type="image/jpeg")
+    data = _render_thumb_jpeg(img_path)
+    if data is None:
+        # No Pillow or render failed — fall back to raw bytes for browser-native formats.
+        if img["media_type"] in ("image/jpeg", "image/png", "image/webp"):
+            return Response(content=img_path.read_bytes(), media_type=img["media_type"])
+        return JSONResponse({"error": "Vorschau nicht möglich (Pillow fehlt?)"}, 415)
+    if len(_thumb_cache) >= _THUMB_CACHE_LIMIT:
+        # Simple FIFO eviction: drop the oldest entry.
+        _thumb_cache.pop(next(iter(_thumb_cache)))
+    _thumb_cache[cache_key] = data
+    return Response(content=data, media_type="image/jpeg")
 
 
 @router.get("/api/images")
@@ -986,7 +1055,40 @@ async def images_clear():
         if p.exists():
             p.unlink(missing_ok=True)
     _uploaded_images.clear()
+    _thumb_cache.clear()
+    ws = get_workspace()
+    ws.image_analyses.clear()
+    ws.save(workspace_dir() / safe_filename(ws.name))
     return {"cleared": count}
+
+
+@router.delete("/api/images/{img_id}")
+async def image_delete(img_id: str):
+    """Delete a single uploaded image (file on disk + index + workspace entry)."""
+    img = _uploaded_images.pop(img_id, None)
+    if not img:
+        return JSONResponse({"error": "Nicht gefunden"}, 404)
+    p = Path(img["path"])
+    if p.exists():
+        p.unlink(missing_ok=True)
+    cache_key = img.get("hash_sha256") or img_id
+    _thumb_cache.pop(cache_key, None)
+    ws = get_workspace()
+    if ws.delete_image_analysis(img_id):
+        ws.save(workspace_dir() / safe_filename(ws.name))
+    return {"deleted": img_id}
+
+
+@router.get("/api/images/config")
+async def images_config():
+    """Expose the upload directory + Pillow availability so the UI can show it."""
+    return {
+        "upload_dir": str(_IMAGE_DIR),
+        "configured_via_env": _IMAGE_DIR_FROM_ENV,
+        "env_var": "KWB_IMAGE_DIR",
+        "thumbnails_supported": _HAS_PIL,
+        "image_count": len(_uploaded_images),
+    }
 
 
 # ---------------------------------------------------------------------------

@@ -1011,6 +1011,15 @@ class Workspace:
                 return r
         return None
 
+    def delete_image_analysis(self, image_id: str) -> bool:
+        """Remove a single image analysis. Returns True if removed."""
+        for i, r in enumerate(self.image_analyses):
+            if r.image_id == image_id:
+                del self.image_analyses[i]
+                self._touch()
+                return True
+        return False
+
     def image_review_stats(self) -> dict[str, int]:
         stats: dict[str, int] = {s.value: 0 for s in ImageReviewStatus}
         for r in self.image_analyses:

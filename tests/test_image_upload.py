@@ -467,5 +467,104 @@ class TestImageWorkflow(unittest.TestCase):
         self.assertIn(img_id, ids)
 
 
+@_skip
+class TestImageDeleteSingle(unittest.TestCase):
+    """DELETE /api/images/{img_id} — remove a single image (file + index + workspace)."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def _upload(self, data: bytes, name: str) -> str:
+        r = self.client.post("/api/images/upload", files=[_img_file(data, name)])
+        return r.json()["images"][0]["id"]
+
+    def test_delete_removes_from_index_and_disk(self):
+        from kwb.api.routes import ai as ai_routes
+        img_id = self._upload(_JPEG, "to_delete.jpg")
+        path = Path(ai_routes._uploaded_images[img_id]["path"])
+        self.assertTrue(path.exists())
+        r = self.client.delete(f"/api/images/{img_id}")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["deleted"], img_id)
+        self.assertNotIn(img_id, ai_routes._uploaded_images)
+        self.assertFalse(path.exists())
+
+    def test_delete_unknown_id_returns_404(self):
+        r = self.client.delete("/api/images/img_9999_nope")
+        self.assertEqual(r.status_code, 404)
+
+    def test_delete_other_images_untouched(self):
+        keep = self._upload(_JPEG, "keep.jpg")
+        drop = self._upload(_PNG, "drop.png")
+        self.client.delete(f"/api/images/{drop}")
+        r = self.client.get("/api/images")
+        ids = [i["id"] for i in r.json()["images"]]
+        self.assertIn(keep, ids)
+        self.assertNotIn(drop, ids)
+
+    def test_delete_clears_workspace_entry(self):
+        from kwb.api.deps import get_workspace
+        img_id = self._upload(_JPEG, "with_analysis.jpg")
+        self.client.post("/api/images/analyze", json={"image_ids": [img_id]})
+        ws = get_workspace()
+        self.assertIsNotNone(ws.get_image_analysis(img_id))
+        self.client.delete(f"/api/images/{img_id}")
+        self.assertIsNone(ws.get_image_analysis(img_id))
+
+
+@_skip
+class TestImageThumb(unittest.TestCase):
+    """GET /api/images/{img_id}/thumb — server-rendered preview."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def _upload(self, data: bytes, name: str) -> str:
+        r = self.client.post("/api/images/upload", files=[_img_file(data, name)])
+        return r.json()["images"][0]["id"]
+
+    def test_thumb_jpeg_falls_back_to_raw_without_pillow(self):
+        """Without Pillow, JPEG/PNG/WebP serve the raw bytes as fallback."""
+        from kwb.api.routes import ai as ai_routes
+        if ai_routes._HAS_PIL:
+            self.skipTest("Pillow installed — fallback path not exercised")
+        img_id = self._upload(_JPEG, "foto.jpg")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers["content-type"], "image/jpeg")
+
+    def test_thumb_tiff_returns_415_without_pillow(self):
+        """TIFF cannot be rendered without Pillow — must return a clear error code."""
+        from kwb.api.routes import ai as ai_routes
+        if ai_routes._HAS_PIL:
+            self.skipTest("Pillow installed — fallback path not exercised")
+        img_id = self._upload(_TIFF, "scan.tif")
+        r = self.client.get(f"/api/images/{img_id}/thumb")
+        self.assertEqual(r.status_code, 415)
+
+    def test_thumb_unknown_id_returns_404(self):
+        r = self.client.get("/api/images/img_9999_nope/thumb")
+        self.assertEqual(r.status_code, 404)
+
+
+@_skip
+class TestImageConfig(unittest.TestCase):
+    """GET /api/images/config — expose upload directory and Pillow availability."""
+
+    def setUp(self):
+        self.client = _get_client()
+
+    def test_config_reports_upload_dir(self):
+        r = self.client.get("/api/images/config")
+        self.assertEqual(r.status_code, 200)
+        d = r.json()
+        self.assertIn("upload_dir", d)
+        self.assertTrue(d["upload_dir"])
+        self.assertIn("configured_via_env", d)
+        self.assertEqual(d["env_var"], "KWB_IMAGE_DIR")
+        self.assertIn("thumbnails_supported", d)
+        self.assertIsInstance(d["thumbnails_supported"], bool)
+
+
 if __name__ == "__main__":
     unittest.main()

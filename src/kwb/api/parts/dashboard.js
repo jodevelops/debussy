@@ -1554,12 +1554,11 @@ function renderImgGrid(){
   }
   if(empty) empty.style.display='none';
   gallery.innerHTML = shown.map(function(img){
-    const imgUrl='/api/images/'+encPath(img.id)+'/data';
-    const isTiff=(img.media_type||'').includes('tiff');
+    // Use server-rendered thumbnail endpoint — handles TIFF (via Pillow) and
+    // falls back to raw bytes for browser-native formats when Pillow is absent.
+    const thumbUrl='/api/images/'+encPath(img.id)+'/thumb';
     const status=img.review_status||'pending';
-    const thumbHtml=isTiff
-      ?'<div class="it-tiff">TIFF</div>'
-      :'<img class="it-thumb" src="'+esc(imgUrl)+'" alt="'+esc(img.filename||'')+'" loading="lazy">';
+    const thumbHtml='<img class="it-thumb" src="'+esc(thumbUrl)+'" alt="'+esc(img.filename||'')+'" loading="lazy">';
     const badgeCls=status==='accepted'?'it-badge-accepted':status==='rejected'?'it-badge-rejected':'it-badge-pending';
     const badgeTxt=status==='accepted'?'✓':status==='rejected'?'✗':'·';
     return '<div class="img-tile" data-id="'+esc(img.id)+'" onclick="openImgDetail(\''+esc(img.id)+'\')">'
@@ -1570,10 +1569,11 @@ function renderImgGrid(){
       +'<div class="it-actions">'
       +'<button class="btn sm" onclick="event.stopPropagation();quickReview(\''+esc(img.id)+'\',\'accepted\')" title="Freigeben">&#10003;</button>'
       +'<button class="btn sm s" onclick="event.stopPropagation();quickReview(\''+esc(img.id)+'\',\'rejected\')" title="Verwerfen">&#10007;</button>'
+      +'<button class="btn sm" onclick="event.stopPropagation();deleteImage(\''+esc(img.id)+'\')" title="Bild entfernen" style="margin-left:auto">&#128465;</button>'
       +'</div>'
       +'</div>';
   }).join('');
-  // Error fallback for broken img tags
+  // Error fallback: thumbnail endpoint returned 404/415 — show "n/v" tile.
   gallery.querySelectorAll('.it-thumb').forEach(function(el){
     el.onerror=function(){this.style.display='none';
       var fb=document.createElement('div');fb.className='it-tiff';fb.textContent='n/v';
@@ -1848,7 +1848,36 @@ async function loadImages(){
       reviewer:i.reviewer||''
     }));
     if(reviewed.length) renderImgResults(reviewed);
+    loadImageConfig();
   }catch(e){}
+}
+
+async function loadImageConfig(){
+  const box=$('img-config-box');
+  if(!box) return;
+  try{
+    const r=await fetch('/api/images/config');
+    const d=await r.json();
+    const src=d.configured_via_env?'aus '+esc(d.env_var):'Standard (Temp-Verzeichnis)';
+    const pil=d.thumbnails_supported?'Vorschauen serverseitig (Pillow)':'Pillow fehlt — TIFF-Vorschau eingeschränkt';
+    box.innerHTML='<div style="font-size:.7rem;color:#666;line-height:1.4">'
+      +'<strong>Upload-Pfad</strong><br>'
+      +'<code style="font-size:.68rem;word-break:break-all">'+esc(d.upload_dir||'')+'</code><br>'
+      +'<span style="color:#888">'+src+'</span><br>'
+      +'<span style="color:#888">'+esc(pil)+'</span>'
+      +'</div>';
+  }catch(e){box.innerHTML='';}
+}
+
+async function deleteImage(imageId){
+  if(!confirm('Bild „'+imageId+'" wirklich entfernen?')) return;
+  try{
+    const r=await fetch('/api/images/'+encodeURIComponent(imageId),{method:'DELETE'});
+    if(!r.ok){const d=await r.json().catch(()=>({}));alert('Löschen fehlgeschlagen: '+(d.error||r.status));return;}
+    uploadedImages=uploadedImages.filter(i=>i.id!==imageId);
+    renderImgGrid();
+    if(typeof closeImgDetail==='function') closeImgDetail();
+  }catch(e){alert('Löschen fehlgeschlagen: '+e.message);}
 }
 
 // === OCR ===
