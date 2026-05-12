@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 993/1136 Tests bestanden, 0 fehlgeschlagen, 143 übersprungen
+**Gesamtstatus:** 993/1137 Tests bestanden, 0 fehlgeschlagen, 144 übersprungen
 
 ---
 
@@ -238,7 +238,7 @@
 | Test-Suite | Bestanden | Fehlgeschlagen | Übersprungen | Status |
 |------------|-----------|----------------|--------------|--------|
 | test_ai.py | 56/56 | 0 | 0 | ✅ |
-| test_api.py | 0/56 | 0 | 56 | ✅ |
+| test_api.py | 0/57 | 0 | 57 | ✅ |
 | test_authority_review.py | 10/10 | 0 | 0 | ✅ |
 | test_cli.py | 8/8 | 0 | 0 | ✅ |
 | test_comprehensive.py | 22/22 | 0 | 0 | ✅ |
@@ -277,7 +277,7 @@
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 21/21 | 0 | 0 | ✅ |
-| **Gesamt** | **993/1136** | **0** | **143** | **✅** |
+| **Gesamt** | **993/1137** | **0** | **144** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

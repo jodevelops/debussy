@@ -6,6 +6,8 @@ Router prefix: /api
 """
 from __future__ import annotations
 
+import logging
+
 try:
     from fastapi import APIRouter
     from fastapi.responses import JSONResponse
@@ -16,7 +18,23 @@ from kwb.api.deps import get_workspace, get_config
 from kwb.enrich.gnd import gnd_search, gnd_batch_search
 from kwb.core.workspace import AuthorityCandidate, ReviewStatus
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
+
+
+def _validate_limit(request: dict, default: int, max_val: int) -> tuple[int | None, JSONResponse | None]:
+    """
+    Validate and normalize limit parameter from request.
+    Returns (limit, error_response) where error_response is None if valid.
+    """
+    limit = request.get("limit", default)
+    if not isinstance(limit, int) or limit < 0:
+        return None, JSONResponse(
+            {"error": f"limit muss eine nicht-negative ganze Zahl sein (max {max_val})"},
+            400
+        )
+    return min(limit, max_val), None
 
 
 @router.get("/api/gnd/search")
@@ -42,7 +60,9 @@ async def gnd_batch_api(request: dict):
     if not unique:
         return JSONResponse({"error": "Erst NER ausfuehren"}, 400)
 
-    limit = min(request.get("limit", 50), 200)
+    limit, err = _validate_limit(request, 50, 200)
+    if err:
+        return err
     terms = [
         {"text": e.text, "type": e.entity_type, "record_id": e.record_id}
         for e in unique[:limit]
@@ -122,7 +142,9 @@ async def wikidata_batch_api(request: dict):
     if not unique:
         return JSONResponse({"error": "Erst NER ausfuehren"}, 400)
 
-    limit = min(request.get("limit", 30), 100)
+    limit, err = _validate_limit(request, 30, 100)
+    if err:
+        return err
     lang = request.get("lang", "de")
 
     terms = [
@@ -152,14 +174,16 @@ async def wikidata_batch_api(request: dict):
                 entry = ws.lookup(wr["text"])
 
             if entry:
+                type_labels = tm.get("type_labels", [])
+                authority_type = type_labels[0] if type_labels else ""
                 ws.add_authority_candidate(AuthorityCandidate(
                     entry_id=entry.entry_id,
                     source="wikidata",
                     authority_id=qid,
                     preferred_name=tm.get("label", ""),
-                    authority_type=wr.get("type", ""),
-                    uri=f"https://www.wikidata.org/wiki/{qid}" if qid else "",
-                    score=float(tm.get("confidence", 0.8)),
+                    authority_type=authority_type,
+                    uri=tm.get("uri", ""),
+                    score=float(tm.get("score", 0.8)),
                     extra={"gnd_id": tm.get("gnd_id", "")},
                 ))
             matched += 1
@@ -205,7 +229,9 @@ async def geonames_batch_api(request: dict):
     if not unique:
         return JSONResponse({"error": "Erst NER ausfuehren"}, 400)
 
-    limit = min(request.get("limit", 30), 100)
+    limit, err = _validate_limit(request, 30, 100)
+    if err:
+        return err
     entity_types = request.get("entity_types", ["LOC", "GPE"])
 
     filtered = [e for e in unique if e.entity_type in entity_types] if entity_types else unique
@@ -217,15 +243,22 @@ async def geonames_batch_api(request: dict):
     try:
         from kwb.enrich.geonames import geonames_batch_search
         cfg = get_config()
-        username = cfg.geonames_username or "demo"
+        username = cfg.geonames_username
+        if not username:
+            return JSONResponse({
+                "error": "GeoNames API not configured. Set geonames_username in config. "
+                         "Demo account has rate limits (2000 req/day) unsuitable for production."
+            }, 503)
         results = geonames_batch_search(terms, username=username, delay=1.0)
     except Exception as e:
         return JSONResponse({"error": str(e)}, 500)
 
     matched = 0
+    candidates_created = 0
     for gr in results:
-        if gr.get("top_match"):
-            tm = gr["top_match"]
+        # Create candidates for all results, not just top_match, with position-based scoring
+        all_results = gr.get("results", [])
+        for pos, result_dict in enumerate(all_results):
             entry = ws.lookup(gr["text"])
             if not entry:
                 ws.add_to_dictionary([{
@@ -236,31 +269,36 @@ async def geonames_batch_api(request: dict):
                 entry = ws.lookup(gr["text"])
 
             if entry:
+                # Position-based scoring: 1.0 for top, decreases with position
+                position_score = 1.0 if pos == 0 else max(0.3, 1.0 - pos * 0.15)
+
                 # Use feature_code (e.g. "PPLC", "ADM1") if present, fallback to feature_class
-                geo_type = tm.get("feature_code") or tm.get("feature_class") or "PlaceOrGeographicName"
+                geo_type = result_dict.get("feature_code") or result_dict.get("feature_class") or "PlaceOrGeographicName"
                 ws.add_authority_candidate(AuthorityCandidate(
                     entry_id=entry.entry_id,
                     source="geonames",
-                    authority_id=tm["geonames_id"],
-                    preferred_name=tm["name"],
+                    authority_id=result_dict["geonames_id"],
+                    preferred_name=result_dict["name"],
                     authority_type=geo_type,
-                    uri=tm.get("uri", ""),
-                    score=0.8,
+                    uri=result_dict.get("uri", ""),
+                    score=position_score,
                     extra={
-                        "country": tm.get("country", ""),
-                        "country_code": tm.get("country_code", ""),
-                        "lat": tm.get("lat", 0),
-                        "lng": tm.get("lng", 0),
-                        "feature_class": tm.get("feature_class", ""),
-                        "population": tm.get("population", 0),
+                        "country": result_dict.get("country", ""),
+                        "country_code": result_dict.get("country_code", ""),
+                        "lat": result_dict.get("lat", 0),
+                        "lng": result_dict.get("lng", 0),
+                        "feature_class": result_dict.get("feature_class", ""),
+                        "population": result_dict.get("population", 0),
                     },
                 ))
+                candidates_created += 1
+        if all_results:
             matched += 1
 
     return {
         "total": len(terms),
         "matched": matched,
-        "candidates_created": matched,
+        "candidates_created": candidates_created,
         "results": results,
     }
 
@@ -361,6 +399,9 @@ async def authority_commit(request: dict = {}):
             entry.gnd_uri = candidate.uri
         elif candidate.source == "wikidata":
             entry.wikidata_id = candidate.authority_id
+            entry.wikidata_preferred = candidate.preferred_name
+            entry.wikidata_type = candidate.authority_type
+            entry.wikidata_uri = candidate.uri
             if not entry.gnd_id and candidate.extra.get("gnd_id"):
                 entry.gnd_id = candidate.extra["gnd_id"]
         elif candidate.source == "geonames":

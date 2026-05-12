@@ -112,9 +112,6 @@ def _make_mods_record(
         "CatalogIDDigital": "recordInfo",
     }
 
-    # Track which elements have been added (for complex types like originInfo)
-    added_sections: set[str] = set()
-
     # Process field mappings — both regular CSV columns and image.* virtual columns
     # image.* fields come from accepted image analyses (image_by_record), not the CSV row
     img_values = image_by_record.get(record_id, {})
