@@ -359,12 +359,19 @@ async def ai_describe_columns(request: dict | None = None):
 # Image storage directory — configurable via KWB_IMAGE_DIR env var.
 # Falls back to system temp dir if not set.
 import os as _os
-_IMAGE_DIR_FROM_ENV = bool(_os.environ.get("KWB_IMAGE_DIR"))
-_IMAGE_DIR = Path(_os.environ.get(
-    "KWB_IMAGE_DIR",
-    str(Path(_tempfile.gettempdir()) / "debussy_uploads"),
-))
-_IMAGE_DIR.mkdir(exist_ok=True)
+_DEFAULT_IMAGE_DIR = str(Path(_tempfile.gettempdir()) / "debussy_uploads")
+
+
+def _resolve_image_dir() -> tuple[Path, bool]:
+    """Return (image_dir, is_configured) based on env / .env / config."""
+    cfg = get_config()
+    configured = bool(cfg.image_dir)
+    path = Path(cfg.image_dir or _DEFAULT_IMAGE_DIR)
+    return path, configured
+
+
+_IMAGE_DIR, _IMAGE_DIR_FROM_ENV = _resolve_image_dir()
+_IMAGE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Optional Pillow import for server-side TIFF/odd-format thumbnails.
 try:
@@ -1087,6 +1094,55 @@ async def images_config():
         "configured_via_env": _IMAGE_DIR_FROM_ENV,
         "env_var": "KWB_IMAGE_DIR",
         "thumbnails_supported": _HAS_PIL,
+        "image_count": len(_uploaded_images),
+    }
+
+
+@router.post("/api/images/config")
+async def images_config_set(request: dict):
+    """
+    Change the upload directory at runtime and persist it to .env.
+
+    Body: {"upload_dir": "/abs/path"}  (empty string → reset to default)
+
+    Effects:
+      - creates the directory if missing
+      - rebuilds the in-memory image index from that directory
+      - persists KWB_IMAGE_DIR via cfg.save_to_dotenv() so it survives restart
+    """
+    global _IMAGE_DIR, _IMAGE_DIR_FROM_ENV
+    raw = (request.get("upload_dir") or "").strip()
+    try:
+        new_dir = Path(raw).expanduser().resolve() if raw else Path(_DEFAULT_IMAGE_DIR)
+    except (OSError, RuntimeError) as e:
+        return JSONResponse({"error": f"Ungültiger Pfad: {e}"}, 400)
+    try:
+        new_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        return JSONResponse({"error": f"Verzeichnis konnte nicht angelegt werden: {e}"}, 400)
+    if not _os.access(new_dir, _os.W_OK):
+        return JSONResponse({"error": f"Kein Schreibzugriff auf {new_dir}"}, 400)
+
+    _IMAGE_DIR = new_dir
+    _IMAGE_DIR_FROM_ENV = bool(raw)
+
+    cfg = get_config()
+    cfg.image_dir = raw  # empty → default on next start
+    try:
+        cfg.save_to_dotenv()
+    except OSError as e:
+        # Persist failed but runtime is updated — surface the warning.
+        import logging
+        logging.getLogger(__name__).warning(".env persistence failed: %s", e)
+
+    _uploaded_images.clear()
+    _thumb_cache.clear()
+    _sync_index()
+    _os.environ["KWB_IMAGE_DIR"] = raw
+
+    return {
+        "upload_dir": str(_IMAGE_DIR),
+        "configured_via_env": _IMAGE_DIR_FROM_ENV,
         "image_count": len(_uploaded_images),
     }
 

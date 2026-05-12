@@ -46,6 +46,10 @@ class KWBConfig:
     # (rarely useful for GLAM metadata). Curators can override per-call
     # via API ?temperature= or by setting KWB_DEFAULT_TEMPERATURE.
     default_temperature: float = 0.0
+    # Upload directory for the Bilder-Arbeitsfläche. Empty = use system
+    # temp dir. Settable via UI (POST /api/images/config) which persists
+    # back to .env so it survives restarts.
+    image_dir: str = ""
 
     @property
     def is_gpustack_configured(self): return bool(self.gpustack_url)
@@ -99,6 +103,7 @@ class KWBConfig:
             "KWB_TIMEOUT": str(self.timeout_seconds),
             "KWB_LANGUAGE": self.language,
             "KWB_DEFAULT_TEMPERATURE": str(self.default_temperature),
+            "KWB_IMAGE_DIR": self.image_dir,
         }
 
         existing_lines: list[str] = []
@@ -153,4 +158,5 @@ def load_config(dotenv_path=None):
         timeout_seconds=int(_get("KWB_TIMEOUT", dotenv, "120")),
         language=_get("KWB_LANGUAGE", dotenv, "de"),
         default_temperature=float(_get("KWB_DEFAULT_TEMPERATURE", dotenv, "0.0")),
+        image_dir=_get("KWB_IMAGE_DIR", dotenv),
     )

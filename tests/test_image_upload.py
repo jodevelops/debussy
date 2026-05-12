@@ -549,10 +549,27 @@ class TestImageThumb(unittest.TestCase):
 
 @_skip
 class TestImageConfig(unittest.TestCase):
-    """GET /api/images/config — expose upload directory and Pillow availability."""
+    """GET / POST /api/images/config — read and change the upload directory."""
 
     def setUp(self):
         self.client = _get_client()
+        # Snapshot module-level state so we can restore after each test.
+        from kwb.api.routes import ai as ai_routes
+        self._original_dir = ai_routes._IMAGE_DIR
+        self._original_from_env = ai_routes._IMAGE_DIR_FROM_ENV
+        # Stub .env persistence so tests don't mutate the repo's .env file.
+        from unittest.mock import patch
+        self._patch = patch(
+            "kwb.core.config.KWBConfig.save_to_dotenv",
+            lambda *a, **kw: None,
+        )
+        self._patch.start()
+
+    def tearDown(self):
+        from kwb.api.routes import ai as ai_routes
+        ai_routes._IMAGE_DIR = self._original_dir
+        ai_routes._IMAGE_DIR_FROM_ENV = self._original_from_env
+        self._patch.stop()
 
     def test_config_reports_upload_dir(self):
         r = self.client.get("/api/images/config")
@@ -564,6 +581,45 @@ class TestImageConfig(unittest.TestCase):
         self.assertEqual(d["env_var"], "KWB_IMAGE_DIR")
         self.assertIn("thumbnails_supported", d)
         self.assertIsInstance(d["thumbnails_supported"], bool)
+
+    def test_post_config_changes_upload_dir(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            r = self.client.post("/api/images/config", json={"upload_dir": td})
+            self.assertEqual(r.status_code, 200, r.text)
+            d = r.json()
+            self.assertEqual(Path(d["upload_dir"]).resolve(), Path(td).resolve())
+            self.assertTrue(d["configured_via_env"])
+
+            # Subsequent uploads must land in the new directory.
+            up = self.client.post(
+                "/api/images/upload",
+                files=[_img_file(_JPEG, "after_switch.jpg")],
+            )
+            self.assertEqual(up.status_code, 200)
+            from kwb.api.routes import ai as ai_routes
+            new_img_path = Path(
+                ai_routes._uploaded_images[up.json()["images"][0]["id"]]["path"]
+            )
+            self.assertEqual(new_img_path.parent.resolve(), Path(td).resolve())
+
+    def test_post_config_creates_missing_directory(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td) / "nested" / "scans"
+            self.assertFalse(target.exists())
+            r = self.client.post("/api/images/config", json={"upload_dir": str(target)})
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertTrue(target.exists())
+
+    def test_post_config_empty_resets_to_default(self):
+        r = self.client.post("/api/images/config", json={"upload_dir": ""})
+        self.assertEqual(r.status_code, 200, r.text)
+        d = r.json()
+        self.assertFalse(d["configured_via_env"])
+        # Default sits inside the system temp dir.
+        import tempfile as _t
+        self.assertTrue(d["upload_dir"].startswith(_t.gettempdir()))
 
 
 if __name__ == "__main__":

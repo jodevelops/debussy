@@ -1858,15 +1858,48 @@ async function loadImageConfig(){
   try{
     const r=await fetch('/api/images/config');
     const d=await r.json();
-    const src=d.configured_via_env?'aus '+esc(d.env_var):'Standard (Temp-Verzeichnis)';
+    const src=d.configured_via_env?'konfiguriert (KWB_IMAGE_DIR)':'Standard (Temp-Verzeichnis)';
     const pil=d.thumbnails_supported?'Vorschauen serverseitig (Pillow)':'Pillow fehlt — TIFF-Vorschau eingeschränkt';
     box.innerHTML='<div style="font-size:.7rem;color:#666;line-height:1.4">'
       +'<strong>Upload-Pfad</strong><br>'
-      +'<code style="font-size:.68rem;word-break:break-all">'+esc(d.upload_dir||'')+'</code><br>'
-      +'<span style="color:#888">'+src+'</span><br>'
-      +'<span style="color:#888">'+esc(pil)+'</span>'
+      +'<input type="text" id="img-upload-dir-input" value="'+esc(d.upload_dir||'')+'" '
+      +'placeholder="z. B. C:\\Bilder oder /data/scans" '
+      +'style="width:100%;font-size:.7rem;font-family:monospace;margin:.2rem 0">'
+      +'<div style="display:flex;gap:.3rem;margin-top:.2rem">'
+      +'<button class="btn sm" onclick="saveImageDir()" style="flex:1">&#128190; Übernehmen</button>'
+      +'<button class="btn sm" onclick="resetImageDir()" title="Auf Standard zurücksetzen">&#8634;</button>'
+      +'</div>'
+      +'<div style="margin-top:.3rem;color:#888">'+esc(src)+' &middot; '+esc(pil)+'</div>'
+      +'<div id="img-upload-dir-msg" style="margin-top:.2rem;color:#a55"></div>'
       +'</div>';
   }catch(e){box.innerHTML='';}
+}
+
+async function _applyImageDir(newPath){
+  const msg=$('img-upload-dir-msg');
+  if(msg) msg.textContent='Speichere…';
+  try{
+    const r=await fetch('/api/images/config',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({upload_dir:newPath})
+    });
+    const d=await r.json();
+    if(!r.ok){if(msg)msg.textContent='Fehler: '+(d.error||r.status);return false;}
+    if(msg)msg.textContent='Übernommen. '+(d.image_count||0)+' Bild(er) im neuen Pfad.';
+    await loadImages();
+    return true;
+  }catch(e){if(msg)msg.textContent='Fehler: '+e.message;return false;}
+}
+
+async function saveImageDir(){
+  const inp=$('img-upload-dir-input');
+  if(!inp) return;
+  await _applyImageDir(inp.value.trim());
+}
+
+async function resetImageDir(){
+  if(!confirm('Auf Standard-Verzeichnis (Temp) zurücksetzen?')) return;
+  await _applyImageDir('');
 }
 
 async function deleteImage(imageId){
