@@ -11,8 +11,13 @@ def _get_affected_ids(df, mask, id_col, limit=10):
     if not id_col or id_col not in df.columns:
         return []
     try:
-        return df.loc[mask, id_col].head(limit).tolist()
-    except (IndexError, KeyError, ValueError, TypeError, pd.errors.IndexingError) as e:
+        if isinstance(mask, pd.Series) and not mask.index.equals(df.index):
+            mask = mask.reindex(df.index, fill_value=False).astype(bool)
+        ids = df.loc[mask, id_col]
+        if isinstance(ids, pd.DataFrame):
+            ids = ids.iloc[:, 0]
+        return ids.head(limit).tolist()
+    except (IndexError, KeyError, ValueError, TypeError, AssertionError, pd.errors.IndexingError) as e:
         logger.warning(
             "Failed to extract affected ids for column %r (%s: %s)",
             id_col, type(e).__name__, e,
