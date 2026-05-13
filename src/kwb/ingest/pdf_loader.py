@@ -41,12 +41,27 @@ def pdf_to_images(
     if path.suffix.lower() != ".pdf":
         raise PDFLoadError(f"Not a PDF file: {path.suffix}")
 
-    # Try pdf2image (poppler-based, best quality)
+    # Try pdf2image (poppler-based, best quality). If pdf2image is installed
+    # but the poppler binary is missing from PATH (#210), convert_from_path
+    # raises at runtime — fall back to pypdf rather than surfacing the
+    # poppler error to the user.
     try:
         from pdf2image import convert_from_path  # noqa: F401
-        return _load_with_pdf2image(path, max_pages, dpi)
+        pdf2image_available = True
     except ImportError:
-        pass
+        pdf2image_available = False
+
+    if pdf2image_available:
+        try:
+            return _load_with_pdf2image(path, max_pages, dpi)
+        except Exception as e:
+            # PDFInfoNotInstalledError, PDFPageCountError, etc. all stem from
+            # poppler being unreachable. Log and fall through to pypdf.
+            logger.warning(
+                "pdf2image rendering failed (%s); falling back to pypdf. "
+                "Install poppler-utils to enable PDF → image rendering.",
+                e,
+            )
 
     # Fallback: pypdf for page count + basic extraction
     try:
@@ -56,8 +71,8 @@ def pdf_to_images(
         pass
 
     raise PDFLoadError(
-        "PDF support requires pdf2image or pypdf: "
-        "pip install pdf2image pypdf"
+        "PDF support requires pdf2image (with poppler) or pypdf: "
+        "pip install pypdf  oder  pip install pdf2image + Poppler-Binary."
     )
 
 

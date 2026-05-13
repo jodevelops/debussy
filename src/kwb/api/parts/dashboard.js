@@ -3076,3 +3076,49 @@ function populateRevApplyDs(){
   const existing=new Set([...sel.options].map(o=>o.value).filter(Boolean));
   ds.forEach(name=>{if(!existing.has(name)){const o=document.createElement('option');o.value=name;o.textContent=name;sel.appendChild(o);}});
 }
+
+// === SYSTEM CHECK (issue #180) ===
+async function loadSystemCheck(){
+  const body=$('sys-check-body'),sum=$('sys-check-summary');
+  if(!body)return;
+  body.innerHTML='<div style="color:#888">Pr&uuml;fe Abh&auml;ngigkeiten &hellip;</div>';
+  if(sum)sum.textContent='';
+  try{
+    const r=await(await fetch('/api/system/check')).json();
+    renderSystemCheck(r);
+  }catch(e){
+    body.innerHTML='<div style="color:var(--crit,#c33)">Fehler: '+esc(e.message||String(e))+'</div>';
+  }
+}
+
+function renderSystemCheck(r){
+  const body=$('sys-check-body'),sum=$('sys-check-summary');
+  if(!body)return;
+  const icons={ok:'&#10003;',warn:'&#9888;',missing:'&#10007;'};
+  const colors={ok:'var(--ok,#080)',warn:'var(--warn,#a60)',missing:'var(--crit,#c33)'};
+  let html='';
+  for(const p of (r.probes||[])){
+    const c=colors[p.status]||'#666';
+    html+='<div style="border-left:3px solid '+c+';padding:.4rem .6rem;margin-bottom:.4rem;background:#fafafa">';
+    html+='<div><span style="color:'+c+';font-weight:600">'+icons[p.status]+'</span> ';
+    html+='<strong>'+esc(p.name)+'</strong> <span style="color:#666">&middot; '+esc(p.capability)+'</span>';
+    if(p.version)html+=' <span style="color:#888;font-size:.74rem">('+esc(p.version)+')</span>';
+    html+='</div>';
+    html+='<div style="font-size:.76rem;color:#444;margin-top:.15rem">'+esc(p.message)+'</div>';
+    if(p.status!=='ok' && p.install_hint){
+      html+='<div style="font-size:.74rem;margin-top:.2rem"><code style="background:#eef;padding:1px 4px">'+esc(p.install_hint)+'</code></div>';
+    }
+    if(p.related_issues && p.related_issues.length){
+      html+='<div style="font-size:.7rem;color:#888;margin-top:.15rem">Related: '+p.related_issues.map(esc).join(', ')+'</div>';
+    }
+    html+='</div>';
+  }
+  body.innerHTML=html;
+  if(sum){
+    const s=r.summary||{};
+    const overall=r.overall_status||'ok';
+    const c=colors[overall]||'#666';
+    sum.innerHTML='<span style="color:'+c+';font-weight:600">'+icons[overall]+' '+overall.toUpperCase()+'</span> '+
+      '('+(s.ok||0)+' ok, '+(s.warn||0)+' Warnungen, '+(s.missing||0)+' fehlt)';
+  }
+}

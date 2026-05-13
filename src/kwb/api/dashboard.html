@@ -829,6 +829,15 @@
 <button class="btn sm" onclick="closeSettings()">&#10005; Schlie&szlig;en</button>
 </div>
 
+<div class="c" style="margin-bottom:1rem"><h3>System-Check &amp; Abh&auml;ngigkeiten</h3>
+<p style="font-size:.72rem;color:#666;margin-bottom:.4rem">Pr&uuml;ft optionale Python-Pakete und System-Binaries (Issue #180). Adressiert auch #166 (chardet) und #210 (poppler).</p>
+<div style="display:flex;gap:.5rem;margin-bottom:.5rem">
+<button class="btn sm" onclick="loadSystemCheck()">&#128268; Pr&uuml;fen</button>
+<span id="sys-check-summary" style="font-size:.75rem;align-self:center"></span>
+</div>
+<div id="sys-check-body" style="font-size:.78rem"></div>
+</div>
+
 <div class="c" style="margin-bottom:1rem"><h3>GPUStack-Verbindung</h3>
 <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.6rem">
 <span class="dot off" id="gd2"></span><span id="gl2" style="font-size:.75rem">GPUStack &hellip;</span>
