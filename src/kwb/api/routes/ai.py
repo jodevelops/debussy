@@ -173,6 +173,64 @@ async def prompts_preview(request: dict):
     }
 
 
+@router.post("/api/prompts/dry-run")
+async def prompts_dry_run(request: dict):
+    """Resolve a system-prompt override against a task default and return
+    the fingerprint plus the resolved text — without making an LLM call (#150).
+
+    Body:
+        {
+          "task": "ner" | "edtf" | "problematic_terms",
+          "system_prompt": "user override or empty string for default"
+        }
+
+    Returns the resolved text and ``resolve_system_prompt`` fingerprint so
+    curators can verify their override took effect before they spend the
+    LLM budget on a real batch.
+    """
+    from kwb.ai.prompts import resolve_system_prompt
+    task = (request.get("task") or "").strip().lower()
+    override = request.get("system_prompt", "") or ""
+
+    defaults = _task_default_prompts()
+    if task not in defaults:
+        return JSONResponse(
+            {
+                "status": "error",
+                "message": (
+                    f"Unbekannter task '{task}'. Erlaubt: "
+                    f"{', '.join(sorted(defaults))}"
+                ),
+            },
+            400,
+        )
+
+    resolved, fingerprint = resolve_system_prompt(
+        override, defaults[task], task=task,
+    )
+    return {
+        "status": "ok",
+        "task": task,
+        "resolved": resolved,
+        "fingerprint": fingerprint,
+    }
+
+
+def _task_default_prompts() -> dict[str, str]:
+    """Return the canonical default system prompt per task.
+
+    Kept here (not imported at module top) to avoid triggering heavy
+    submodule imports until the endpoint is actually called.
+    """
+    from kwb.analyze.ner import SYSTEM_NER, _DEFAULT_SCAN_PROMPT
+    from kwb.normalize.edtf import SYSTEM_EDTF
+    return {
+        "ner": SYSTEM_NER,
+        "edtf": SYSTEM_EDTF,
+        "problematic_terms": _DEFAULT_SCAN_PROMPT,
+    }
+
+
 # ---------------------------------------------------------------------------
 # Temperature tuning info (#155)
 # ---------------------------------------------------------------------------

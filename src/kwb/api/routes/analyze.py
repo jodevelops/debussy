@@ -761,6 +761,15 @@ async def api_ner(request: dict):
     completion_summary = _merge_completion_summaries(completion_summaries)
     parse_failures = _collect_parse_failures(ner_results)
 
+    # #150: surface the resolved system-prompt fingerprint so curators can
+    # verify their override took effect. All chunks share the same
+    # resolved prompt, so the first non-null fingerprint suffices.
+    system_prompt_used = None
+    for r in ner_results:
+        if getattr(r, "system_prompt_used", None):
+            system_prompt_used = r.system_prompt_used
+            break
+
     return {
         "task_name": "NER", "total": len(ents),
         "prompt_name": prompt_name,
@@ -773,6 +782,7 @@ async def api_ner(request: dict):
         "ai_provenance": ai_provenance,
         "completion_summary": completion_summary,
         "parse_failures": parse_failures,
+        "system_prompt_used": system_prompt_used,
         "workspace": ws.to_summary(),
     }
 
@@ -892,6 +902,12 @@ async def api_ner_stream(request: dict):
         # EXT-BUG-01: Expose completion summary and failures for visibility
         completion_summary = _merge_completion_summaries(completion_summaries)
         parse_failures = _collect_parse_failures(ner_results)
+        # #150: surface system-prompt fingerprint
+        system_prompt_used = None
+        for r in ner_results:
+            if getattr(r, "system_prompt_used", None):
+                system_prompt_used = r.system_prompt_used
+                break
         yield _sse_event({
             "type": "done",
             "result": {
@@ -903,6 +919,7 @@ async def api_ner_stream(request: dict):
                 "run_metrics": metrics, "ai_provenance": ai_provenance,
                 "completion_summary": completion_summary,
                 "parse_failures": parse_failures,
+                "system_prompt_used": system_prompt_used,
                 "workspace": ws.to_summary(),
             },
         })
@@ -929,6 +946,7 @@ async def api_scan(request: dict):
     working, sampling = _build_sampling_plan(df, request, profile.id_column, ss)
     started = time.perf_counter()
     issues, errors, batches = [], 0, []
+    system_prompt_used = None
     for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
         try:
             i2, batch = scan_problematic_terms(
@@ -939,6 +957,8 @@ async def api_scan(request: dict):
                 system_prompt=syp,
             )
             issues.extend(i2)
+            if system_prompt_used is None:
+                system_prompt_used = getattr(batch, "system_prompt_used", None)
             batches.append({"chunk": chunk_no, "rows": len(chunk_df), "issues": len(i2), "succeeded": batch.succeeded})
         except Exception:
             errors += len(chunk_df)
@@ -960,6 +980,7 @@ async def api_scan(request: dict):
         "succeeded": succeeded, "model": mod or "default",
         "issues": issues[:200],
         "run_metrics": metrics,
+        "system_prompt_used": system_prompt_used,
     }
 
 
@@ -1073,6 +1094,7 @@ async def api_edtf(request: dict):
     all_results = []
     chunk_reports = []
     errors = 0
+    system_prompt_used = None
     for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
         items = [
             {
@@ -1085,6 +1107,8 @@ async def api_edtf(request: dict):
         try:
             results, _batch = normalize_dates(items, provider=prov, model=mod or None, system_prompt=syp)
             all_results.extend(results)
+            if system_prompt_used is None and _batch is not None:
+                system_prompt_used = getattr(_batch, "system_prompt_used", None)
             chunk_reports.append({"chunk": chunk_no, "rows": len(chunk_df), "results": len(results)})
         except Exception:
             errors += len(chunk_df)
@@ -1119,6 +1143,7 @@ async def api_edtf(request: dict):
              "confidence": round(r.confidence, 3), "method": r.method, "note": r.note}
             for r in results
         ],
+        "system_prompt_used": system_prompt_used,
     }
 
 

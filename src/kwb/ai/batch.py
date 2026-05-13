@@ -95,6 +95,10 @@ class BatchReport:
     prompt_fn_name: str | None = None
     started_at: datetime | None = None
     finished_at: datetime | None = None
+    # #150: fingerprint of the resolved system prompt actually sent to the
+    # model. Populated by the caller (e.g. ner_llm). See
+    # kwb.ai.prompts.resolve_system_prompt.
+    system_prompt_used: dict | None = None
 
     @property
     def success_rate(self) -> float:

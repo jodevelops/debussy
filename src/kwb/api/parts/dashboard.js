@@ -647,7 +647,55 @@ function renderNER(r){
   // EXT-BUG-01: Display completion summary
   renderCompletionSummary(r.completion_summary, r.parse_failures);
 
+  // #150: Show which system prompt actually went to the model
+  renderSystemPromptUsed('ner-prompt-used', r.system_prompt_used);
+
   applyNERFilters();
+}
+
+// === SYSTEM-PROMPT FINGERPRINT (issue #150) ===
+function renderSystemPromptUsed(targetId, fp){
+  const el=$(targetId);
+  if(!el)return;
+  if(!fp){el.innerHTML='';return;}
+  const isOverride=!!fp.is_override;
+  const color=isOverride?'var(--info,#06c)':'#666';
+  const label=isOverride?'&#9998; Override aktiv':'Default-Prompt';
+  let html='<div style="background:#f4f7fa;border-left:3px solid '+color+';padding:.4rem .6rem;margin:.4rem 0;font-size:.74rem">';
+  html+='<div style="display:flex;justify-content:space-between;align-items:center">';
+  html+='<span><strong style="color:'+color+'">'+label+'</strong> &middot; task: <code>'+esc(fp.task||'?')+'</code> &middot; '+(fp.length||0)+' Zeichen</span>';
+  html+='<span style="color:#888;font-family:monospace;font-size:.7rem" title="sha256 des gesendeten Prompts">'+esc((fp.sha256||'').slice(0,12))+'&hellip;</span>';
+  html+='</div>';
+  html+='<details style="margin-top:.25rem"><summary style="cursor:pointer;color:#444">Prompt-Preview anzeigen</summary>';
+  html+='<pre style="margin:.25rem 0 0;padding:.4rem;background:#fff;border:1px solid #ddd;white-space:pre-wrap;word-break:break-word;font-size:.7rem">'+esc(fp.preview||'')+'</pre></details>';
+  html+='</div>';
+  el.innerHTML=html;
+}
+
+async function dryRunSystemPrompt(){
+  const task=$('cfg-dryrun-task')?.value||'ner';
+  const override=$('cfg-sys')?.value||'';
+  const out=$('cfg-dryrun-out');
+  if(out){out.style.display='block';out.textContent='Wird geprüft …';}
+  try{
+    const r=await(await fetch('/api/prompts/dry-run',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({task,system_prompt:override}),
+    })).json();
+    if(out){
+      if(r.status==='ok'){
+        const fp=r.fingerprint||{};
+        const isOverride=!!fp.is_override;
+        out.innerHTML='<div style="font-size:.78rem;margin-bottom:.3rem"><strong style="color:'+(isOverride?'var(--info,#06c)':'#666')+'">'+(isOverride?'&#9998; Override würde verwendet':'Default-Prompt würde verwendet')+'</strong> &middot; task: <code>'+esc(task)+'</code> &middot; '+(fp.length||0)+' Zeichen &middot; sha256: <code>'+esc((fp.sha256||'').slice(0,16))+'</code></div>'+
+          '<pre style="margin:0;padding:.5rem;background:#fff;border:1px solid #ccc;white-space:pre-wrap;font-size:.72rem;max-height:240px;overflow:auto">'+esc(r.resolved||'')+'</pre>';
+      }else{
+        out.textContent='Fehler: '+(r.message||'unbekannt');
+      }
+    }
+  }catch(e){
+    if(out)out.textContent='Fehler: '+(e.message||String(e));
+  }
 }
 
 function renderCompletionSummary(summary, parseFailures){
