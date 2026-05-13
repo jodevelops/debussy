@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 1011/1167 Tests bestanden, 0 fehlgeschlagen, 156 übersprungen
+**Gesamtstatus:** 1023/1182 Tests bestanden, 0 fehlgeschlagen, 159 übersprungen
 
 ---
 
@@ -274,12 +274,13 @@
 | test_roadmap.py | 8/8 | 0 | 0 | ✅ |
 | test_services.py | 20/20 | 0 | 0 | ✅ |
 | test_system_check.py | 15/16 | 0 | 1 | ✅ |
+| test_system_prompt_used.py | 12/15 | 0 | 3 | ✅ |
 | test_utils.py | 30/30 | 0 | 0 | ✅ |
 | test_workspace.py | 33/33 | 0 | 0 | ✅ |
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 21/21 | 0 | 0 | ✅ |
-| **Gesamt** | **1011/1167** | **0** | **156** | **✅** |
+| **Gesamt** | **1023/1182** | **0** | **159** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

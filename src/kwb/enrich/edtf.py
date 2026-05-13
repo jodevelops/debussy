@@ -48,15 +48,21 @@ def _normalize_dates_llm(
     model: str | None = None,
     system_prompt: str = "",
 ) -> tuple[list[EDTFResult], BatchReport]:
+    from kwb.ai.prompts import resolve_system_prompt
+    resolved_prompt, prompt_fp = resolve_system_prompt(
+        system_prompt, SYSTEM_EDTF, task="edtf",
+    )
+
     def _p(item):
         return [
-            AIMessage.system(system_prompt or SYSTEM_EDTF),
+            AIMessage.system(resolved_prompt),
             AIMessage.user(
                 f'Normalisiere in EDTF: "{item["text"]}"\n\n'
                 f'JSON: {{"original":"...","edtf":"...","confidence":0.0-1.0,"note":"..."}}'
             ),
         ]
     batch = process_batch(provider, items, _p, id_field="record_id", model=model)
+    batch.system_prompt_used = prompt_fp
 
     # Pre-build lookup dict for O(1) access instead of O(n²) search
     items_by_id = {item.get("record_id"): item for item in items}

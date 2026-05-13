@@ -608,6 +608,7 @@
 <h3>NER-Testergebnisse <span id="ner-count" style="font-size:.7rem;color:#888"></span></h3>
 <div id="ner-metrics" style="font-size:.72rem;color:#555;margin-bottom:.4rem"></div>
 <div id="ner-completion-banner" style="margin-bottom:.6rem"></div>
+<div id="ner-prompt-used"></div>
 <div class="fl" id="ner-status-bar" style="margin-bottom:.3rem">
 <strong style="font-size:.7rem;align-self:center">Status:</strong>
 <div class="fb2 a" onclick="filterStatus('all',this)">Alle</div>
@@ -868,6 +869,18 @@
 <option value="edtf_de">EDTF</option><option value="scan_de">Scan</option><option value="custom">Eigene</option>
 </select>
 <textarea id="cfg-sys" rows="5" style="margin-top:.3rem"></textarea>
+<div style="margin-top:.5rem;border-top:1px dashed #ccc;padding-top:.5rem">
+<label style="font-size:.78rem">Override pr&uuml;fen (Issue #150) &mdash; ohne LLM-Aufruf</label>
+<div style="display:flex;gap:.4rem;align-items:center;margin-top:.3rem;flex-wrap:wrap">
+<select id="cfg-dryrun-task" style="flex:0 0 auto">
+<option value="ner">NER</option>
+<option value="edtf">EDTF</option>
+<option value="problematic_terms">Problematische Begriffe</option>
+</select>
+<button class="btn sm" onclick="dryRunSystemPrompt()">&#128270; Prompt testen</button>
+</div>
+<div id="cfg-dryrun-out" style="display:none;margin-top:.4rem"></div>
+</div>
 </div>
 </div>
 </div>

@@ -5,9 +5,13 @@ list, preview and (eventually) override them. Each entry is a self-
 describing record — name, version, description, parameters, factory —
 so callers can render prompts without importing the underlying Python
 functions.
+
+#150: ``resolve_system_prompt`` records which prompt actually went to the
+model so curators can verify their override took effect.
 """
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -56,6 +60,61 @@ CLASSIFICATION_CATEGORIES = {
 
 def _ctx_line(additional_context: str) -> str:
     return f"Kontext: {additional_context}\n" if additional_context else ""
+
+
+# ---------------------------------------------------------------------------
+# System-prompt override fingerprint (#150)
+# ---------------------------------------------------------------------------
+
+_FINGERPRINT_PREVIEW_LEN = 240
+
+
+def fingerprint_prompt(text: str) -> dict[str, Any]:
+    """Return a small descriptor of a system prompt for provenance.
+
+    Includes a sha256 digest, length, and a preview of the first 240
+    characters. Stable and cheap — safe to attach to every result.
+    """
+    text = text or ""
+    sha = hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+    preview = text[:_FINGERPRINT_PREVIEW_LEN]
+    if len(text) > _FINGERPRINT_PREVIEW_LEN:
+        preview += "…"
+    return {
+        "sha256": sha,
+        "length": len(text),
+        "preview": preview,
+    }
+
+
+def resolve_system_prompt(
+    override: str,
+    default: str,
+    *,
+    task: str = "",
+) -> tuple[str, dict[str, Any]]:
+    """Pick the system prompt and capture a fingerprint of the result (#150).
+
+    Args:
+        override: User-supplied system prompt. Empty/whitespace means "use default".
+        default: The module-level default prompt for this task.
+        task: Optional task name surfaced in the fingerprint, e.g. ``"ner"``.
+
+    Returns:
+        Tuple of ``(resolved_text, fingerprint_dict)``. The fingerprint
+        contains ``sha256``, ``length``, ``preview``, ``is_override``,
+        ``default_sha256`` and ``task`` so the dashboard can prove which
+        text reached the model. Attach this to result records / API
+        responses so curators can verify their override took effect
+        without inspecting raw API logs.
+    """
+    is_override = bool(override and override.strip())
+    resolved = override if is_override else default
+    fp = fingerprint_prompt(resolved)
+    fp["is_override"] = is_override
+    fp["default_sha256"] = fingerprint_prompt(default)["sha256"]
+    fp["task"] = task
+    return resolved, fp
 
 
 def _quality_rules(label: str) -> str:

@@ -18,6 +18,24 @@ Sektionen:
 ## [Unreleased]
 
 ### Hinzugefügt
+- **System-Prompt-Fingerprint (Issue #150)** — neuer Helper
+  `kwb.ai.prompts.resolve_system_prompt(override, default, *, task)` löst
+  den Override gegen den Default auf und liefert einen Fingerprint
+  (sha256, preview, length, is_override, default_sha256, task). Wird in
+  `ner_llm`, `ner_hybrid`, `scan_problematic_terms` und
+  `_normalize_dates_llm` benutzt. `BatchReport.system_prompt_used` und
+  `NERResult.system_prompt_used` propagieren den Fingerprint nach oben.
+- **API: `system_prompt_used` in `/api/ner`, `/api/ner/stream`,
+  `/api/scan`, `/api/edtf` Antworten** — Kuratoren können verifizieren,
+  dass ihr Override beim Modell ankam, ohne API-Logs zu inspizieren.
+- **`POST /api/prompts/dry-run`** — gibt resolved Text + Fingerprint
+  zurück für `task ∈ {ner, edtf, problematic_terms}` ohne LLM-Aufruf.
+- **Dashboard: "Override prüfen"-Block** im System-Instruktionen-Panel
+  zeigt sha256, Länge und Preview des Prompts, der bei dem nächsten Lauf
+  gesendet würde. NER-Result-Panel zeigt zusätzlich, welcher Prompt
+  tatsächlich gesendet wurde.
+
+### Hinzugefügt (vorher)
 - **System-Check (`kwb.system_check`, CLI `kwb system-check`,
   `GET /api/system/check`)** — probes für optionale Abhängigkeiten und
   System-Binaries: Python, fastapi, httpx, chardet, openpyxl, pypdf,

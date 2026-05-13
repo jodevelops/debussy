@@ -84,6 +84,9 @@ class NERResult:
     entities: list[Entity] = field(default_factory=list)
     batch_report: BatchReport | None = None
     completion_summary: CompletionSummary | None = None
+    # #150: fingerprint of the system prompt that was actually sent to the
+    # model, so curators can verify their override took effect.
+    system_prompt_used: dict | None = None
 
     @property
     def by_type(self) -> dict[EntityType, list[Entity]]:
@@ -216,9 +219,14 @@ def ner_llm(
     model: str | None = None,
     system_prompt: str = "",
 ) -> tuple[list[Entity], BatchReport]:
+    from kwb.ai.prompts import resolve_system_prompt
+    resolved_prompt, prompt_fp = resolve_system_prompt(
+        system_prompt, SYSTEM_NER, task="ner",
+    )
+
     def _make_prompt(item: dict[str, Any]) -> list[AIMessage]:
         return [
-            AIMessage.system(system_prompt or SYSTEM_NER),
+            AIMessage.system(resolved_prompt),
             AIMessage.user(
                 f'Analysiere diesen Text und extrahiere alle Named Entities:\n\n'
                 f'Text: "{item["text"]}"\n'
@@ -254,6 +262,7 @@ def ner_llm(
                 ))
         elif not result.parsed:
             parse_failures.append(result.record_id)
+    batch.system_prompt_used = prompt_fp
     return entities, batch
 
 
@@ -364,6 +373,10 @@ def ner_hybrid(
             if k not in llm_map or e.confidence > llm_map[k].confidence:
                 llm_map[k] = e
         result.batch_report = batch
+        # #150: propagate the resolved system-prompt fingerprint so the API
+        # and dashboard can prove the user's override took effect.
+        if batch is not None:
+            result.system_prompt_used = batch.system_prompt_used
 
         # Calculate completion summary from batch report.
         # Count items (records) producing entities, NOT entity instances —
@@ -412,6 +425,16 @@ def ner_hybrid(
 # Full-dataset scan (problematic terms)
 # ---------------------------------------------------------------------------
 
+_DEFAULT_SCAN_PROMPT = """Du bist ein Experte fuer Metadatenqualitaet in GLAM-Institutionen.
+Analysiere diese Metadaten-Werte und identifiziere potentiell problematische Begriffe:
+- Veraltete oder koloniale Terminologie
+- Diskriminierende oder stigmatisierende Begriffe
+- Historisch belastete Bezeichnungen
+- Nicht mehr zeitgemaesse ethnische/geographische Bezeichnungen
+
+Antworte IMMER als valides JSON."""
+
+
 def scan_problematic_terms(
     df: pd.DataFrame,
     provider: AIProvider,
@@ -420,14 +443,10 @@ def scan_problematic_terms(
     model: str | None = None,
     system_prompt: str = "",
 ) -> tuple[list[dict], BatchReport]:
-    SYSTEM_SCAN = system_prompt or """Du bist ein Experte fuer Metadatenqualitaet in GLAM-Institutionen.
-Analysiere diese Metadaten-Werte und identifiziere potentiell problematische Begriffe:
-- Veraltete oder koloniale Terminologie
-- Diskriminierende oder stigmatisierende Begriffe
-- Historisch belastete Bezeichnungen
-- Nicht mehr zeitgemaesse ethnische/geographische Bezeichnungen
-
-Antworte IMMER als valides JSON."""
+    from kwb.ai.prompts import resolve_system_prompt
+    SYSTEM_SCAN, prompt_fp = resolve_system_prompt(
+        system_prompt, _DEFAULT_SCAN_PROMPT, task="problematic_terms",
+    )
 
     str_cols = [c for c in df.columns if df[c].dtype.kind in ('O', 'U') or str(df[c].dtype) == "string"]
     working = df.sample(n=min(sample_size, len(df)), random_state=42) if sample_size < len(df) else df
@@ -458,6 +477,7 @@ Antworte IMMER als valides JSON."""
         ]
 
     batch = process_batch(provider, items, _make_prompt, model=model)
+    batch.system_prompt_used = prompt_fp
     issues = []
     for r in batch.results:
         if r.parsed and r.parsed.get("problematic_terms"):

@@ -210,11 +210,16 @@ def normalize_edtf_llm(date_strings, provider, model=None, system_prompt=""):
                 llm_idx += 1
         return final, None
 
+    from kwb.ai.prompts import resolve_system_prompt
+    resolved_prompt, prompt_fp = resolve_system_prompt(
+        system_prompt, SYSTEM_EDTF, task="edtf",
+    )
+
     def _p(item):
         text = item.get("text", item.get("date", ""))
         rid = item.get("record_id", "")
         return [
-            AIMessage.system(system_prompt or SYSTEM_EDTF),
+            AIMessage.system(resolved_prompt),
             AIMessage.user(
                 f'Konvertiere in EDTF: "{text}" Record: {rid}\n\n'
                 f'JSON: {{"original":"...","edtf":"...","confidence":0.0-1.0,"note":"..."}}'
@@ -222,6 +227,7 @@ def normalize_edtf_llm(date_strings, provider, model=None, system_prompt=""):
         ]
 
     batch = process_batch(provider, llm_items, _p, model=model)
+    batch.system_prompt_used = prompt_fp
     llm_idx = 0
     final = []
     for r in results:
