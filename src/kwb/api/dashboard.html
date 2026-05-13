@@ -89,7 +89,19 @@
 <div class="c">
 <h3>1b. Strukturelle Analyse</h3>
 <p style="font-size:.72rem;color:#666;margin-bottom:.3rem">7 Qualit&auml;tschecks: Fehlwerte, Duplikate, Encoding, Formate, Terme, Verkn&uuml;pfungen, GND-Abdeckung.</p>
+<div style="display:flex;gap:.4rem;flex-wrap:wrap">
+<button class="btn s" onclick="previewIngest()">&#128270; Vorschau pr&uuml;fen</button>
 <button class="btn f" onclick="runStruct()">&#128300; Analyse starten</button>
+</div>
+<p style="font-size:.68rem;color:#888;margin-top:.4rem">Tipp: <strong>Vorschau pr&uuml;fen</strong> zeigt Encoding, Trennzeichen und ID-Spalte vor dem Commit (Issue #177).</p>
+</div>
+<div class="c" id="preview-panel" style="display:none">
+<h3>1b&prime;. Ingest-Vorschau</h3>
+<div id="preview-body"></div>
+<div style="display:flex;gap:.4rem;margin-top:.6rem">
+<button class="btn f" onclick="confirmIngest()">&#10003; &Uuml;bernehmen &amp; analysieren</button>
+<button class="btn s" onclick="cancelPreview()">&#10007; Abbrechen</button>
+</div>
 </div>
 <div class="c" id="id-col-bar" style="display:none">
 <h3>1c. ID-Spalte festlegen</h3>

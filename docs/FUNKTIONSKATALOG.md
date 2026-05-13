@@ -2,7 +2,7 @@
 
 **Version:** 0.6.0  
 **Stand:** 2026-03-05  
-**Gesamtstatus:** 996/1140 Tests bestanden, 0 fehlgeschlagen, 144 übersprungen
+**Gesamtstatus:** 996/1151 Tests bestanden, 0 fehlgeschlagen, 155 übersprungen
 
 ---
 
@@ -255,6 +255,7 @@
 | test_html_report.py | 21/21 | 0 | 0 | ✅ |
 | test_image_fixtures.py | 10/10 | 0 | 0 | ✅ |
 | test_image_upload.py | 0/31 | 0 | 31 | ✅ |
+| test_ingest_preview.py | 0/11 | 0 | 11 | ✅ |
 | test_llm_quality.py | 55/55 | 0 | 0 | ✅ |
 | test_mets_mods_export.py | 42/42 | 0 | 0 | ✅ |
 | test_ner.py | 29/29 | 0 | 0 | ✅ |
@@ -277,7 +278,7 @@
 | test_workspace_export.py | 26/26 | 0 | 0 | ✅ |
 | test_xlsx_loader.py | 1/5 | 0 | 4 | ✅ |
 | test_xml_loader.py | 21/21 | 0 | 0 | ✅ |
-| **Gesamt** | **996/1140** | **0** | **144** | **✅** |
+| **Gesamt** | **996/1151** | **0** | **155** | **✅** |
 <!-- AUTO-TESTS-END -->
 
 ---

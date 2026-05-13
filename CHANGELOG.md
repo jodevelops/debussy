@@ -18,12 +18,27 @@ Sektionen:
 ## [Unreleased]
 
 ### Hinzugefügt
+- **Ingest-Vorschau (`POST /api/ingest/preview`)** — non-destruktiver Endpoint,
+  der für hochgeladene CSV/XLSX/XML-Dateien Encoding (mit chardet-Confidence),
+  Trennzeichen, ID-Spalten-Kandidaten, Spaltenprofile und die ersten 10 Zeilen
+  zurückgibt. Kuratoren können Encoding- und ID-Spalten-Fehlentscheidungen
+  vor dem Commit erkennen. Dashboard zeigt einen Vorschau-Karten-Stack mit
+  Übernehmen/Abbrechen-Buttons. (Issue #177, Phase 4 Schritt 1)
+- **`detect_encoding_with_confidence()`** in `kwb.ingest.csv_loader` —
+  liefert `{encoding, confidence, has_bom, chardet_available, warning}`.
+  Surface chardet-Fehlend-Warnung (Adressiert #166 anteilig).
+- **`list_sheets()`** in `kwb.ingest.xlsx_loader` — listet die Sheet-Namen
+  einer XLSX-Datei, ohne sie zu laden. Vorbereitung für späteren
+  Multi-Sheet-Commit (#181).
 - **`NERResult.completion_summary`** — Dict mit Batch-Verarbeitungsstatistiken
   (total_items, successful_parses, failed_parses, success_rate). Ermöglicht es
   der API und Callers, Ausfallquoten bei LLM-basierter NER zu tracking.
 - **Regression-Test-Suite `tests/test_phase1b_stabilization.py`** — alle
   Analyze/Enrich-Audit-Issues sind mit dedizierten Tests abgedeckt; die Audit-ID
   steht im Docstring.
+- **Tests `tests/test_ingest_preview.py`** — 11 Tests für CSV (UTF-8/Latin-1,
+  Confidence, chardet-Mock, Workspace-Isolation, Mehrdatei-Upload, abgelehnte
+  Extensions), XLSX (Single/Multi-Sheet), XML (METS/MODS, Unknown).
 
 ### Geändert
 - **`LobidGNDClient.search()`** — gibt jetzt **rank-basierte** Konfidenzwerte
