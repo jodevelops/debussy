@@ -27,9 +27,12 @@ from kwb.api.deps import (
     ALLOWED_EXTENSIONS, MAX_CSV_COLS, MAX_CSV_ROWS, MAX_FILE_BYTES,
     MAX_UPLOAD_FILES, get_datasets, get_provider, get_workspace, get_state,
 )
-from kwb.ingest.csv_loader import ingest_csv
-from kwb.ingest.xlsx_loader import ingest_xlsx
-from kwb.ingest.xml_loader import ingest_xml, ingest_zip
+from kwb.ingest.csv_loader import (
+    detect_encoding_with_confidence,
+    ingest_csv,
+)
+from kwb.ingest.xlsx_loader import ingest_xlsx, list_sheets
+from kwb.ingest.xml_loader import detect_xml_format, ingest_xml, ingest_zip
 from kwb.analyze.structural import analyze_datasets
 from kwb.analyze.ner import ner_hybrid, scan_problematic_terms
 from kwb.analyze.quality_report import build_quality_analysis_report
@@ -261,6 +264,261 @@ def _normalize_upload_filename(filename: str) -> str:
 # ---------------------------------------------------------------------------
 # CSV Upload + Analyse
 # ---------------------------------------------------------------------------
+
+def _preview_csv(tp: Path, fname: str) -> dict:
+    """Non-destructive CSV preview: encoding, delimiter, columns, head, id candidates."""
+    enc_info = detect_encoding_with_confidence(tp)
+    warnings: list[str] = []
+    if enc_info["warning"]:
+        warnings.append(enc_info["warning"])
+
+    df, pr = ingest_csv(tp)
+
+    # Sniff delimiter for display (best-effort; ignore errors)
+    delimiter = ","
+    try:
+        with open(tp, encoding=enc_info["encoding"], errors="replace") as fh:
+            sample = fh.read(4096)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
+            delimiter = dialect.delimiter
+        except csv.Error:
+            warnings.append(
+                "Trennzeichen konnte nicht eindeutig erkannt werden, "
+                "Default ',' verwendet."
+            )
+    except OSError:
+        pass
+
+    id_candidates = [
+        c.name for c in pr.columns
+        if c.unique_count == pr.row_count and pr.row_count > 0
+    ]
+
+    head_records = df.head(10).fillna("").astype(str).to_dict(orient="records")
+
+    return {
+        "filename": fname,
+        "format": "csv",
+        "size_bytes": tp.stat().st_size,
+        "row_count": pr.row_count,
+        "column_count": pr.column_count,
+        "encoding": {
+            "detected": enc_info["encoding"],
+            "confidence": enc_info["confidence"],
+            "has_bom": enc_info["has_bom"],
+            "chardet_available": enc_info["chardet_available"],
+        },
+        "delimiter": delimiter,
+        "columns": [
+            {
+                "name": c.name,
+                "fill_rate": c.fill_rate,
+                "unique_count": c.unique_count,
+                "sample_values": [str(v) for v in c.sample_values[:3]],
+            }
+            for c in pr.columns
+        ],
+        "id_column": {
+            "proposed": pr.id_column or "",
+            "candidates": id_candidates,
+            "is_unique": bool(pr.id_column),
+        },
+        "head": head_records,
+        "warnings": warnings,
+    }
+
+
+def _preview_xlsx(tp: Path, fname: str) -> dict:
+    """Non-destructive XLSX preview using the first sheet."""
+    warnings: list[str] = []
+    try:
+        sheets = list_sheets(tp)
+    except Exception as e:
+        sheets = []
+        warnings.append(f"Sheets konnten nicht aufgelistet werden: {e}")
+
+    df, pr = ingest_xlsx(tp)
+    id_candidates = [
+        c.name for c in pr.columns
+        if c.unique_count == pr.row_count and pr.row_count > 0
+    ]
+    head_records = df.head(10).fillna("").astype(str).to_dict(orient="records")
+
+    if len(sheets) > 1:
+        warnings.append(
+            f"Datei enthält {len(sheets)} Sheets — aktuell wird "
+            f"nur '{sheets[0]}' geladen."
+        )
+
+    return {
+        "filename": fname,
+        "format": "xlsx",
+        "size_bytes": tp.stat().st_size,
+        "row_count": pr.row_count,
+        "column_count": pr.column_count,
+        "sheets": sheets,
+        "active_sheet": sheets[0] if sheets else None,
+        "columns": [
+            {
+                "name": c.name,
+                "fill_rate": c.fill_rate,
+                "unique_count": c.unique_count,
+                "sample_values": [str(v) for v in c.sample_values[:3]],
+            }
+            for c in pr.columns
+        ],
+        "id_column": {
+            "proposed": pr.id_column or "",
+            "candidates": id_candidates,
+            "is_unique": bool(pr.id_column),
+        },
+        "head": head_records,
+        "warnings": warnings,
+    }
+
+
+def _preview_xml(tp: Path, fname: str) -> dict:
+    """Non-destructive XML preview with format detection."""
+    warnings: list[str] = []
+    xml_format = detect_xml_format(tp)
+    if xml_format == "unknown":
+        warnings.append(
+            "XML-Format wurde nicht als METS/MODS oder LIDO erkannt — "
+            "Import wird beim Commit fehlschlagen."
+        )
+        return {
+            "filename": fname,
+            "format": "xml",
+            "xml_format": xml_format,
+            "size_bytes": tp.stat().st_size,
+            "row_count": 0,
+            "column_count": 0,
+            "columns": [],
+            "id_column": {"proposed": "", "candidates": [], "is_unique": False},
+            "head": [],
+            "warnings": warnings,
+        }
+
+    df, pr = ingest_xml(tp)
+    id_candidates = [
+        c.name for c in pr.columns
+        if c.unique_count == pr.row_count and pr.row_count > 0
+    ]
+    head_records = df.head(10).fillna("").astype(str).to_dict(orient="records")
+
+    return {
+        "filename": fname,
+        "format": "xml",
+        "xml_format": xml_format,
+        "size_bytes": tp.stat().st_size,
+        "row_count": pr.row_count,
+        "column_count": pr.column_count,
+        "columns": [
+            {
+                "name": c.name,
+                "fill_rate": c.fill_rate,
+                "unique_count": c.unique_count,
+                "sample_values": [str(v) for v in c.sample_values[:3]],
+            }
+            for c in pr.columns
+        ],
+        "id_column": {
+            "proposed": pr.id_column or "",
+            "candidates": id_candidates,
+            "is_unique": bool(pr.id_column),
+        },
+        "head": head_records,
+        "warnings": warnings,
+    }
+
+
+@router.post("/api/ingest/preview")
+async def ingest_preview(files: list[UploadFile] = File(...)):
+    """Inspect uploaded files without committing them to the workspace.
+
+    Returns per-file diagnostics (encoding, delimiter, columns, ID candidates,
+    head sample, warnings) so the curator can confirm or adjust before
+    triggering the destructive ``/api/analyze`` step.
+    """
+    if len(files) > MAX_UPLOAD_FILES:
+        return JSONResponse({"error": f"Maximal {MAX_UPLOAD_FILES} Dateien erlaubt"}, 400)
+
+    previews: list[dict] = []
+
+    for u in files:
+        fname = _normalize_upload_filename(u.filename or "")
+        suffix = Path(fname).suffix.lower()
+        if suffix not in ALLOWED_EXTENSIONS:
+            previews.append({
+                "filename": fname,
+                "format": "unknown",
+                "error": f"Nur {', '.join(ALLOWED_EXTENSIONS)} erlaubt",
+                "warnings": [],
+            })
+            continue
+
+        content = await u.read()
+        if len(content) > MAX_FILE_BYTES:
+            previews.append({
+                "filename": fname,
+                "format": suffix.lstrip("."),
+                "error": f"Max {MAX_FILE_BYTES // (1024 * 1024)} MB",
+                "warnings": [],
+            })
+            continue
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            tmp.write(content)
+            tp = Path(tmp.name)
+        try:
+            if suffix in {".xlsx", ".xls"}:
+                preview = _preview_xlsx(tp, fname)
+            elif suffix == ".xml":
+                preview = _preview_xml(tp, fname)
+            elif suffix == ".zip":
+                preview = {
+                    "filename": fname,
+                    "format": "zip",
+                    "size_bytes": tp.stat().st_size,
+                    "warnings": [
+                        "ZIP-Vorschau zeigt nur die zusammengeführten Daten "
+                        "nach Commit. Bitte 'Übernehmen' klicken, um zu laden."
+                    ],
+                    "row_count": 0,
+                    "column_count": 0,
+                    "columns": [],
+                    "id_column": {
+                        "proposed": "", "candidates": [], "is_unique": False
+                    },
+                    "head": [],
+                }
+            else:
+                preview = _preview_csv(tp, fname)
+
+            if preview.get("row_count", 0) > MAX_CSV_ROWS:
+                preview.setdefault("warnings", []).append(
+                    f"Datei hat {preview['row_count']:,} Zeilen — "
+                    f"Limit ist {MAX_CSV_ROWS:,}. Commit wird fehlschlagen."
+                )
+            if preview.get("column_count", 0) > MAX_CSV_COLS:
+                preview.setdefault("warnings", []).append(
+                    f"Datei hat {preview['column_count']} Spalten — "
+                    f"Limit ist {MAX_CSV_COLS}. Commit wird fehlschlagen."
+                )
+            previews.append(preview)
+        except Exception as e:
+            previews.append({
+                "filename": fname,
+                "format": suffix.lstrip("."),
+                "error": str(e),
+                "warnings": [],
+            })
+        finally:
+            tp.unlink(missing_ok=True)
+
+    return {"previews": previews}
+
 
 @router.post("/api/analyze")
 async def analyze(files: list[UploadFile] = File(...)):

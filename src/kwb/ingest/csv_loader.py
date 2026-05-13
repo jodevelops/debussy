@@ -44,23 +44,64 @@ def detect_encoding(path: str | Path) -> tuple[str, bool]:
     Returns (encoding_name, has_bom).
     Falls back to "utf-8" if chardet is not installed.
     """
+    enc, _, has_bom, _, _ = _detect_encoding_full(path)
+    return enc, has_bom
+
+
+def detect_encoding_with_confidence(path: str | Path) -> dict:
+    """
+    Detect file encoding and return a dict with confidence and diagnostic info.
+
+    Returns:
+        {
+            "encoding": str,            # detected or fallback encoding
+            "confidence": float | None, # 0..1 from chardet, None if BOM or no chardet
+            "has_bom": bool,
+            "chardet_available": bool,
+            "warning": str | None,      # non-empty if a fallback was used
+        }
+    """
+    enc, conf, has_bom, chardet_available, warning = _detect_encoding_full(path)
+    return {
+        "encoding": enc,
+        "confidence": conf,
+        "has_bom": has_bom,
+        "chardet_available": chardet_available,
+        "warning": warning,
+    }
+
+
+def _detect_encoding_full(
+    path: str | Path,
+) -> tuple[str, float | None, bool, bool, str | None]:
+    """Shared encoding detection used by the simple and verbose helpers."""
     path = Path(path)
     raw = path.read_bytes()
 
     if raw.startswith(b"\xef\xbb\xbf"):
-        return "utf-8-sig", True
+        return "utf-8-sig", None, True, True, None
     if raw.startswith(b"\xff\xfe"):
-        return "utf-16-le", True
+        return "utf-16-le", None, True, True, None
     if raw.startswith(b"\xfe\xff"):
-        return "utf-16-be", True
+        return "utf-16-be", None, True, True, None
 
     try:
         import chardet
-        result = chardet.detect(raw[:8192])
-        enc = result.get("encoding") or "utf-8"
-        return enc, False
     except ImportError:
-        return "utf-8", False
+        return (
+            "utf-8",
+            None,
+            False,
+            False,
+            "chardet nicht installiert — Encoding wurde nicht erkannt, "
+            "Default 'utf-8' kann zu Mojibake führen. "
+            "Installiere chardet für robuste Erkennung.",
+        )
+
+    result = chardet.detect(raw[:8192])
+    enc = result.get("encoding") or "utf-8"
+    conf = result.get("confidence")
+    return enc, conf, False, True, None
 
 
 def _sniff_delimiter(sample: str) -> str:

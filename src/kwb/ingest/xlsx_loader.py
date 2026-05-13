@@ -31,6 +31,27 @@ class XLSXLoadError(Exception):
     """Raised when an XLSX file cannot be loaded."""
 
 
+def list_sheets(path: str | Path) -> list[str]:
+    """Return the sheet names of an XLSX file."""
+    path = Path(path)
+    if path.suffix.lower() not in SUPPORTED_EXTENSIONS:
+        raise XLSXLoadError(
+            f"Unsupported file type: {path.suffix}. "
+            f"Expected one of {SUPPORTED_EXTENSIONS}"
+        )
+    try:
+        import openpyxl
+    except ImportError:
+        raise XLSXLoadError(
+            "openpyxl is required for XLSX support: pip install openpyxl"
+        )
+    wb = openpyxl.load_workbook(filename=str(path), read_only=True, data_only=True)
+    try:
+        return list(wb.sheetnames)
+    finally:
+        wb.close()
+
+
 def load_xlsx(
     path: str | Path,
     max_rows: int = MAX_ROWS,

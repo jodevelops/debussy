@@ -487,6 +487,98 @@ async function saveFM(){
 const _IMAGE_EXTS = new Set(['.jpg','.jpeg','.png','.tif','.tiff','.webp','.img']);
 function _fileExt(name){const i=(name||'').lastIndexOf('.');return i>=0?name.slice(i).toLowerCase():'';}
 
+// === INGEST PREVIEW (issue #177) ===
+async function previewIngest(){
+  const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
+  if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
+  const docFiles=[];
+  for(const id of sel){const it=ufiles[id];if(!it)continue;if(!_IMAGE_EXTS.has(_fileExt(it.uploadName)))docFiles.push(it);}
+  if(!docFiles.length){alert('Keine Metadaten-Dateien ausgewählt (Bilder benötigen keine Vorschau).');return}
+  const fd=new FormData();for(const it of docFiles)fd.append('files',it.file,it.uploadName);
+  sp('Vorschau wird geladen …',docFiles.length+' Datei(en)');
+  try{
+    const r=await(await fetch('/api/ingest/preview',{method:'POST',body:fd})).json();
+    if(r.error)throw Error(r.error);
+    renderPreview(r.previews||[]);
+  }catch(e){alert('Vorschau-Fehler: '+e.message);}finally{hp();}
+}
+
+function renderPreview(previews){
+  const panel=$('preview-panel'),body=$('preview-body');
+  if(!panel||!body)return;
+  body.innerHTML=previews.map(p=>_renderPreviewCard(p)).join('');
+  panel.style.display='block';
+  panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+}
+
+function _renderPreviewCard(p){
+  let html='<div style="border:1px solid #ddd;border-radius:4px;padding:.6rem;margin-bottom:.5rem;background:#fafafa">';
+  html+='<div style="font-weight:600;margin-bottom:.3rem">&#128196; '+esc(p.filename||'?')+' <span style="color:#888;font-weight:400;font-size:.78rem">('+esc(p.format||'')+')</span></div>';
+  if(p.error){
+    html+='<div style="background:var(--crit,#c33);color:white;padding:.4rem .6rem;border-radius:3px;font-size:.8rem">Fehler: '+esc(p.error)+'</div></div>';
+    return html;
+  }
+  // Encoding
+  if(p.encoding){
+    const conf=p.encoding.confidence;
+    const confStr=conf==null?'—':(Math.round(conf*100)+'%');
+    const bom=p.encoding.has_bom?' (BOM)':'';
+    const cdAvail=p.encoding.chardet_available;
+    const confColor=conf==null?'#666':(conf>=0.9?'var(--ok,#080)':conf>=0.7?'var(--warn,#a60)':'var(--crit,#c33)');
+    html+='<div style="font-size:.78rem;margin-bottom:.2rem">Encoding: <strong>'+esc(p.encoding.detected||'?')+'</strong>'+bom+' &middot; Konfidenz: <span style="color:'+confColor+'">'+confStr+'</span>';
+    if(!cdAvail)html+=' <span style="color:var(--warn,#a60)" title="chardet nicht installiert">⚠</span>';
+    html+='</div>';
+  }
+  if(p.delimiter!==undefined){
+    html+='<div style="font-size:.78rem;margin-bottom:.2rem">Trennzeichen: <code>'+esc(JSON.stringify(p.delimiter))+'</code></div>';
+  }
+  if(p.xml_format){
+    html+='<div style="font-size:.78rem;margin-bottom:.2rem">XML-Format: <strong>'+esc(p.xml_format)+'</strong></div>';
+  }
+  if(p.sheets&&p.sheets.length){
+    html+='<div style="font-size:.78rem;margin-bottom:.2rem">Sheets: '+p.sheets.map(s=>'<code>'+esc(s)+'</code>').join(', ')+(p.active_sheet?' &middot; aktiv: <strong>'+esc(p.active_sheet)+'</strong>':'')+'</div>';
+  }
+  if(p.row_count!==undefined){
+    html+='<div style="font-size:.78rem;margin-bottom:.2rem">'+(p.row_count||0)+' Zeilen &times; '+(p.column_count||0)+' Spalten</div>';
+  }
+  // ID column
+  if(p.id_column){
+    const idc=p.id_column;
+    html+='<div style="font-size:.78rem;margin-bottom:.2rem">ID-Spalte: <strong>'+(idc.proposed?esc(idc.proposed):'<em style="color:var(--warn,#a60)">keine gefunden</em>')+'</strong>';
+    if(idc.candidates&&idc.candidates.length>1){
+      html+=' <span style="color:#666">(Alternativen: '+idc.candidates.filter(c=>c!==idc.proposed).slice(0,5).map(c=>'<code>'+esc(c)+'</code>').join(', ')+')</span>';
+    }
+    html+='</div>';
+  }
+  // Warnings
+  if(p.warnings&&p.warnings.length){
+    html+='<div style="background:#fff7e0;border-left:3px solid var(--warn,#a60);padding:.3rem .5rem;margin:.3rem 0;font-size:.76rem">'+p.warnings.map(w=>'⚠ '+esc(w)).join('<br>')+'</div>';
+  }
+  // Head preview
+  if(p.head&&p.head.length){
+    const cols=Object.keys(p.head[0]).slice(0,8);
+    html+='<details style="margin-top:.3rem"><summary style="cursor:pointer;font-size:.78rem">Vorschau erste '+p.head.length+' Zeilen</summary>';
+    html+='<div style="overflow-x:auto;max-height:240px;margin-top:.3rem"><table style="font-size:.72rem;border-collapse:collapse"><thead><tr>'+cols.map(c=>'<th style="border:1px solid #ddd;padding:.2rem .4rem;background:#eee">'+esc(c)+'</th>').join('')+'</tr></thead><tbody>';
+    for(const row of p.head){
+      html+='<tr>'+cols.map(c=>'<td style="border:1px solid #ddd;padding:.2rem .4rem">'+esc(String(row[c]||'')).slice(0,80)+'</td>').join('')+'</tr>';
+    }
+    html+='</tbody></table></div></details>';
+  }
+  html+='</div>';
+  return html;
+}
+
+function confirmIngest(){
+  cancelPreview();
+  runStruct();
+}
+
+function cancelPreview(){
+  const panel=$('preview-panel'),body=$('preview-body');
+  if(body)body.innerHTML='';
+  if(panel)panel.style.display='none';
+}
+
 async function runStruct(){
   const sel=[...document.querySelectorAll('.fcb:checked')].map(c=>c.value);
   if(!sel.length){alert('Mindestens eine Datei auswählen.');return}
