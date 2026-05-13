@@ -51,6 +51,7 @@ from kwb.api.routes.pipeline import router as pipeline_router
 from kwb.api.routes.pdf import router as pdf_router
 from kwb.api.routes.llm_quality import router as llm_quality_router
 from kwb.api.routes.review import router as review_router
+from kwb.api.routes.system import router as system_router
 
 # ---------------------------------------------------------------------------
 # FastAPI app
@@ -73,6 +74,7 @@ app.include_router(pipeline_router)
 app.include_router(pdf_router)
 app.include_router(llm_quality_router)
 app.include_router(review_router)
+app.include_router(system_router)
 
 # ---------------------------------------------------------------------------
 # UI data injected into the dashboard HTML template

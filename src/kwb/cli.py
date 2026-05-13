@@ -12,6 +12,7 @@ from kwb.core.roadmap import (
     parse_function_catalog,
     render_proposals_markdown,
 )
+from kwb.system_check import render_text, run_system_check
 
 
 def cmd_analyze(args):
@@ -38,6 +39,17 @@ def cmd_analyze(args):
         print("\n" + "=" * 60)
         print(md)
     return 0
+
+
+def cmd_system_check(args):
+    """Probe optional dependencies and print a capability report (#180)."""
+    import json as _json
+    report = run_system_check()
+    if getattr(args, "json", False):
+        print(_json.dumps(report, indent=2, ensure_ascii=False))
+    else:
+        print(render_text(report))
+    return 0 if report["overall_status"] != "missing" else 1
 
 
 def main(argv=None):
@@ -69,6 +81,17 @@ def main(argv=None):
         return 0
 
     p_plan.set_defaults(func=_cmd_plan)
+
+    p_sys = subparsers.add_parser(
+        "system-check",
+        help="Probe optional dependencies and report capability status (#180)",
+    )
+    p_sys.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit machine-readable JSON instead of the text table",
+    )
+    p_sys.set_defaults(func=cmd_system_check)
 
     args = parser.parse_args(argv)
     if not args.command:

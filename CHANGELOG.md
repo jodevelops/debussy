@@ -18,6 +18,23 @@ Sektionen:
 ## [Unreleased]
 
 ### Hinzugefügt
+- **System-Check (`kwb.system_check`, CLI `kwb system-check`,
+  `GET /api/system/check`)** — probes für optionale Abhängigkeiten und
+  System-Binaries: Python, fastapi, httpx, chardet, openpyxl, pypdf,
+  pdf2image+poppler, spaCy + `de_core_news_lg`. Jede Probe liefert
+  Status (`ok`/`warn`/`missing`), Version, Install-Hinweis und verlinkte
+  Issues. Dashboard zeigt das Ergebnis im KI-Konfigurations-Tab. (Issue #180,
+  Phase 4 Schritt 2; adressiert auch #166 und #210)
+
+### Behoben
+- **PDF-Loader fällt jetzt auf pypdf zurück, wenn pdf2image installiert,
+  aber das Poppler-Binary nicht in PATH ist.** Vorher leakte der
+  `Unable to get page count. Is poppler installed and in PATH?`-Fehler
+  zur Laufzeit nach oben und der PDF-Import scheiterte. Jetzt wird die
+  pdf2image-Exception gefangen, geloggt und der pypdf-Fallback genutzt.
+  (#210)
+
+### Hinzugefügt (Phase 4 Schritt 1)
 - **Ingest-Vorschau (`POST /api/ingest/preview`)** — non-destruktiver Endpoint,
   der für hochgeladene CSV/XLSX/XML-Dateien Encoding (mit chardet-Confidence),
   Trennzeichen, ID-Spalten-Kandidaten, Spaltenprofile und die ersten 10 Zeilen
