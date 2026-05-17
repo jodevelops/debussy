@@ -249,6 +249,12 @@ async def index():
     return _build_html()
 
 
+@app.get("/demo", response_class=HTMLResponse)
+async def demo():
+    """Vereinfachte Pipeline-Demo für Messen und Präsentationen."""
+    return (_HTML_DIR / "demo.html").read_text(encoding="utf-8")
+
+
 # ---------------------------------------------------------------------------
 # Entry point
 # ---------------------------------------------------------------------------
