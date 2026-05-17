@@ -21,7 +21,8 @@ from pathlib import Path
 
 try:
     from fastapi import FastAPI
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, Response
+    from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
 except ImportError:
     print("pip install fastapi uvicorn python-multipart")
@@ -60,6 +61,14 @@ app = FastAPI(
     title="Debussy",
     version="0.6.0",
     description="KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(analyze_router)
@@ -253,6 +262,19 @@ async def index():
 async def demo():
     """Vereinfachte Pipeline-Demo für Messen und Präsentationen."""
     return (_HTML_DIR / "demo.html").read_text(encoding="utf-8")
+
+
+@app.get("/demo/download")
+async def demo_download():
+    """Serve the demo HTML as a single downloadable file."""
+    content = (_HTML_DIR / "demo.html").read_text(encoding="utf-8")
+    return Response(
+        content=content,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="debussy-demo.html"',
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

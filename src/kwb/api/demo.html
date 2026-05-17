@@ -74,6 +74,25 @@ h1 .sub {
 }
 .dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(74, 222, 128, 0.6); }
 .dot.off { background: var(--err); }
+.apibase {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.apibase input {
+  background: var(--panel-2);
+  color: var(--txt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  width: 200px;
+}
 
 main {
   max-width: 1400px;
@@ -425,8 +444,12 @@ a { color: var(--accent); }
     <span class="sub">KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen</span>
   </h1>
   <div class="status-bar">
+    <label class="apibase">API
+      <input type="text" id="api-base" placeholder="http://localhost:8765" spellcheck="false">
+    </label>
     <span><span class="dot" id="api-dot"></span><span id="api-label">API …</span></span>
     <span><span class="dot" id="gpu-dot"></span><span id="gpu-label">KI …</span></span>
+    <button class="btn secondary" onclick="downloadDemo()" title="Demo als Einzeldatei herunterladen">⬇ Download</button>
     <button class="btn secondary" onclick="resetDemo()" title="Demo zurücksetzen">↺ Reset</button>
   </div>
 </header>
@@ -620,6 +643,28 @@ const state = {
   xmlRecordCount: 0,
 };
 
+// ============ API BASE URL ============
+// When served from the server (http://host:port/demo) we use same-origin
+// (empty prefix). When the file is opened locally (file://), we default to
+// http://localhost:8765. The user can override and we persist in localStorage.
+function defaultApiBase() {
+  if (location.protocol === 'file:' || location.hostname === '') {
+    return 'http://localhost:8765';
+  }
+  return '';
+}
+function getApiBase() {
+  let v = (document.getElementById('api-base').value || '').trim();
+  return v.replace(/\/+$/, '');
+}
+function setApiBase(v) {
+  document.getElementById('api-base').value = v;
+  try { localStorage.setItem('debussy.demo.apiBase', v); } catch (e) {}
+}
+function url(path) {
+  return getApiBase() + path;
+}
+
 // ============ HELPERS ============
 function toast(msg, kind) {
   const t = document.getElementById('toast');
@@ -658,7 +703,7 @@ function pct(v) {
   return (v * 100).toFixed(0) + ' %';
 }
 
-async function apiPost(url, body, isForm) {
+async function apiPost(path, body, isForm) {
   const opts = { method: 'POST' };
   if (isForm) {
     opts.body = body;
@@ -666,7 +711,7 @@ async function apiPost(url, body, isForm) {
     opts.headers = { 'Content-Type': 'application/json' };
     opts.body = JSON.stringify(body);
   }
-  const r = await fetch(url, opts);
+  const r = await fetch(url(path), opts);
   if (!r.ok) {
     let msg = 'HTTP ' + r.status;
     try { const j = await r.json(); if (j.error) msg = j.error; } catch (e) {}
@@ -675,8 +720,8 @@ async function apiPost(url, body, isForm) {
   return r.json();
 }
 
-async function apiGet(url) {
-  const r = await fetch(url);
+async function apiGet(path) {
+  const r = await fetch(url(path));
   if (!r.ok) throw new Error('HTTP ' + r.status);
   return r.json();
 }
@@ -685,7 +730,7 @@ async function apiGet(url) {
 async function checkStatus() {
   // API — use a public endpoint that doesn't require auth
   try {
-    const r = await fetch('/api/pipeline/status');
+    const r = await fetch(url('/api/pipeline/status'));
     document.getElementById('api-dot').className = 'dot on';
     document.getElementById('api-label').textContent = 'API online';
   } catch (e) {
@@ -749,7 +794,7 @@ function renderStep1(j, filename) {
   // id_columns is keyed by source_name (stem) — don't overwrite.
   state.dataset = filename;
   // Get column info for later steps
-  fetch('/api/dataset/' + encodeURIComponent(state.dataset) + '/columns')
+  fetch(url('/api/dataset/' + encodeURIComponent(state.dataset) + '/columns'))
     .then(r => r.json())
     .then(c => {
       state.columns = c.columns || [];
@@ -859,7 +904,7 @@ async function runNer() {
 
   try {
     // Use streaming endpoint for live progress
-    const resp = await fetch('/api/ner/stream', {
+    const resp = await fetch(url('/api/ner/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -1107,7 +1152,50 @@ function resetDemo() {
   toast('Demo zurückgesetzt');
 }
 
+// ============ DOWNLOAD DEMO ============
+async function downloadDemo() {
+  // When served from a server, just grab /demo/download (preserves single-file
+  // shape). When opened from file://, fall back to serializing the current DOM.
+  const base = getApiBase();
+  try {
+    if (base) {
+      const r = await fetch(base + '/demo/download');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const txt = await r.text();
+      saveBlob(txt, 'debussy-demo.html', 'text/html;charset=utf-8');
+      toast('Demo heruntergeladen', 'ok');
+      return;
+    }
+  } catch (e) {
+    toast('Server-Download fehlgeschlagen — verwende lokale Kopie', 'warn');
+  }
+  // Fallback: serialize the page we're currently looking at.
+  const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  saveBlob(html, 'debussy-demo.html', 'text/html;charset=utf-8');
+}
+
+function saveBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(u);
+}
+
 // ============ INIT ============
+(function initApiBase() {
+  let saved = '';
+  try { saved = localStorage.getItem('debussy.demo.apiBase') || ''; } catch (e) {}
+  const v = saved !== '' ? saved : defaultApiBase();
+  setApiBase(v);
+  const inp = document.getElementById('api-base');
+  inp.addEventListener('change', () => { setApiBase(inp.value.trim()); checkStatus(); });
+  inp.addEventListener('blur', () => { setApiBase(inp.value.trim()); });
+})();
 checkStatus();
 setInterval(checkStatus, 15000);
 </script>
