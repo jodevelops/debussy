@@ -1008,6 +1008,7 @@ async def api_scan_stream(request: dict):
     async def generate():
         started = time.perf_counter()
         issues, errors, batches = [], 0, []
+        system_prompt_used = None
         for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
             try:
                 i2, batch = scan_problematic_terms(
@@ -1018,6 +1019,8 @@ async def api_scan_stream(request: dict):
                     system_prompt=syp,
                 )
                 issues.extend(i2)
+                if system_prompt_used is None:
+                    system_prompt_used = getattr(batch, "system_prompt_used", None)
                 batches.append({
                     "chunk": chunk_no, "rows": len(chunk_df),
                     "issues": len(i2), "succeeded": batch.succeeded,
@@ -1055,6 +1058,7 @@ async def api_scan_stream(request: dict):
                 "task_name": "Scan", "total": len(working),
                 "succeeded": succeeded, "model": mod or "default",
                 "issues": issues[:200], "run_metrics": metrics,
+                "system_prompt_used": system_prompt_used,
             },
         })
 
@@ -1184,6 +1188,7 @@ async def api_edtf_stream(request: dict):
         all_results = []
         chunk_reports = []
         errors = 0
+        system_prompt_used = None
         for chunk_no, chunk_df in _iter_chunks(working, chunk_size):
             items = [
                 {
@@ -1200,6 +1205,8 @@ async def api_edtf_stream(request: dict):
                     items, provider=prov, model=mod or None, system_prompt=syp,
                 )
                 all_results.extend(results)
+                if system_prompt_used is None and _batch is not None:
+                    system_prompt_used = getattr(_batch, "system_prompt_used", None)
                 chunk_reports.append({
                     "chunk": chunk_no, "rows": len(chunk_df),
                     "results": len(results),
@@ -1251,6 +1258,7 @@ async def api_edtf_stream(request: dict):
                      "method": r.method, "note": r.note}
                     for r in results
                 ],
+                "system_prompt_used": system_prompt_used,
             },
         })
 

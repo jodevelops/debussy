@@ -17,6 +17,14 @@ Sektionen:
 
 ## [Unreleased]
 
+### Behoben
+- **Streaming-Endpoints liefern jetzt ebenfalls `system_prompt_used`**
+  (#150-Follow-up, Codex-Review auf PR #215). Der finale SSE-`done`-Payload
+  von `/api/scan/stream` und `/api/edtf/stream` enthält den
+  Prompt-Fingerprint. Vorher war das Feld nur in den nicht-streamenden
+  Routen verfügbar, und das Dashboard nutzt für Scan und EDTF ausschließlich
+  die Streaming-Pfade — die Provenance-Anzeige fehlte daher im UI.
+
 ### Hinzugefügt
 - **System-Prompt-Fingerprint (Issue #150)** — neuer Helper
   `kwb.ai.prompts.resolve_system_prompt(override, default, *, task)` löst
