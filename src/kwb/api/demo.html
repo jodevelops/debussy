@@ -655,17 +655,39 @@ const state = {
 };
 
 // ============ API BASE URL ============
-// When served from the server (http://host:port/demo) we use same-origin
-// (empty prefix). When the file is opened locally (file://), the API
-// rejects null-origin CORS — so we still default to localhost:8765 (in
-// case the user runs the page via `python -m http.server` and tweaks
-// the URL), but show a prominent banner explaining what to do.
+// Three plausible setups:
+//  1. served from Debussy at /demo (any port)         → same-origin
+//  2. served by `python -m http.server 8080` after    → http://localhost:8765
+//     download                                          (page is on :8080,
+//                                                       Debussy on :8765)
+//  3. opened from file://                             → http://localhost:8765
+//                                                       (will fail CORS;
+//                                                       banner explains)
+// We can't decide 1 vs 2 from location alone (port 8080 could in principle
+// be Debussy too), so we *probe* on init: try same-origin first, fall back
+// to localhost:8765 if same-origin has no Debussy API.
+const DEBUSSY_FALLBACK_API = 'http://localhost:8765';
 function isFileProtocol() {
   return location.protocol === 'file:' || location.hostname === '';
 }
-function defaultApiBase() {
-  if (isFileProtocol()) return 'http://localhost:8765';
+function syncDefaultApiBase() {
+  // Synchronous best-guess used before the probe completes.
+  if (isFileProtocol()) return DEBUSSY_FALLBACK_API;
   return '';
+}
+async function probeApiBase() {
+  // Returns the first base that responds 200 to /api/pipeline/status,
+  // or '' if none.
+  const candidates = isFileProtocol()
+    ? [DEBUSSY_FALLBACK_API]
+    : ['', DEBUSSY_FALLBACK_API];
+  for (const base of candidates) {
+    try {
+      const r = await fetch(base + '/api/pipeline/status', { method: 'GET' });
+      if (r.ok) return base;
+    } catch (e) { /* try next */ }
+  }
+  return null;
 }
 function getApiBase() {
   let v = (document.getElementById('api-base').value || '').trim();
@@ -796,11 +818,13 @@ fileInput.addEventListener('change', () => {
 });
 
 async function uploadFiles(files) {
-  // A new upload invalidates everything downstream — the workspace on the
-  // server side is also replaced. Clear local state and UI so a curator
-  // who skips the reset button doesn't see step-2/3/4 results from the
-  // previous dataset alongside step-1 data from the new one.
+  // A new upload invalidates everything downstream. /api/analyze
+  // replaces the loaded datasets but NOT the workspace's entities /
+  // dates / dictionary / field mappings — those would otherwise leak
+  // into the new dataset's Goobi export whenever a record_id happens
+  // to match. Explicitly wipe the server-side workspace first.
   clearDownstreamState();
+  try { await apiPost('/api/workspace/reset', {}); } catch (e) { /* best-effort */ }
   setRunning(1, true);
   document.getElementById('step1-results').style.display = 'none';
   const fd = new FormData();
@@ -1291,7 +1315,7 @@ function downloadXml() {
 }
 
 // ============ RESET ============
-function resetDemo() {
+async function resetDemo() {
   state.dataset = null;
   state.columns = [];
   state.nerEntities = [];
@@ -1301,6 +1325,9 @@ function resetDemo() {
   document.querySelectorAll('.step').forEach(s => s.classList.remove('done'));
   document.querySelectorAll('[id$="-results"]').forEach(el => el.style.display = 'none');
   fileInput.value = '';
+  // Also wipe server-side workspace state so a subsequent export can't
+  // pick up leftover NER/EDTF/GND results.
+  try { await apiPost('/api/workspace/reset', {}); } catch (e) { /* best-effort */ }
   goto(1);
   toast('Demo zurückgesetzt');
 }
@@ -1340,19 +1367,30 @@ function saveBlob(content, filename, mime) {
 }
 
 // ============ INIT ============
-(function initApiBase() {
+(async function initApiBase() {
   if (isFileProtocol()) {
     document.getElementById('file-warn').style.display = 'block';
   }
+  // Honour an explicit user override stored in localStorage, otherwise
+  // synchronously seed a best-guess so the UI isn't blank, then probe.
   let saved = '';
   try { saved = localStorage.getItem('debussy.demo.apiBase') || ''; } catch (e) {}
-  const v = saved !== '' ? saved : defaultApiBase();
-  setApiBase(v);
+  if (saved !== '') {
+    setApiBase(saved);
+  } else {
+    setApiBase(syncDefaultApiBase());
+    const probed = await probeApiBase();
+    if (probed !== null) {
+      // Don't persist the probe result — let the next page load probe
+      // again in case the user moved Debussy to a different port.
+      document.getElementById('api-base').value = probed;
+    }
+  }
   const inp = document.getElementById('api-base');
   inp.addEventListener('change', () => { setApiBase(inp.value.trim()); checkStatus(); });
   inp.addEventListener('blur', () => { setApiBase(inp.value.trim()); });
+  checkStatus();
 })();
-checkStatus();
 setInterval(checkStatus, 15000);
 </script>
 </body>
