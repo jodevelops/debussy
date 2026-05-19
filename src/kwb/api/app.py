@@ -63,9 +63,16 @@ app = FastAPI(
     description="KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen",
 )
 
+# CORS: keep this narrow on purpose. The API has unauthenticated
+# upload/analyze/export endpoints, so a wildcard origin would let any
+# website a curator visits read their uploaded collection data. We allow
+# only localhost (so the demo served at /demo plus any local tooling
+# works) and "null" (the Origin header browsers send for file:// pages,
+# i.e. the downloaded standalone demo HTML).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["null"],
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],

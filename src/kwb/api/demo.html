@@ -728,32 +728,40 @@ async function apiGet(path) {
 
 // ============ STATUS CHECK ============
 async function checkStatus() {
-  // API — use a public endpoint that doesn't require auth
+  // API — use a public endpoint that doesn't require auth.
+  // fetch() only rejects on network errors; treat non-2xx as offline too.
+  const apiDot = document.getElementById('api-dot');
+  const apiLbl = document.getElementById('api-label');
   try {
     const r = await fetch(url('/api/pipeline/status'));
-    document.getElementById('api-dot').className = 'dot on';
-    document.getElementById('api-label').textContent = 'API online';
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    apiDot.className = 'dot on';
+    apiLbl.textContent = 'API online';
   } catch (e) {
-    document.getElementById('api-dot').className = 'dot off';
-    document.getElementById('api-label').textContent = 'API nicht erreichbar';
+    apiDot.className = 'dot off';
+    apiLbl.textContent = 'API nicht erreichbar';
   }
-  // GPU/KI — distinguish online/mock/offline
+  // GPU/KI — distinguish online/mock/offline. Always clear the inline
+  // background that the mock branch sets, so transitions out of mock mode
+  // don't leave the dot stuck on yellow.
+  const dot = document.getElementById('gpu-dot');
+  const lbl = document.getElementById('gpu-label');
+  dot.style.background = '';
   try {
     const j = await apiGet('/api/gpu/status');
     const s = j.status || '';
-    const dot = document.getElementById('gpu-dot');
-    const lbl = document.getElementById('gpu-label');
     if (s === 'ok' || s === 'online' || j.reachable) {
       dot.className = 'dot on'; lbl.textContent = 'KI bereit';
     } else if (s === 'mock') {
-      dot.className = 'dot'; dot.style.background = 'var(--warn)';
+      dot.className = 'dot';
+      dot.style.background = 'var(--warn)';
       lbl.textContent = 'KI: Mock-Modus';
     } else {
       dot.className = 'dot off'; lbl.textContent = 'KI offline';
     }
   } catch (e) {
-    document.getElementById('gpu-dot').className = 'dot off';
-    document.getElementById('gpu-label').textContent = 'KI offline';
+    dot.className = 'dot off';
+    lbl.textContent = 'KI offline';
   }
 }
 
@@ -774,6 +782,11 @@ fileInput.addEventListener('change', () => {
 });
 
 async function uploadFiles(files) {
+  // A new upload invalidates everything downstream — the workspace on the
+  // server side is also replaced. Clear local state and UI so a curator
+  // who skips the reset button doesn't see step-2/3/4 results from the
+  // previous dataset alongside step-1 data from the new one.
+  clearDownstreamState();
   setRunning(1, true);
   document.getElementById('step1-results').style.display = 'none';
   const fd = new FormData();
@@ -787,6 +800,21 @@ async function uploadFiles(files) {
   } finally {
     setRunning(1, false);
   }
+}
+
+function clearDownstreamState() {
+  state.nerEntities = [];
+  state.edtfResults = [];
+  state.gndResults = [];
+  state.xml = null;
+  state.xmlRecordCount = 0;
+  for (let n = 2; n <= 5; n++) {
+    document.querySelector('.step[data-step="' + n + '"]').classList.remove('done');
+    const r = document.getElementById('step' + n + '-results');
+    if (r) r.style.display = 'none';
+  }
+  const dl = document.getElementById('dl-btn');
+  if (dl) dl.disabled = true;
 }
 
 function renderStep1(j, filename) {
@@ -822,9 +850,7 @@ function renderStep1(j, filename) {
     kpis.push({ lbl: 'Ø Füllgrad', val: pct(avg) });
   }
 
-  document.getElementById('kpis').innerHTML = kpis.map(k =>
-    `<div class="kpi"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div>${k.sub ? `<div class="sub">${k.sub}</div>` : ''}</div>`
-  ).join('');
+  renderKpis('kpis', kpis);
 
   // Per-column table preview (top 8 by fill rate)
   let cols = ds.columns || [];
@@ -853,6 +879,18 @@ function esc(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Render a list of KPI cards. Always escapes — KPI values can include
+// user-controlled data (uploaded filename, CSV column headers, ID column
+// name) which would otherwise be injected into innerHTML verbatim.
+function renderKpis(targetId, kpis) {
+  document.getElementById(targetId).innerHTML = kpis.map(k =>
+    `<div class="kpi"><div class="lbl">${esc(k.lbl)}</div>` +
+    `<div class="val">${esc(k.val)}</div>` +
+    (k.sub ? `<div class="sub">${esc(k.sub)}</div>` : '') +
+    `</div>`
+  ).join('');
 }
 
 // ============ SAMPLE DATA ============
@@ -990,9 +1028,7 @@ function renderNer(j) {
     { lbl: 'Modell', val: j.model || '–' },
     { lbl: 'Laufzeit', val: (j.run_metrics?.elapsed_seconds ?? '–') + ' s' },
   ];
-  document.getElementById('ner-kpis').innerHTML = kpis.map(k =>
-    `<div class="kpi"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div>${k.sub ? `<div class="sub">${k.sub}</div>` : ''}</div>`
-  ).join('');
+  renderKpis('ner-kpis', kpis);
 
   // Group entities by type
   const byType = {};
@@ -1053,9 +1089,7 @@ function renderEdtf(j) {
     { lbl: 'Fehlgeschlagen', val: fmt(j.failed) },
     { lbl: 'Erfolgsquote', val: j.total ? pct(j.converted / j.total) : '–' },
   ];
-  document.getElementById('edtf-kpis').innerHTML = kpis.map(k =>
-    `<div class="kpi"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div></div>`
-  ).join('');
+  renderKpis('edtf-kpis', kpis);
 
   document.getElementById('edtf-tbl').innerHTML = `
     <thead><tr><th>ID</th><th>Original</th><th>EDTF</th><th>Konfidenz</th><th>Methode</th></tr></thead>
@@ -1099,9 +1133,7 @@ function renderGnd(j) {
     { lbl: 'Trefferquote', val: j.total ? pct(j.matched / j.total) : '–' },
     { lbl: 'Kandidaten erzeugt', val: fmt(j.candidates_created) },
   ];
-  document.getElementById('gnd-kpis').innerHTML = kpis.map(k =>
-    `<div class="kpi"><div class="lbl">${k.lbl}</div><div class="val">${k.val}</div></div>`
-  ).join('');
+  renderKpis('gnd-kpis', kpis);
 
   document.getElementById('gnd-tbl').innerHTML = `
     <thead><tr><th>Begriff</th><th>Typ</th><th>GND-Treffer</th><th>GND-ID</th><th>Konfidenz</th></tr></thead>
