@@ -831,6 +831,14 @@ async function uploadFiles(files) {
   for (const f of files) fd.append('files', f);
   try {
     const j = await apiPost('/api/analyze', fd, true);
+    // Normalise the detected id column to "record_id" so the Goobi
+    // export (which keys on row["record_id"]) finds it. No-op if the
+    // column is already called record_id.
+    try {
+      const fname = files[0].name;
+      await apiPost('/api/dataset/' + encodeURIComponent(fname) +
+                    '/normalize-id-to-record-id', {});
+    } catch (e) { /* best-effort: export will still work for sample */ }
     renderStep1(j, files[0].name);
     markDone(1);
   } catch (e) {
