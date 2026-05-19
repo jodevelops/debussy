@@ -916,7 +916,10 @@ function renderKpis(targetId, kpis) {
 //  - Diversified entity types (PER, LOC, WORK, MAT, TEC, TOP, DATE)
 async function loadSampleData() {
   const csv = [
-    'inv_nr;titel;kuenstler;lebensdaten;datierung;ort;technik;material;hoehe_cm;breite_cm;ikonografie;provenienz;bemerkungen',
+    // Header: ID column is named `record_id` so the Goobi export (which
+    // looks up `row["record_id"]` to attach NER/GND entities and to
+    // auto-inject CatalogIDDigital) actually sees the inventory numbers.
+    'record_id;titel;kuenstler;lebensdaten;datierung;ort;technik;material;hoehe_cm;breite_cm;ikonografie;provenienz;bemerkungen',
     'INV-001;"Bildnis Johann Wolfgang von Goethe in der römischen Campagna";"Tischbein, Johann Heinrich Wilhelm";"1751-1829";"1787";"Rom, Italien";"Öl auf Leinwand";"Leinwand";164;206;"Porträt; Goethe; Italien-Reise";"Familie Goethe, Frankfurt; ab 1887 Städelsches Kunstinstitut";""',
     'INV-002;"Pariser Straße bei Regen";"Caillebotte, Gustave";"1848-1894";"1877";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";212.2;276.2;"Stadtansicht; Regen; Impressionismus";"Albert Caillebotte (Bruder); 1964 Art Institute of Chicago";""',
     'INV-003;"Selbstbildnis mit zwei Kreisen";"Rembrandt Harmenszoon van Rijn";"1606-1669";"um 1665";"Amsterdam, Niederlande";"Öl auf Leinwand";"Leinwand";114.3;94.0;"Selbstporträt; Maler; Spätwerk";"Sammlung Iveagh; seit 1927 Kenwood House";""',
@@ -1173,6 +1176,74 @@ function renderGnd(j) {
 }
 
 // ============ STEP 5: EXPORT ============
+// Heuristic CSV-column → Goobi-metadata-type lookup. The Goobi exporter
+// only emits columns that have an explicit mapping, so without this every
+// <data> element comes out empty. Keys are lowercased column names.
+// Repeatable=true splits semicolon-separated values into multiple elements.
+const COL_HEURISTIC = {
+  // identifier
+  'record_id':       { type: 'CatalogIDDigital',     label: 'Inventarnummer' },
+  'id':              { type: 'CatalogIDDigital',     label: 'Identifier' },
+  'inv_nr':          { type: 'InventoryNumber',      label: 'Inventarnummer' },
+  'inventarnummer':  { type: 'InventoryNumber',      label: 'Inventarnummer' },
+  // title
+  'titel':           { type: 'TitleDocMain',         label: 'Titel' },
+  'title':           { type: 'TitleDocMain',         label: 'Title' },
+  // person — Artist is in _PERSON_TYPES, so firstname/lastname get split
+  'kuenstler':       { type: 'Artist',               label: 'Künstler:in' },
+  'künstler':        { type: 'Artist',               label: 'Künstler:in' },
+  'creator':         { type: 'Creator',              label: 'Creator' },
+  'autor':           { type: 'Author',               label: 'Autor:in' },
+  'author':          { type: 'Author',               label: 'Author' },
+  'photograph':      { type: 'Photographer',         label: 'Fotograf:in' },
+  // date
+  'datierung':       { type: 'DateCreated',          label: 'Datierung' },
+  'date':            { type: 'DateCreated',          label: 'Date' },
+  'jahr':            { type: 'DateCreated',          label: 'Jahr' },
+  'datum':           { type: 'DateCreated',          label: 'Datum' },
+  // place
+  'ort':             { type: 'PlaceOfPublication',   label: 'Ort' },
+  'place':           { type: 'PlaceOfPublication',   label: 'Place' },
+  // technique / material
+  'technik':         { type: 'Technique',            label: 'Technik' },
+  'technique':       { type: 'Technique',            label: 'Technique' },
+  'material':        { type: 'MaterialDescription',  label: 'Material' },
+  // dimensions
+  'hoehe_cm':        { type: 'Dimensions',           label: 'Höhe (cm)' },
+  'breite_cm':       { type: 'Dimensions',           label: 'Breite (cm)' },
+  'masse':           { type: 'Dimensions',           label: 'Maße' },
+  'dimensions':      { type: 'Dimensions',           label: 'Dimensions' },
+  // subjects (repeatable because demo uses "; "-separated lists)
+  'ikonografie':     { type: 'SubjectTopic',         label: 'Ikonografie', repeatable: true },
+  'subject':         { type: 'SubjectTopic',         label: 'Subject',     repeatable: true },
+  'schlagwort':      { type: 'SubjectTopic',         label: 'Schlagwort',  repeatable: true },
+  // descriptive
+  'lebensdaten':     { type: 'Description',          label: 'Lebensdaten' },
+  'provenienz':      { type: 'Description',          label: 'Provenienz' },
+  'bemerkungen':     { type: 'Description',          label: 'Bemerkungen' },
+  'beschreibung':    { type: 'Description',          label: 'Beschreibung' },
+  'description':     { type: 'Description',          label: 'Description' },
+};
+
+function buildFieldMapping(columns) {
+  // Skip columns we don't recognise; they would otherwise become empty
+  // <metadata> elements with type="Custom" or get auto-injected wrong.
+  const out = [];
+  for (const c of columns) {
+    const key = (c.name || '').toLowerCase().trim();
+    const m = COL_HEURISTIC[key];
+    if (!m) continue;
+    out.push({
+      csv_column: c.name,
+      goobi_type: m.type,
+      label: m.label || c.name,
+      repeatable: !!m.repeatable,
+      enabled: true,
+    });
+  }
+  return out;
+}
+
 async function runExport() {
   if (!state.dataset) { toast('Bitte zuerst Daten laden', 'err'); return; }
   setRunning(5, true);
@@ -1180,11 +1251,21 @@ async function runExport() {
   document.getElementById('dl-btn').disabled = true;
 
   try {
+    // Configure a field mapping for the loaded columns BEFORE export —
+    // without it the Goobi exporter emits empty <data> records and drops
+    // the NER/GND results that the previous steps produced.
+    const mappings = buildFieldMapping(state.columns);
+    if (!mappings.length) {
+      throw new Error('Keine bekannten Spaltennamen — Mapping unmöglich. Bitte Beispieldaten verwenden.');
+    }
+    await apiPost('/api/workspace/field-mapping', { mappings });
+
     const j = await apiPost('/api/export/goobi-batch', { dataset: state.dataset, limit: 50 });
     state.xml = j.xml;
     state.xmlRecordCount = j.record_count;
     document.getElementById('export-msg').textContent =
-      `${fmt(j.record_count)} Datensätze als Goobi-XML exportiert (${(j.xml.length / 1024).toFixed(1)} KB).`;
+      `${fmt(j.record_count)} Datensätze als Goobi-XML exportiert ` +
+      `(${(j.xml.length / 1024).toFixed(1)} KB, ${mappings.length} gemappte Spalten).`;
     document.getElementById('xml-preview').textContent = j.xml.slice(0, 4000) + (j.xml.length > 4000 ? '\n…' : '');
     document.getElementById('dl-btn').disabled = false;
     document.getElementById('step5-results').style.display = 'block';
