@@ -456,6 +456,17 @@ a { color: var(--accent); }
 
 <main>
 
+<!-- Shown only when loaded from file:// — the API rejects null-origin
+     CORS, so the page can't talk to the backend in that case. -->
+<div id="file-warn" style="display:none;background:rgba(248,113,113,0.08);border:1px solid var(--err);border-radius:14px;padding:1.2rem 1.4rem;margin-bottom:1.4rem">
+  <div style="font-weight:600;font-size:1.05rem;margin-bottom:0.4rem;color:var(--err)">⚠ Diese Datei wird per <code>file://</code> geöffnet</div>
+  <p style="margin:0.3rem 0;color:var(--muted);font-size:0.92rem">Aus Sicherheitsgründen blockt der Browser API-Aufrufe von <code>file://</code>-Seiten. Zwei Wege, die funktionieren:</p>
+  <ol style="margin:0.5rem 0 0.5rem 1.2rem;color:var(--muted);font-size:0.9rem">
+    <li>Direkt im Browser: <a href="http://localhost:8765/demo" style="color:var(--accent)">http://localhost:8765/demo</a> (gleicher Inhalt, über den Debussy-Server)</li>
+    <li>Lokalen Webserver starten:<br><code style="font-size:0.85rem;background:var(--bg);padding:0.2rem 0.5rem;border-radius:4px;display:inline-block;margin-top:0.3rem">python -m http.server 8080</code> im Download-Ordner, dann <code>http://localhost:8080/debussy-demo.html</code></li>
+  </ol>
+</div>
+
 <!-- ============== STEPPER ============== -->
 <div class="stepper">
   <div class="step active" data-step="1" onclick="goto(1)">
@@ -645,12 +656,15 @@ const state = {
 
 // ============ API BASE URL ============
 // When served from the server (http://host:port/demo) we use same-origin
-// (empty prefix). When the file is opened locally (file://), we default to
-// http://localhost:8765. The user can override and we persist in localStorage.
+// (empty prefix). When the file is opened locally (file://), the API
+// rejects null-origin CORS — so we still default to localhost:8765 (in
+// case the user runs the page via `python -m http.server` and tweaks
+// the URL), but show a prominent banner explaining what to do.
+function isFileProtocol() {
+  return location.protocol === 'file:' || location.hostname === '';
+}
 function defaultApiBase() {
-  if (location.protocol === 'file:' || location.hostname === '') {
-    return 'http://localhost:8765';
-  }
+  if (isFileProtocol()) return 'http://localhost:8765';
   return '';
 }
 function getApiBase() {
@@ -1246,6 +1260,9 @@ function saveBlob(content, filename, mime) {
 
 // ============ INIT ============
 (function initApiBase() {
+  if (isFileProtocol()) {
+    document.getElementById('file-warn').style.display = 'block';
+  }
   let saved = '';
   try { saved = localStorage.getItem('debussy.demo.apiBase') || ''; } catch (e) {}
   const v = saved !== '' ? saved : defaultApiBase();

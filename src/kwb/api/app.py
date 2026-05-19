@@ -67,11 +67,11 @@ app = FastAPI(
 # upload/analyze/export endpoints, so a wildcard origin would let any
 # website a curator visits read their uploaded collection data. We allow
 # only localhost (so the demo served at /demo plus any local tooling
-# works) and "null" (the Origin header browsers send for file:// pages,
-# i.e. the downloaded standalone demo HTML).
+# works). We deliberately do NOT allow "null" — that origin is sent by
+# file:// but also by any sandboxed iframe/data: URL on a malicious page,
+# which would re-open the same exfiltration path.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["null"],
     allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
     allow_credentials=False,
     allow_methods=["*"],
