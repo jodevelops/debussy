@@ -498,7 +498,7 @@ a { color: var(--accent); }
   </div>
 
   <div class="btn-row">
-    <button class="btn" onclick="loadSampleData()">✨ Beispieldaten laden (10 Datensätze)</button>
+    <button class="btn" onclick="loadSampleData()">✨ Beispieldaten laden (30 Kunstwerke, 13 Spalten)</button>
     <span id="step1-running" class="running" style="display:none"><span class="spinner"></span>Analyse läuft …</span>
   </div>
 
@@ -856,19 +856,45 @@ function esc(s) {
 }
 
 // ============ SAMPLE DATA ============
+// 30 records, 13 columns. Curated to exercise every demo step:
+//  - Famous artists/places → GND finds many of them
+//  - Mixed date formats (year, approximate, century, range, season,
+//    ISO, slash-year, before/after, undated, empty) → EDTF showcase
+//  - Missing values in several rows → structural analysis flags them
+//  - Diversified entity types (PER, LOC, WORK, MAT, TEC, TOP, DATE)
 async function loadSampleData() {
   const csv = [
-    'inv_nr;titel;kuenstler;datierung;ort;technik',
-    'INV-001;"Bildnis Johann Wolfgang von Goethe";"Tischbein, Johann Heinrich Wilhelm";"um 1787";"Rom";"Öl auf Leinwand"',
-    'INV-002;"Pariser Straßenszene bei Regen";"Caillebotte, Gustave";"1877";"Paris";"Öl auf Leinwand"',
-    'INV-003;"Selbstbildnis";"Rembrandt van Rijn";"1659";"Amsterdam";"Öl auf Leinwand"',
-    'INV-004;"Mädchen mit dem Perlenohrring";"Vermeer, Johannes";"um 1665";"Delft";"Öl auf Leinwand"',
-    'INV-005;"Schlafende Muse";"Brancusi, Constantin";"1910";"Paris";"Bronze, poliert"',
-    'INV-006;"Komposition mit Rot, Gelb und Blau";"Mondrian, Piet";"1930";"Paris";"Öl auf Leinwand"',
-    'INV-007;"Die Lesende";;"17. Jh.";"Niederlande";"Öl auf Holz"',
-    'INV-008;"Wanderer über dem Nebelmeer";"Friedrich, Caspar David";"um 1818";"Dresden";"Öl auf Leinwand"',
-    'INV-009;"Guernica (Studie)";"Picasso, Pablo";"1937";"Paris";"Bleistift auf Papier"',
-    'INV-010;"Stillleben mit Krügen";;"undatiert";"";"Öl auf Leinwand"',
+    'inv_nr;titel;kuenstler;lebensdaten;datierung;ort;technik;material;hoehe_cm;breite_cm;ikonografie;provenienz;bemerkungen',
+    'INV-001;"Bildnis Johann Wolfgang von Goethe in der römischen Campagna";"Tischbein, Johann Heinrich Wilhelm";"1751-1829";"1787";"Rom, Italien";"Öl auf Leinwand";"Leinwand";164;206;"Porträt; Goethe; Italien-Reise";"Familie Goethe, Frankfurt; ab 1887 Städelsches Kunstinstitut";""',
+    'INV-002;"Pariser Straße bei Regen";"Caillebotte, Gustave";"1848-1894";"1877";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";212.2;276.2;"Stadtansicht; Regen; Impressionismus";"Albert Caillebotte (Bruder); 1964 Art Institute of Chicago";""',
+    'INV-003;"Selbstbildnis mit zwei Kreisen";"Rembrandt Harmenszoon van Rijn";"1606-1669";"um 1665";"Amsterdam, Niederlande";"Öl auf Leinwand";"Leinwand";114.3;94.0;"Selbstporträt; Maler; Spätwerk";"Sammlung Iveagh; seit 1927 Kenwood House";""',
+    'INV-004;"Das Mädchen mit dem Perlenohrgehänge";"Vermeer, Johannes";"1632-1675";"um 1665";"Delft, Niederlande";"Öl auf Leinwand";"Leinwand";44.5;39.0;"Tronie; Frauenporträt; Perle";"Auktion Den Haag 1881; Schenkung Des Tombe";""',
+    'INV-005;"Schlafende Muse";"Brâncuși, Constantin";"1876-1957";"1910";"Paris, Frankreich";"Bronze, poliert";"Bronze";16.0;27.5;"Skulptur; Kopf; Abstraktion";"Atelier des Künstlers; ab 1928 Centre Pompidou";""',
+    'INV-006;"Komposition mit Rot, Gelb und Blau";"Mondrian, Piet";"1872-1944";"1930";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";46.0;46.0;"Neoplastizismus; Geometrie; Primärfarben";"Sammlung Sophie Küppers, Hannover; 1937 beschlagnahmt; Restitution 1955";"Provenienzlücke 1937-1955 dokumentiert"',
+    'INV-007;"Die Lesende";;"";"17. Jh.";"Niederlande";"Öl auf Holz";"Eichenholz";45.7;36.8;"Genre; Frau; Leser";"Auktion Sotheby''s London 1971";"Maler vermutlich Schule des Gerard Dou"',
+    'INV-008;"Der Wanderer über dem Nebelmeer";"Friedrich, Caspar David";"1774-1840";"um 1818";"Dresden, Sachsen";"Öl auf Leinwand";"Leinwand";94.8;74.8;"Romantik; Landschaft; Rückenfigur";"Familie Friedrich; ab 1970 Hamburger Kunsthalle";""',
+    'INV-009;"Guernica — Studie für das Pferd";"Picasso, Pablo";"1881-1973";"1937-05-02/1937-05-08";"Paris, Frankreich";"Bleistift auf Papier";"Papier";24.2;45.4;"Spanischer Bürgerkrieg; Pferd; Studie";"Atelier des Künstlers; 1981 Museo Reina Sofía Madrid";""',
+    'INV-010;"Stillleben mit Krügen";;"";"undatiert";"";"Öl auf Leinwand";"Leinwand";;;"Stillleben; Geschirr";"Auktion Köln 1923";"Maler unbekannt; restaurierungsbedürftig"',
+    'INV-011;"Bildnis der Königin Marie Antoinette mit Rose";"Vigée-Lebrun, Élisabeth-Louise";"1755-1842";"1783";"Versailles, Frankreich";"Öl auf Leinwand";"Leinwand";273;193.5;"Höfisches Porträt; Königin; Rose";"Königliche Sammlung; nach 1789 Privatbesitz; ab 1860 Versailles";""',
+    'INV-012;"Sonnenblumen";"van Gogh, Vincent";"1853-1890";"1888-08";"Arles, Frankreich";"Öl auf Leinwand";"Leinwand";92.1;73.0;"Blumen; Sonnenblumen; Stillleben";"Theo van Gogh; ab 1924 National Gallery London";"Eines von sieben Sonnenblumen-Bildern der Arles-Serie"',
+    'INV-013;"Die Geburt der Venus";"Botticelli, Sandro";"um 1445-1510";"um 1485";"Florenz, Italien";"Tempera auf Leinwand";"Leinwand";172.5;278.5;"Mythologie; Venus; Frührenaissance";"Villa Castello, Medici; ab 1815 Uffizien Florenz";""',
+    'INV-014;"Liegender weiblicher Akt";"Modigliani, Amedeo";"1884-1920";"1917";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";60.0;92.0;"Akt; Frauenporträt; Moderne";"Galerie Berthe Weill Paris; Privatsammlung New York";""',
+    'INV-015;"Die neue Hofgartenbrücke in München";"Stieler, Joseph Karl";"1781-1858";"um 1838";"München, Bayern";"Aquarell auf Papier";"Papier";32.5;46.0;"Architektur; Brücke; Stadtansicht";"Bayerische Staatsgemäldesammlungen seit 1909";""',
+    'INV-016;"Maskenball in der Oper";"Manet, Édouard";"1832-1883";"1873";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";59.1;72.5;"Genre; Gesellschaft; Maskerade";"Sammlung Havemeyer New York; National Gallery of Art Washington";""',
+    'INV-017;"Wiener Hofmuseum bei Nacht";"Pettenkofen, August von";"1822-1889";"1883/84";"Wien, Österreich";"Öl auf Leinwand";"Leinwand";48.0;65.0;"Stadtansicht; Nacht; Museum";"Privatsammlung Wien; Albertina ab 1956";""',
+    'INV-018;"Studie zu einer sitzenden Frau";"Kollwitz, Käthe";"1867-1945";"vor 1920";"Berlin, Deutschland";"Kohle auf Papier";"Papier";63.5;48.5;"Studie; Frau; Sitzfigur";"Atelier der Künstlerin; Käthe-Kollwitz-Museum Köln";""',
+    'INV-019;"Eiffelturm im Bau";"Durandelle, Louis-Émile";"1839-1917";"1888-07-15";"Paris, Frankreich";"Albuminabzug";"Papier";43.2;33.0;"Architektur; Eiffelturm; Industrie";"Atelier Durandelle; Bibliothèque nationale de France";"Aus der Serie ''Construction de la Tour Eiffel''"',
+    'INV-020;"Die vier Reiter der Apokalypse";"Dürer, Albrecht";"1471-1528";"1497/98";"Nürnberg, Heiliges Römisches Reich";"Holzschnitt";"Papier";39.4;28.1;"Apokalypse; Reiter; Druckgrafik";"Kurfürst Friedrich der Weise; Kupferstichkabinett Berlin";""',
+    'INV-021;"Bildnis der Madame Récamier";"David, Jacques-Louis";"1748-1825";"1800";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";174.0;244.0;"Porträt; Klassizismus; Salondame";"Atelier David; Familie Récamier; Louvre 1826";""',
+    'INV-022;"Madonna mit dem Kind";;"";"15. Jh.";"Toskana, Italien";"Tempera auf Pappelholz";"Pappelholz";82.5;58.0;"Religiös; Marienbild; Kind";"Kirche San Niccolò Florenz; ab 1923 Pinakothek München";"Werkstatt eines unbekannten Florentiner Meisters"',
+    'INV-023;"Komposition VII";"Kandinsky, Wassily";"1866-1944";"1913";"München, Deutschland";"Öl auf Leinwand";"Leinwand";200.0;300.0;"Abstraktion; Expressionismus; Komposition";"Sammlung Nina Kandinsky; Tretjakow-Galerie Moskau";""',
+    'INV-024;"Der Schrei";"Munch, Edvard";"1863-1944";"1893";"Kristiania, Norwegen";"Tempera und Pastell auf Karton";"Karton";91.0;73.5;"Symbolismus; Angst; Selbstausdruck";"Atelier des Künstlers; Nasjonalmuseet Oslo";"Kristiania heute Oslo"',
+    'INV-025;"Bauerntanz";"Bruegel der Ältere, Pieter";"um 1525-1569";"um 1568";"Brüssel, Spanische Niederlande";"Öl auf Eichenholz";"Eichenholz";114.0;164.0;"Genre; Tanz; Bauern";"Erzherzog Leopold Wilhelm; Kunsthistorisches Museum Wien";""',
+    'INV-026;"Studie nach Velázquez";"Bacon, Francis";"1909-1992";"1953";"London, Vereinigtes Königreich";"Öl auf Leinwand";"Leinwand";152.0;118.0;"Porträt; Studie; Verzerrung";"Marlborough Fine Art London; Privatsammlung";""',
+    'INV-027;"Frühling — Allegorie";;"";"undatiert";"vermutlich Frankreich";"Gouache auf Papier";"Papier";35.5;28.0;"Allegorie; Frühling; Personifikation";"Auktion Drouot Paris 1958";"Signatur unleserlich; restaurierungsbedürftig"',
+    'INV-028;"Hofdame mit Sonnenschirm";"Stieglitz, Alfred";"1864-1946";"1907";"New York, USA";"Photogravüre";"Papier";20.3;16.5;"Photographie; Frauenporträt; Mode";"Camera Work Magazine; Metropolitan Museum of Art";""',
+    'INV-029;"Landschaft mit Mühle";"unbekannt";"";"17. Jh.";"Niederlande";"Öl auf Leinwand";"Leinwand";;;"Landschaft; Mühle; Holländische Schule";"Privatsammlung; Auktion Christie''s London 1995";"Zuschreibung an einen Schüler des Jacob van Ruisdael"',
+    'INV-030;"Tea Time";"Cassatt, Mary";"1844-1926";"1880";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";64.8;92.7;"Genre; Frauen; Tee";"Sammlung Havemeyer; Museum of Fine Arts Boston";""',
   ].join('\n');
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const file = new File([blob], 'demo_sammlung.csv', { type: 'text/csv' });
