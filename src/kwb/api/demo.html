@@ -1335,21 +1335,24 @@ async function resetDemo() {
 // ============ DOWNLOAD DEMO ============
 async function downloadDemo() {
   // When served from a server, just grab /demo/download (preserves single-file
-  // shape). When opened from file://, fall back to serializing the current DOM.
-  const base = getApiBase();
+  // shape). Always try /demo/download first — even when getApiBase() is
+  // empty (served from /demo same-origin), the relative fetch hits the
+  // server's clean copy. Falling through to DOM serialization without
+  // trying would embed any uploaded data and result panels currently
+  // rendered into the downloaded file.
   try {
-    if (base) {
-      const r = await fetch(base + '/demo/download');
-      if (!r.ok) throw new Error('HTTP ' + r.status);
-      const txt = await r.text();
-      saveBlob(txt, 'debussy-demo.html', 'text/html;charset=utf-8');
-      toast('Demo heruntergeladen', 'ok');
-      return;
-    }
+    const r = await fetch(getApiBase() + '/demo/download');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const txt = await r.text();
+    saveBlob(txt, 'debussy-demo.html', 'text/html;charset=utf-8');
+    toast('Demo heruntergeladen', 'ok');
+    return;
   } catch (e) {
-    toast('Server-Download fehlgeschlagen — verwende lokale Kopie', 'warn');
+    // Only reachable when the API is unreachable (e.g. file://). The
+    // serialized DOM may contain whatever the presenter loaded — warn
+    // explicitly so it doesn't get shared by accident.
+    toast('API offline — speichere Live-DOM (kann geladene Daten enthalten!)', 'warn');
   }
-  // Fallback: serialize the page we're currently looking at.
   const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
   saveBlob(html, 'debussy-demo.html', 'text/html;charset=utf-8');
 }
