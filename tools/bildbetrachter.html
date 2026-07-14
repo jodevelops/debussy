@@ -1,0 +1,883 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bildbetrachter – Digitalisate & Metadaten</title>
+<style>
+  :root {
+    --bg: #f4f5f7;
+    --panel: #ffffff;
+    --border: #d9dde3;
+    --text: #1d2733;
+    --muted: #6b7684;
+    --accent: #2f6fed;
+    --accent-soft: #e6eefc;
+    --chip: #eef1f5;
+    --shadow: 0 1px 3px rgba(20,30,45,.08), 0 1px 2px rgba(20,30,45,.06);
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; }
+
+  /* ---------- Startbildschirm ---------- */
+  #start {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: 48px 24px 64px;
+  }
+  #start h1 { font-size: 26px; margin: 0 0 6px; }
+  #start .sub { color: var(--muted); margin: 0 0 28px; font-size: 15px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 24px;
+    box-shadow: var(--shadow);
+    margin-bottom: 18px;
+  }
+  .card h2 {
+    font-size: 15px; margin: 0 0 4px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 600;
+    flex: none;
+  }
+  .card p.hint { color: var(--muted); margin: 4px 0 14px; font-size: 13px; }
+  .filebtn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 9px 16px; border: 1px solid var(--border); border-radius: 8px;
+    background: #fff; cursor: pointer; font-size: 14px; font-weight: 500;
+  }
+  .filebtn:hover { border-color: var(--accent); color: var(--accent); }
+  .filebtn input { display: none; }
+  .file-status { margin-top: 10px; font-size: 13px; color: var(--muted); }
+  .file-status.ok { color: #1a7f4b; }
+  select {
+    font-family: inherit; font-size: 14px; padding: 8px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: #fff;
+    min-width: 320px; max-width: 100%;
+  }
+  #startBtn {
+    padding: 12px 28px; border: none; border-radius: 8px;
+    background: var(--accent); color: #fff; font-size: 15px; font-weight: 600;
+    cursor: pointer;
+  }
+  #startBtn:disabled { background: #b8c2d0; cursor: not-allowed; }
+  #startBtn:not(:disabled):hover { background: #255fd6; }
+  .matchinfo { margin-top: 14px; font-size: 13px; }
+  .err { color: #c0392b; margin-top: 10px; font-size: 13px; }
+
+  /* ---------- App-Ansicht ---------- */
+  #app { display: none; height: 100vh; flex-direction: column; }
+  header.topbar {
+    display: flex; align-items: center; gap: 16px;
+    padding: 10px 18px; background: var(--panel);
+    border-bottom: 1px solid var(--border); flex: none;
+  }
+  header.topbar h1 { font-size: 15px; margin: 0; font-weight: 600; }
+  header.topbar .count { color: var(--muted); font-size: 13px; }
+  header.topbar .spacer { flex: 1; }
+  header.topbar button {
+    padding: 7px 14px; border: 1px solid var(--border); border-radius: 7px;
+    background: #fff; cursor: pointer; font-size: 13px;
+  }
+  header.topbar button:hover { border-color: var(--accent); color: var(--accent); }
+
+  .layout { display: flex; flex: 1; min-height: 0; }
+
+  /* Sidebar / Facetten */
+  aside.filters {
+    width: 300px; flex: none; background: var(--panel);
+    border-right: 1px solid var(--border); overflow-y: auto; padding: 14px;
+  }
+  aside.filters .searchbox { width: 100%; margin-bottom: 12px; }
+  aside.filters .searchbox input {
+    width: 100%; padding: 9px 11px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 14px; font-family: inherit;
+  }
+  .filterhead {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .filterhead-title { font-weight: 600; font-size: 13px; }
+  .reset-btn {
+    font-size: 12px; color: var(--accent); background: none; border: none;
+    cursor: pointer; padding: 0;
+  }
+  .facet { border-top: 1px solid var(--border); }
+  .facet-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 2px; cursor: pointer; user-select: none;
+  }
+  .facet-head .facet-name { font-weight: 600; font-size: 13px; word-break: break-word; }
+  .facet-head .facet-meta { color: var(--muted); font-size: 11px; margin-left: 6px; flex:none;}
+  .facet-head .caret { color: var(--muted); font-size: 11px; transition: transform .15s; flex:none;}
+  .facet.collapsed .caret { transform: rotate(-90deg); }
+  .facet.collapsed .facet-body { display: none; }
+  .facet-body { padding: 0 0 10px; }
+  .facet-search {
+    width: 100%; padding: 6px 8px; margin-bottom: 6px;
+    border: 1px solid var(--border); border-radius: 6px; font-size: 13px; font-family: inherit;
+  }
+  .facet-values { max-height: 220px; overflow-y: auto; }
+  label.fval {
+    display: flex; align-items: center; gap: 7px; padding: 3px 2px;
+    font-size: 13px; cursor: pointer; border-radius: 5px;
+  }
+  label.fval:hover { background: var(--chip); }
+  label.fval input { flex: none; }
+  label.fval .fval-text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  label.fval .fval-count { color: var(--muted); font-size: 11px; flex: none; }
+  .facet-body .textfilter {
+    width: 100%; padding: 7px 9px; border: 1px solid var(--border);
+    border-radius: 6px; font-size: 13px; font-family: inherit;
+  }
+
+  /* Hauptbereich */
+  main.viewer { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .stage {
+    flex: 1; display: flex; min-height: 0;
+  }
+  .imgwrap {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background: #22282f; min-width: 0; position: relative; overflow: hidden;
+  }
+  .imgwrap img {
+    max-width: 100%; max-height: 100%; object-fit: contain;
+    box-shadow: 0 4px 24px rgba(0,0,0,.4);
+  }
+  .imgwrap .placeholder { color: #9aa4b0; text-align: center; padding: 20px; }
+  .imgwrap .navarrow {
+    position: absolute; top: 50%; transform: translateY(-50%);
+    background: rgba(0,0,0,.4); color: #fff; border: none; cursor: pointer;
+    width: 44px; height: 64px; font-size: 26px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .imgwrap .navarrow:hover { background: rgba(0,0,0,.65); }
+  .imgwrap .navarrow.prev { left: 10px; }
+  .imgwrap .navarrow.next { right: 10px; }
+  .imgwrap .filelabel {
+    position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.55); color: #fff; padding: 4px 12px;
+    border-radius: 20px; font-size: 12px; max-width: 80%;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* Metadaten-Panel */
+  .metapanel {
+    width: 360px; flex: none; background: var(--panel);
+    border-left: 1px solid var(--border); overflow-y: auto; padding: 16px;
+  }
+  .metapanel h3 { font-size: 13px; margin: 0 0 12px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .04em; }
+  .metarow { padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .metarow:last-child { border-bottom: none; }
+  .metakey { font-size: 11px; color: var(--muted); margin-bottom: 2px;
+    text-transform: uppercase; letter-spacing: .03em; word-break: break-word; }
+  .metaval { font-size: 14px; word-break: break-word; white-space: pre-wrap; }
+  .metaval.empty { color: #b8c2d0; font-style: italic; }
+  .metaval .clickfilter {
+    cursor: pointer; border-bottom: 1px dashed transparent;
+  }
+  .metaval .clickfilter:hover { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* Filmstreifen */
+  .filmstrip {
+    flex: none; height: 108px; background: var(--panel);
+    border-top: 1px solid var(--border); display: flex; align-items: center;
+    gap: 8px; padding: 8px 12px; overflow-x: auto; overflow-y: hidden;
+  }
+  .thumb {
+    flex: none; width: 92px; height: 92px; border-radius: 8px;
+    border: 2px solid transparent; overflow: hidden; cursor: pointer;
+    background: #e8ebef; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .thumb.active { border-color: var(--accent); }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .thumb .noimg { font-size: 10px; color: var(--muted); text-align: center; padding: 4px; }
+  .filmstrip .empty { color: var(--muted); font-size: 13px; padding: 0 8px; }
+
+  .badge-missing {
+    display: inline-block; font-size: 11px; background: #fdecea; color: #c0392b;
+    padding: 2px 8px; border-radius: 12px; margin-bottom: 10px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ STARTBILDSCHIRM ============ -->
+<div id="start">
+  <h1>Bildbetrachter für Digitalisate</h1>
+  <p class="sub">Bilder mit den zugehörigen CSV-Metadaten ansehen – lokal im Browser, ohne Installation.</p>
+
+  <div class="card">
+    <h2><span class="step-num">1</span> Metadaten-Datei (CSV) wählen</h2>
+    <p class="hint">Die Tabelle mit allen Metadaten. Eine Spalte enthält die Bild-Dateinamen.</p>
+    <label class="filebtn">
+      📄 CSV-Datei auswählen
+      <input type="file" id="csvInput" accept=".csv,.tsv,.txt">
+    </label>
+    <div class="file-status" id="csvStatus">Noch keine Datei gewählt.</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">2</span> Bilderordner wählen</h2>
+    <p class="hint">Der Ordner mit den Digitalisaten. Unterordner werden automatisch mit durchsucht.</p>
+    <label class="filebtn">
+      🖼️ Bilderordner auswählen
+      <input type="file" id="dirInput" webkitdirectory directory multiple>
+    </label>
+    <div class="file-status" id="dirStatus">Noch kein Ordner gewählt.</div>
+  </div>
+
+  <div class="card">
+    <h2><span class="step-num">3</span> Spalte mit den Dateinamen</h2>
+    <p class="hint">In welcher CSV-Spalte stehen die Bild-Dateinamen (z.&nbsp;B. <code>Bild008-2048.jpg</code>)?</p>
+    <select id="fileColSelect" disabled><option>Bitte zuerst CSV wählen …</option></select>
+    <div class="matchinfo" id="matchInfo"></div>
+  </div>
+
+  <button id="startBtn" disabled>Betrachter öffnen →</button>
+  <div class="err" id="startErr"></div>
+</div>
+
+<!-- ============ APP-ANSICHT ============ -->
+<div id="app">
+  <header class="topbar">
+    <h1>Bildbetrachter</h1>
+    <span class="count" id="countLabel"></span>
+    <span class="spacer"></span>
+    <button id="backBtn">↺ Andere Daten laden</button>
+  </header>
+  <div class="layout">
+    <aside class="filters">
+      <div class="searchbox">
+        <input type="search" id="globalSearch" placeholder="🔍 In allen Metadaten suchen …">
+      </div>
+      <div class="filterhead">
+        <span class="filterhead-title">Filter / Facetten</span>
+        <button class="reset-btn" id="resetFilters">Zurücksetzen</button>
+      </div>
+      <div id="facets"></div>
+    </aside>
+    <main class="viewer">
+      <div class="stage">
+        <div class="imgwrap">
+          <button class="navarrow prev" id="prevBtn" title="Vorheriges (←)">‹</button>
+          <div id="imgHost"><div class="placeholder">Kein Bild ausgewählt</div></div>
+          <button class="navarrow next" id="nextBtn" title="Nächstes (→)">›</button>
+          <div class="filelabel" id="fileLabel" style="display:none"></div>
+        </div>
+        <div class="metapanel" id="metaPanel">
+          <h3>Metadaten</h3>
+          <div id="metaBody"></div>
+        </div>
+      </div>
+      <div class="filmstrip" id="filmstrip"></div>
+    </main>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ===================== Zustand ===================== */
+var STATE = {
+  headers: [],          // CSV-Spaltennamen
+  rows: [],             // Array von Objekten { col: value }
+  fileCol: null,        // Spaltenname mit Dateinamen
+  imageMap: {},         // basename(lowercase) -> File
+  urlCache: {},         // basename -> objectURL (lazy)
+  items: [],            // sichtbare/gefilterte Zeilen (Index in rows)
+  activeFacets: {},     // col -> Set(values)
+  textFilters: {},      // col -> string
+  globalSearch: "",
+  facetCols: [],        // Spalten mit Checkbox-Facetten
+  textCols: [],         // Spalten mit Textfilter
+  current: 0,           // Index in items
+  collapsed: {}         // col -> bool
+};
+
+/* ===================== CSV-Parser ===================== */
+function detectDelimiter(sample) {
+  var firstLine = sample.split(/\r?\n/)[0] || "";
+  var counts = { ",": 0, ";": 0, "\t": 0, "|": 0 };
+  var inQ = false;
+  for (var i = 0; i < firstLine.length; i++) {
+    var c = firstLine[i];
+    if (c === '"') inQ = !inQ;
+    else if (!inQ && counts.hasOwnProperty(c)) counts[c]++;
+  }
+  var best = ",", bestN = -1;
+  for (var d in counts) { if (counts[d] > bestN) { bestN = counts[d]; best = d; } }
+  return best;
+}
+
+function parseCSV(text, delim) {
+  // BOM entfernen
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
+  var rows = [];
+  var row = [];
+  var field = "";
+  var inQ = false;
+  var i = 0, n = text.length;
+  while (i < n) {
+    var c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i+1] === '"') { field += '"'; i += 2; continue; }
+        inQ = false; i++; continue;
+      }
+      field += c; i++; continue;
+    } else {
+      if (c === '"') { inQ = true; i++; continue; }
+      if (c === delim) { row.push(field); field = ""; i++; continue; }
+      if (c === '\n') { row.push(field); rows.push(row); row = []; field = ""; i++; continue; }
+      if (c === '\r') { i++; continue; }
+      field += c; i++; continue;
+    }
+  }
+  // letzter Rest
+  if (field.length > 0 || row.length > 0) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function basename(path) {
+  if (!path) return "";
+  var p = String(path).replace(/\\/g, "/");
+  var idx = p.lastIndexOf("/");
+  return (idx >= 0 ? p.slice(idx + 1) : p).trim();
+}
+
+/* ===================== Datei-Handling (Start) ===================== */
+var csvLoaded = false, dirLoaded = false;
+
+document.getElementById("csvInput").addEventListener("change", function (e) {
+  var file = e.target.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function () {
+    try {
+      var text = reader.result;
+      var delim = detectDelimiter(text.slice(0, 5000));
+      var raw = parseCSV(text, delim);
+      if (!raw.length) throw new Error("CSV ist leer.");
+      var headers = raw[0].map(function (h) { return h.trim(); });
+      var rows = [];
+      for (var r = 1; r < raw.length; r++) {
+        var arr = raw[r];
+        if (arr.length === 1 && arr[0] === "") continue; // Leerzeile
+        var obj = {};
+        for (var c = 0; c < headers.length; c++) {
+          obj[headers[c]] = (arr[c] !== undefined ? arr[c] : "").trim();
+        }
+        rows.push(obj);
+      }
+      STATE.headers = headers;
+      STATE.rows = rows;
+      csvLoaded = true;
+      document.getElementById("csvStatus").textContent =
+        "✓ " + file.name + " – " + rows.length + " Zeilen, " + headers.length + " Spalten (Trennzeichen: „" + (delim === "\t" ? "Tab" : delim) + "“)";
+      document.getElementById("csvStatus").className = "file-status ok";
+      populateColumnSelect(headers);
+      updateStartState();
+    } catch (err) {
+      document.getElementById("csvStatus").textContent = "Fehler beim Lesen: " + err.message;
+      document.getElementById("csvStatus").className = "file-status";
+      csvLoaded = false;
+      updateStartState();
+    }
+  };
+  reader.readAsText(file, "utf-8");
+});
+
+document.getElementById("dirInput").addEventListener("change", function (e) {
+  var files = e.target.files;
+  var imgExt = /\.(jpe?g|png|gif|tiff?|bmp|webp|avif)$/i;
+  STATE.imageMap = {};
+  var count = 0, rootName = "";
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    var rel = f.webkitRelativePath || f.name;
+    if (!rootName) rootName = rel.split("/")[0];
+    if (!imgExt.test(f.name)) continue;
+    STATE.imageMap[f.name.toLowerCase()] = f;
+    count++;
+  }
+  dirLoaded = count > 0;
+  var status = document.getElementById("dirStatus");
+  if (dirLoaded) {
+    status.textContent = "✓ Ordner „" + rootName + "“ – " + count + " Bilddateien gefunden";
+    status.className = "file-status ok";
+  } else {
+    status.textContent = "Keine Bilddateien in diesem Ordner gefunden.";
+    status.className = "file-status";
+  }
+  updateStartState();
+});
+
+function populateColumnSelect(headers) {
+  var sel = document.getElementById("fileColSelect");
+  sel.innerHTML = "";
+  sel.disabled = false;
+  // Vorschläge, die typischerweise Dateinamen enthalten
+  var preferred = ["dias_jpg-file-name2048", "file-name", "filename", "dateiname", "datei"];
+  var guessIdx = -1;
+  headers.forEach(function (h, idx) {
+    var opt = document.createElement("option");
+    opt.value = h; opt.textContent = h;
+    sel.appendChild(opt);
+    var hl = h.toLowerCase();
+    if (guessIdx < 0) {
+      for (var p = 0; p < preferred.length; p++) {
+        if (hl.indexOf(preferred[p]) >= 0) { guessIdx = idx; break; }
+      }
+    }
+  });
+  if (guessIdx >= 0) sel.selectedIndex = guessIdx;
+  sel.addEventListener("change", updateMatchInfo);
+  updateMatchInfo();
+}
+
+function updateMatchInfo() {
+  var info = document.getElementById("matchInfo");
+  if (!csvLoaded) { info.textContent = ""; return; }
+  var col = document.getElementById("fileColSelect").value;
+  if (!dirLoaded) {
+    info.innerHTML = "<span style='color:var(--muted)'>Wähle einen Bilderordner, um die Zuordnung zu prüfen.</span>";
+    return;
+  }
+  var matched = 0, total = 0;
+  for (var i = 0; i < STATE.rows.length; i++) {
+    var val = basename(STATE.rows[i][col]);
+    if (!val) continue;
+    total++;
+    if (STATE.imageMap[val.toLowerCase()]) matched++;
+  }
+  var color = matched > 0 ? "#1a7f4b" : "#c0392b";
+  info.innerHTML = "<b style='color:" + color + "'>" + matched + " von " + total + "</b> CSV-Zeilen konnten einem Bild zugeordnet werden.";
+}
+
+function updateStartState() {
+  var btn = document.getElementById("startBtn");
+  btn.disabled = !(csvLoaded && dirLoaded);
+  if (csvLoaded) updateMatchInfo();
+}
+
+document.getElementById("startBtn").addEventListener("click", function () {
+  STATE.fileCol = document.getElementById("fileColSelect").value;
+  try {
+    startApp();
+  } catch (err) {
+    document.getElementById("startErr").textContent = "Fehler: " + err.message;
+  }
+});
+
+/* ===================== App starten ===================== */
+function startApp() {
+  // Facet- vs. Textspalten bestimmen
+  computeColumnTypes();
+  STATE.activeFacets = {};
+  STATE.textFilters = {};
+  STATE.globalSearch = "";
+  STATE.current = 0;
+  buildFacets();
+  applyFilters();
+  document.getElementById("start").style.display = "none";
+  document.getElementById("app").style.display = "flex";
+}
+
+function computeColumnTypes() {
+  var FACET_MAX = 40; // max. verschiedene Werte für eine Checkbox-Facette
+  STATE.facetCols = [];
+  STATE.textCols = [];
+  STATE.headers.forEach(function (col) {
+    if (col === STATE.fileCol) return; // Dateiname-Spalte nicht als Filter
+    var distinct = {};
+    var nonEmpty = 0;
+    for (var i = 0; i < STATE.rows.length; i++) {
+      var v = STATE.rows[i][col];
+      if (v === "" || v == null) continue;
+      nonEmpty++;
+      distinct[v] = (distinct[v] || 0) + 1;
+    }
+    var keys = Object.keys(distinct);
+    if (keys.length === 0) return; // komplett leere Spalte überspringen
+    if (keys.length <= FACET_MAX && keys.length < nonEmpty) {
+      STATE.facetCols.push(col);
+    } else {
+      STATE.textCols.push(col);
+    }
+  });
+}
+
+/* ===================== Facetten bauen ===================== */
+function distinctCounts(col, respectFilters) {
+  // Wertehäufigkeiten für eine Spalte, optional unter Berücksichtigung
+  // aller ANDEREN aktiven Filter (klassisches Facetten-Verhalten).
+  var counts = {};
+  for (var i = 0; i < STATE.rows.length; i++) {
+    if (respectFilters && !rowMatches(STATE.rows[i], col)) continue;
+    var v = STATE.rows[i][col];
+    if (v === "" || v == null) continue;
+    counts[v] = (counts[v] || 0) + 1;
+  }
+  return counts;
+}
+
+function buildFacets() {
+  var host = document.getElementById("facets");
+  host.innerHTML = "";
+
+  // Checkbox-Facetten
+  STATE.facetCols.forEach(function (col) {
+    var wrap = document.createElement("div");
+    wrap.className = "facet" + (STATE.collapsed[col] ? " collapsed" : "");
+    wrap.dataset.col = col;
+
+    var head = document.createElement("div");
+    head.className = "facet-head";
+    var counts = distinctCounts(col, false);
+    var nvals = Object.keys(counts).length;
+    head.innerHTML = '<span class="facet-name">' + esc(col) +
+      '<span class="facet-meta">' + nvals + '</span></span><span class="caret">▾</span>';
+    head.addEventListener("click", function () {
+      wrap.classList.toggle("collapsed");
+      STATE.collapsed[col] = wrap.classList.contains("collapsed");
+    });
+    wrap.appendChild(head);
+
+    var body = document.createElement("div");
+    body.className = "facet-body";
+    if (nvals > 12) {
+      var fs = document.createElement("input");
+      fs.className = "facet-search";
+      fs.placeholder = "Werte filtern …";
+      fs.addEventListener("input", function () { renderFacetValues(col, valuesHost, fs.value); });
+      fs.addEventListener("click", function (e) { e.stopPropagation(); });
+      body.appendChild(fs);
+    }
+    var valuesHost = document.createElement("div");
+    valuesHost.className = "facet-values";
+    body.appendChild(valuesHost);
+    wrap.appendChild(body);
+    host.appendChild(wrap);
+
+    renderFacetValues(col, valuesHost, "");
+  });
+
+  // Textfilter-Spalten
+  STATE.textCols.forEach(function (col) {
+    var wrap = document.createElement("div");
+    wrap.className = "facet" + (STATE.collapsed[col] ? " collapsed" : "");
+    var head = document.createElement("div");
+    head.className = "facet-head";
+    head.innerHTML = '<span class="facet-name">' + esc(col) +
+      '<span class="facet-meta">Text</span></span><span class="caret">▾</span>';
+    head.addEventListener("click", function () {
+      wrap.classList.toggle("collapsed");
+      STATE.collapsed[col] = wrap.classList.contains("collapsed");
+    });
+    wrap.appendChild(head);
+    var body = document.createElement("div");
+    body.className = "facet-body";
+    var inp = document.createElement("input");
+    inp.className = "textfilter";
+    inp.placeholder = "enthält …";
+    inp.value = STATE.textFilters[col] || "";
+    inp.addEventListener("input", function () {
+      STATE.textFilters[col] = inp.value.trim();
+      applyFilters();
+    });
+    inp.addEventListener("click", function (e) { e.stopPropagation(); });
+    body.appendChild(inp);
+    wrap.appendChild(body);
+    host.appendChild(wrap);
+  });
+}
+
+function renderFacetValues(col, host, filterText) {
+  var counts = distinctCounts(col, true);
+  var allCounts = distinctCounts(col, false);
+  host.innerHTML = "";
+  var ft = (filterText || "").toLowerCase();
+  var keys = Object.keys(allCounts).sort(function (a, b) {
+    return allCounts[b] - allCounts[a] || a.localeCompare(b, "de");
+  });
+  var selected = STATE.activeFacets[col] || new Set();
+  keys.forEach(function (val) {
+    if (ft && val.toLowerCase().indexOf(ft) < 0) return;
+    var lbl = document.createElement("label");
+    lbl.className = "fval";
+    var cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = selected.has(val);
+    cb.addEventListener("change", function () {
+      if (!STATE.activeFacets[col]) STATE.activeFacets[col] = new Set();
+      if (cb.checked) STATE.activeFacets[col].add(val);
+      else {
+        STATE.activeFacets[col].delete(val);
+        if (STATE.activeFacets[col].size === 0) delete STATE.activeFacets[col];
+      }
+      applyFilters();
+    });
+    var cnt = counts[val] || 0;
+    var txt = document.createElement("span");
+    txt.className = "fval-text"; txt.textContent = val; txt.title = val;
+    var cspan = document.createElement("span");
+    cspan.className = "fval-count"; cspan.textContent = cnt;
+    lbl.appendChild(cb); lbl.appendChild(txt); lbl.appendChild(cspan);
+    if (cnt === 0 && !cb.checked) lbl.style.opacity = ".45";
+    host.appendChild(lbl);
+  });
+  if (!host.children.length) {
+    host.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:4px 2px">Keine Treffer</div>';
+  }
+}
+
+/* ===================== Filtern ===================== */
+// exceptCol: diese Spalte bei der Prüfung ignorieren (für Facetten-Counts)
+function rowMatches(row, exceptCol) {
+  // Globale Suche
+  if (STATE.globalSearch) {
+    var q = STATE.globalSearch.toLowerCase();
+    var hit = false;
+    for (var h = 0; h < STATE.headers.length; h++) {
+      var v = row[STATE.headers[h]];
+      if (v && String(v).toLowerCase().indexOf(q) >= 0) { hit = true; break; }
+    }
+    if (!hit) return false;
+  }
+  // Checkbox-Facetten (ODER innerhalb einer Spalte, UND zwischen Spalten)
+  for (var col in STATE.activeFacets) {
+    if (col === exceptCol) continue;
+    var sel = STATE.activeFacets[col];
+    if (sel && sel.size && !sel.has(row[col])) return false;
+  }
+  // Textfilter
+  for (var tcol in STATE.textFilters) {
+    if (tcol === exceptCol) continue;
+    var tf = STATE.textFilters[tcol];
+    if (!tf) continue;
+    var rv = row[tcol];
+    if (!rv || String(rv).toLowerCase().indexOf(tf.toLowerCase()) < 0) return false;
+  }
+  return true;
+}
+
+function applyFilters() {
+  STATE.items = [];
+  for (var i = 0; i < STATE.rows.length; i++) {
+    if (rowMatches(STATE.rows[i], null)) STATE.items.push(i);
+  }
+  if (STATE.current >= STATE.items.length) STATE.current = 0;
+  // Facetten-Counts aktualisieren
+  refreshFacetCounts();
+  renderFilmstrip();
+  renderCurrent();
+  document.getElementById("countLabel").textContent =
+    STATE.items.length + " von " + STATE.rows.length + " Datensätzen";
+}
+
+function refreshFacetCounts() {
+  // Nur die Wertelisten der Checkbox-Facetten neu berechnen
+  var facetEls = document.querySelectorAll('#facets .facet');
+  facetEls.forEach(function (el) {
+    var col = el.dataset.col;
+    if (!col || STATE.facetCols.indexOf(col) < 0) return;
+    var vhost = el.querySelector(".facet-values");
+    var fs = el.querySelector(".facet-search");
+    if (vhost) renderFacetValues(col, vhost, fs ? fs.value : "");
+  });
+}
+
+/* ===================== Anzeige ===================== */
+function getObjectURL(fname) {
+  var key = fname.toLowerCase();
+  if (STATE.urlCache[key]) return STATE.urlCache[key];
+  var file = STATE.imageMap[key];
+  if (!file) return null;
+  var url = URL.createObjectURL(file);
+  STATE.urlCache[key] = url;
+  return url;
+}
+
+function renderCurrent() {
+  var host = document.getElementById("imgHost");
+  var label = document.getElementById("fileLabel");
+  var metaBody = document.getElementById("metaBody");
+  if (!STATE.items.length) {
+    host.innerHTML = '<div class="placeholder">Keine Datensätze entsprechen den Filtern.</div>';
+    label.style.display = "none";
+    metaBody.innerHTML = '<div style="color:var(--muted)">–</div>';
+    return;
+  }
+  var rowIdx = STATE.items[STATE.current];
+  var row = STATE.rows[rowIdx];
+  var fname = basename(row[STATE.fileCol]);
+  var url = fname ? getObjectURL(fname) : null;
+
+  if (url) {
+    host.innerHTML = "";
+    var img = document.createElement("img");
+    img.src = url;
+    img.alt = fname;
+    host.appendChild(img);
+    label.textContent = fname;
+    label.style.display = "block";
+  } else {
+    host.innerHTML = '<div class="placeholder">🚫 Kein Bild gefunden für<br><b>' +
+      esc(fname || "(leer)") + '</b></div>';
+    label.style.display = "none";
+  }
+
+  // Metadaten
+  var html = "";
+  if (!url && fname) html += '<div class="badge-missing">Bilddatei nicht im Ordner gefunden</div>';
+  STATE.headers.forEach(function (col) {
+    var val = row[col];
+    var isEmpty = (val === "" || val == null);
+    html += '<div class="metarow"><div class="metakey">' + esc(col) + '</div>';
+    if (isEmpty) {
+      html += '<div class="metaval empty">—</div>';
+    } else if (STATE.facetCols.indexOf(col) >= 0) {
+      // klickbar zum Filtern
+      html += '<div class="metaval"><span class="clickfilter" data-col="' + escAttr(col) +
+        '" data-val="' + escAttr(val) + '" title="Nach diesem Wert filtern">' + esc(val) + '</span></div>';
+    } else {
+      html += '<div class="metaval">' + esc(val) + '</div>';
+    }
+    html += '</div>';
+  });
+  metaBody.innerHTML = html;
+  metaBody.querySelectorAll(".clickfilter").forEach(function (el) {
+    el.addEventListener("click", function () {
+      var col = el.dataset.col, val = el.dataset.val;
+      if (!STATE.activeFacets[col]) STATE.activeFacets[col] = new Set();
+      STATE.activeFacets[col].add(val);
+      STATE.collapsed[col] = false;
+      buildFacets();
+      applyFilters();
+    });
+  });
+
+  // aktiven Thumbnail markieren
+  var thumbs = document.querySelectorAll("#filmstrip .thumb");
+  thumbs.forEach(function (t, idx) {
+    t.classList.toggle("active", idx === STATE.current);
+  });
+  var active = thumbs[STATE.current];
+  if (active) active.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+}
+
+var thumbObserver = null;
+function renderFilmstrip() {
+  var strip = document.getElementById("filmstrip");
+  strip.innerHTML = "";
+  if (thumbObserver) thumbObserver.disconnect();
+  thumbObserver = new IntersectionObserver(function (entries) {
+    entries.forEach(function (en) {
+      if (!en.isIntersecting) return;
+      var el = en.target;
+      var fname = el.dataset.fname;
+      var url = fname ? getObjectURL(fname) : null;
+      if (url) {
+        var img = document.createElement("img");
+        img.src = url;
+        el.innerHTML = "";
+        el.appendChild(img);
+      } else {
+        el.innerHTML = '<div class="noimg">kein Bild</div>';
+      }
+      thumbObserver.unobserve(el);
+    });
+  }, { root: strip, rootMargin: "200px" });
+
+  if (!STATE.items.length) {
+    strip.innerHTML = '<div class="empty">Keine Treffer.</div>';
+    return;
+  }
+  STATE.items.forEach(function (rowIdx, i) {
+    var row = STATE.rows[rowIdx];
+    var fname = basename(row[STATE.fileCol]);
+    var t = document.createElement("div");
+    t.className = "thumb" + (i === STATE.current ? " active" : "");
+    t.dataset.fname = fname;
+    t.title = fname;
+    t.innerHTML = '<div class="noimg">…</div>';
+    t.addEventListener("click", function () {
+      STATE.current = i;
+      renderCurrent();
+    });
+    strip.appendChild(t);
+    thumbObserver.observe(t);
+  });
+}
+
+/* ===================== Navigation ===================== */
+function go(delta) {
+  if (!STATE.items.length) return;
+  STATE.current = (STATE.current + delta + STATE.items.length) % STATE.items.length;
+  renderCurrent();
+}
+document.getElementById("prevBtn").addEventListener("click", function () { go(-1); });
+document.getElementById("nextBtn").addEventListener("click", function () { go(1); });
+document.addEventListener("keydown", function (e) {
+  if (document.getElementById("app").style.display === "none") return;
+  var tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "select" || tag === "textarea") return;
+  if (e.key === "ArrowLeft") { go(-1); e.preventDefault(); }
+  else if (e.key === "ArrowRight") { go(1); e.preventDefault(); }
+});
+
+/* ===================== Suche & Reset ===================== */
+var searchTimer = null;
+document.getElementById("globalSearch").addEventListener("input", function (e) {
+  clearTimeout(searchTimer);
+  var v = e.target.value.trim();
+  searchTimer = setTimeout(function () {
+    STATE.globalSearch = v;
+    applyFilters();
+  }, 180);
+});
+
+document.getElementById("resetFilters").addEventListener("click", function () {
+  STATE.activeFacets = {};
+  STATE.textFilters = {};
+  STATE.globalSearch = "";
+  document.getElementById("globalSearch").value = "";
+  buildFacets();
+  applyFilters();
+});
+
+document.getElementById("backBtn").addEventListener("click", function () {
+  // Object-URLs freigeben
+  for (var k in STATE.urlCache) URL.revokeObjectURL(STATE.urlCache[k]);
+  STATE.urlCache = {};
+  document.getElementById("app").style.display = "none";
+  document.getElementById("start").style.display = "block";
+});
+
+/* ===================== Hilfsfunktionen ===================== */
+function esc(s) {
+  return String(s == null ? "" : s)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function escAttr(s) {
+  return esc(s).replace(/"/g, "&quot;");
+}
+</script>
+</body>
+</html>
