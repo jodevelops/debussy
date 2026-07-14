@@ -15,7 +15,8 @@ Daten bleiben auf dem eigenen Rechner.
 1. **CSV-Datei wählen** – die Tabelle mit den Metadaten. Trennzeichen
    (Komma, Semikolon, Tab) und ein evtl. BOM werden automatisch erkannt.
 2. **Bilderordner wählen** – der Ordner mit den Digitalisaten. Unterordner
-   werden automatisch mit durchsucht.
+   werden automatisch mit durchsucht. Unterstützte Formate: JPEG, PNG,
+   **TIFF**, GIF, BMP, WebP.
 3. **Dateinamen-Spalte** – wird meist automatisch erkannt (z. B.
    `dias_jpg-file-name2048`), lässt sich aber umstellen. Direkt darunter
    wird angezeigt, wie viele CSV-Zeilen einem Bild zugeordnet werden konnten.
@@ -40,6 +41,15 @@ Pfad-Vorsätze werden dabei ignoriert.
 
 Über **„Andere Daten laden“** oben rechts lässt sich jederzeit eine neue
 CSV bzw. ein neuer Ordner wählen.
+
+## TIFF-Dateien
+
+TIFF-Bilder können Browser nicht von sich aus anzeigen. Das Tool bringt
+dafür einen eingebauten TIFF-Decoder mit (UTIF.js, MIT-Lizenz, direkt in
+die HTML-Datei eingebettet) und wandelt TIFFs beim Anzeigen automatisch um –
+weiterhin ganz ohne Internet oder Installation. Das Dekodieren großer TIFFs
+kann einen kurzen Moment dauern; solange erscheint „Bild wird geladen …“.
+Bei mehrseitigen TIFFs wird die erste Seite angezeigt.
 
 ## Browser-Hinweis
 
