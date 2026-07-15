@@ -1,0 +1,1408 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Debussy — Live-Demo</title>
+<style>
+:root {
+  --bg: #0b1020;
+  --bg-soft: #131a33;
+  --panel: #1a2340;
+  --panel-2: #232e54;
+  --line: #2c3865;
+  --txt: #f5f7ff;
+  --muted: #97a3c8;
+  --accent: #6ea8ff;
+  --accent-2: #b388ff;
+  --ok: #4ade80;
+  --warn: #fbbf24;
+  --err: #f87171;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; height: 100%; }
+body {
+  font-family: -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: radial-gradient(ellipse at top, #1a2340 0%, var(--bg) 60%);
+  color: var(--txt);
+  font-size: 17px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+header {
+  padding: 1.6rem 2.4rem 1.2rem;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2rem;
+  border-bottom: 1px solid var(--line);
+}
+h1 {
+  margin: 0;
+  font-size: 2.2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+h1 .accent {
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+h1 .sub {
+  display: block;
+  font-size: 1rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 0.2rem;
+  letter-spacing: 0;
+}
+.status-bar {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--muted);
+  display: inline-block;
+  margin-right: 0.4rem;
+}
+.dot.on { background: var(--ok); box-shadow: 0 0 8px rgba(74, 222, 128, 0.6); }
+.dot.off { background: var(--err); }
+.apibase {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.apibase input {
+  background: var(--panel-2);
+  color: var(--txt);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.78rem;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  width: 200px;
+}
+
+main {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 1.6rem 2.4rem 4rem;
+}
+
+/* Stepper */
+.stepper {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 2rem;
+}
+.step {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 1rem 1.2rem;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.step:hover { border-color: var(--accent); transform: translateY(-2px); }
+.step.active {
+  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--panel-2), var(--panel));
+  box-shadow: 0 4px 24px rgba(110, 168, 255, 0.15);
+}
+.step.done {
+  border-color: var(--ok);
+}
+.step.done::after {
+  content: "✓";
+  position: absolute;
+  top: 0.6rem;
+  right: 0.8rem;
+  color: var(--ok);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+.step .num {
+  font-size: 0.75rem;
+  color: var(--muted);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.step .name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  margin-top: 0.3rem;
+}
+.step .hint {
+  font-size: 0.75rem;
+  color: var(--muted);
+  margin-top: 0.3rem;
+}
+
+/* Panels */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 1.8rem 2rem;
+  margin-bottom: 1.4rem;
+  display: none;
+}
+.panel.active { display: block; animation: fadein 0.3s ease; }
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.panel h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+.panel .lede {
+  color: var(--muted);
+  margin: 0 0 1.2rem;
+  font-size: 0.95rem;
+}
+
+/* Buttons */
+.btn {
+  background: var(--accent);
+  color: #0b1020;
+  border: none;
+  padding: 0.7rem 1.2rem;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(110, 168, 255, 0.4); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+.btn.secondary {
+  background: transparent;
+  color: var(--txt);
+  border: 1px solid var(--line);
+}
+.btn.secondary:hover { border-color: var(--accent); background: var(--panel-2); }
+.btn.big {
+  padding: 1rem 1.8rem;
+  font-size: 1.1rem;
+  border-radius: 12px;
+}
+.btn-row {
+  display: flex;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+  margin-top: 1rem;
+}
+
+/* Upload zone */
+.drop {
+  border: 2px dashed var(--line);
+  border-radius: 14px;
+  padding: 2.4rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(255, 255, 255, 0.02);
+}
+.drop:hover, .drop.over {
+  border-color: var(--accent);
+  background: rgba(110, 168, 255, 0.05);
+}
+.drop .icon {
+  font-size: 2.4rem;
+  margin-bottom: 0.4rem;
+}
+.drop p { margin: 0.3rem 0; }
+.drop p.hint { color: var(--muted); font-size: 0.85rem; }
+.drop input[type=file] { display: none; }
+
+/* KPI grid */
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+.kpi {
+  background: var(--panel-2);
+  border-radius: 12px;
+  padding: 1rem 1.2rem;
+  border: 1px solid var(--line);
+}
+.kpi .lbl {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.kpi .val {
+  font-size: 2rem;
+  font-weight: 700;
+  margin-top: 0.2rem;
+  background: linear-gradient(120deg, var(--accent), var(--accent-2));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+.kpi .sub { font-size: 0.75rem; color: var(--muted); margin-top: 0.2rem; }
+
+/* Entity chips */
+.entgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+.enttype {
+  background: var(--panel-2);
+  border-radius: 12px;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+}
+.enttype .hdr {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.6rem;
+}
+.enttype .hdr .nm {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.enttype .hdr .ct {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.chip {
+  background: rgba(110, 168, 255, 0.1);
+  border: 1px solid rgba(110, 168, 255, 0.25);
+  color: var(--txt);
+  padding: 0.2rem 0.55rem;
+  border-radius: 6px;
+  font-size: 0.8rem;
+}
+.chip.gnd {
+  background: rgba(74, 222, 128, 0.1);
+  border-color: rgba(74, 222, 128, 0.3);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+th, td {
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+}
+th {
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+td.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.85rem; }
+td.ok { color: var(--ok); }
+td.warn { color: var(--warn); }
+td.err { color: var(--err); }
+.scroll {
+  max-height: 360px;
+  overflow-y: auto;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+/* Selects */
+select, input[type=text] {
+  background: var(--panel-2);
+  color: var(--txt);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+  font-family: inherit;
+}
+label.field {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  margin-right: 1rem;
+}
+label.field span {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Progress */
+.progress {
+  height: 8px;
+  background: var(--panel-2);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 1rem;
+}
+.progress .bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.3s ease;
+  border-radius: 4px;
+}
+
+/* Toast */
+#toast {
+  position: fixed;
+  bottom: 1.5rem;
+  right: 1.5rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0.9rem 1.3rem;
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.45);
+  display: none;
+  z-index: 100;
+  max-width: 320px;
+}
+#toast.show { display: block; animation: slidein 0.25s ease; }
+#toast.err { border-color: var(--err); }
+#toast.ok { border-color: var(--ok); }
+@keyframes slidein {
+  from { transform: translateX(120%); }
+  to { transform: translateX(0); }
+}
+
+/* Footer / running */
+.running {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.empty {
+  color: var(--muted);
+  text-align: center;
+  padding: 2rem;
+  font-style: italic;
+}
+
+.callout {
+  background: rgba(110, 168, 255, 0.08);
+  border-left: 3px solid var(--accent);
+  padding: 0.8rem 1rem;
+  border-radius: 6px;
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+.callout .ttl { font-weight: 600; margin-bottom: 0.2rem; }
+.callout.ok { background: rgba(74, 222, 128, 0.08); border-left-color: var(--ok); }
+.callout.warn { background: rgba(251, 191, 36, 0.08); border-left-color: var(--warn); }
+
+a { color: var(--accent); }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>
+    <span class="accent">Debussy</span> — Live-Demo
+    <span class="sub">KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen</span>
+  </h1>
+  <div class="status-bar">
+    <label class="apibase">API
+      <input type="text" id="api-base" placeholder="http://localhost:8765" spellcheck="false">
+    </label>
+    <span><span class="dot" id="api-dot"></span><span id="api-label">API …</span></span>
+    <span><span class="dot" id="gpu-dot"></span><span id="gpu-label">KI …</span></span>
+    <button class="btn secondary" onclick="downloadDemo()" title="Demo als Einzeldatei herunterladen">⬇ Download</button>
+    <button class="btn secondary" onclick="resetDemo()" title="Demo zurücksetzen">↺ Reset</button>
+  </div>
+</header>
+
+<main>
+
+<!-- Shown only when loaded from file:// — the API rejects null-origin
+     CORS, so the page can't talk to the backend in that case. -->
+<div id="file-warn" style="display:none;background:rgba(248,113,113,0.08);border:1px solid var(--err);border-radius:14px;padding:1.2rem 1.4rem;margin-bottom:1.4rem">
+  <div style="font-weight:600;font-size:1.05rem;margin-bottom:0.4rem;color:var(--err)">⚠ Diese Datei wird per <code>file://</code> geöffnet</div>
+  <p style="margin:0.3rem 0;color:var(--muted);font-size:0.92rem">Aus Sicherheitsgründen blockt der Browser API-Aufrufe von <code>file://</code>-Seiten. Zwei Wege, die funktionieren:</p>
+  <ol style="margin:0.5rem 0 0.5rem 1.2rem;color:var(--muted);font-size:0.9rem">
+    <li>Direkt im Browser: <a href="http://localhost:8765/demo" style="color:var(--accent)">http://localhost:8765/demo</a> (gleicher Inhalt, über den Debussy-Server)</li>
+    <li>Lokalen Webserver starten:<br><code style="font-size:0.85rem;background:var(--bg);padding:0.2rem 0.5rem;border-radius:4px;display:inline-block;margin-top:0.3rem">python -m http.server 8080</code> im Download-Ordner, dann <code>http://localhost:8080/debussy-demo.html</code></li>
+  </ol>
+</div>
+
+<!-- ============== STEPPER ============== -->
+<div class="stepper">
+  <div class="step active" data-step="1" onclick="goto(1)">
+    <div class="num">Schritt 1</div>
+    <div class="name">📥 Daten laden</div>
+    <div class="hint">CSV / XLSX / METS-MODS</div>
+  </div>
+  <div class="step" data-step="2" onclick="goto(2)">
+    <div class="num">Schritt 2</div>
+    <div class="name">🔎 Entitäten</div>
+    <div class="hint">Personen, Orte, Werke</div>
+  </div>
+  <div class="step" data-step="3" onclick="goto(3)">
+    <div class="num">Schritt 3</div>
+    <div class="name">📅 Datierungen</div>
+    <div class="hint">EDTF-Normalisierung</div>
+  </div>
+  <div class="step" data-step="4" onclick="goto(4)">
+    <div class="num">Schritt 4</div>
+    <div class="name">🌐 Anreicherung</div>
+    <div class="hint">GND via lobid.org</div>
+  </div>
+  <div class="step" data-step="5" onclick="goto(5)">
+    <div class="num">Schritt 5</div>
+    <div class="name">📤 Export</div>
+    <div class="hint">Goobi-XML</div>
+  </div>
+</div>
+
+<!-- ============== STEP 1: UPLOAD & ANALYSE ============== -->
+<div class="panel active" data-panel="1">
+  <h2>1. Daten laden und strukturell analysieren</h2>
+  <p class="lede">CSV, XLSX oder METS-MODS-XML hochladen. Debussy erkennt automatisch Encoding, Trennzeichen und ID-Spalte und führt 7 Qualitäts­checks aus.</p>
+
+  <div class="drop" id="drop">
+    <div class="icon">📂</div>
+    <p><strong>Datei hier ablegen</strong> oder klicken zum Auswählen</p>
+    <p class="hint">CSV · TSV · XLSX · XML</p>
+    <input type="file" id="fileInput" accept=".csv,.tsv,.xlsx,.xls,.xml">
+  </div>
+
+  <div class="btn-row">
+    <button class="btn" onclick="loadSampleData()">✨ Beispieldaten laden (30 Kunstwerke, 13 Spalten)</button>
+    <span id="step1-running" class="running" style="display:none"><span class="spinner"></span>Analyse läuft …</span>
+  </div>
+
+  <div id="step1-results" style="display:none">
+    <div class="kpis" id="kpis"></div>
+    <div id="step1-detail"></div>
+    <div class="btn-row">
+      <button class="btn big" onclick="goto(2)">Weiter: Entitäten extrahieren →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============== STEP 2: NER ============== -->
+<div class="panel" data-panel="2">
+  <h2>2. Named Entity Recognition (NER)</h2>
+  <p class="lede">Die KI liest die Textspalten und extrahiert Personen, Orte, Organisationen, Werke, Datierungen u.&nbsp;v.&nbsp;m. — als Stichprobe für die Demo.</p>
+
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+    <label class="field"><span>Methode</span>
+      <select id="ner-method">
+        <option value="llm" selected>LLM (GPUStack)</option>
+        <option value="hybrid">Hybrid (SpaCy + LLM)</option>
+        <option value="spacy">SpaCy (regelbasiert)</option>
+      </select>
+    </label>
+    <label class="field"><span>Stichprobe</span>
+      <select id="ner-sample">
+        <option value="5">5 Datensätze</option>
+        <option value="10" selected>10 Datensätze</option>
+        <option value="25">25 Datensätze</option>
+      </select>
+    </label>
+    <button class="btn big" id="ner-btn" onclick="runNer()">🔎 Entitäten extrahieren</button>
+    <span id="step2-running" class="running" style="display:none"><span class="spinner"></span>Modell denkt nach …</span>
+  </div>
+
+  <div class="progress" id="ner-progress" style="display:none"><div class="bar" id="ner-bar"></div></div>
+
+  <div id="step2-results" style="display:none">
+    <div class="kpis" id="ner-kpis"></div>
+    <div class="entgrid" id="entgrid"></div>
+    <div class="btn-row">
+      <button class="btn big" onclick="goto(3)">Weiter: Datierungen →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============== STEP 3: EDTF ============== -->
+<div class="panel" data-panel="3">
+  <h2>3. EDTF-Datumsnormalisierung</h2>
+  <p class="lede">Freitext-Datierungen („um 1850&nbsp;?", „17. Jh.", „Sommer 1923") werden ins maschinenlesbare Library-of-Congress-Format <em>EDTF</em> übersetzt.</p>
+
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+    <label class="field"><span>Datums-Spalte</span>
+      <select id="edtf-col"></select>
+    </label>
+    <label class="field"><span>Modus</span>
+      <select id="edtf-mode">
+        <option value="rule">Nur Regeln (schnell)</option>
+        <option value="llm" selected>Regeln + LLM-Fallback</option>
+      </select>
+    </label>
+    <button class="btn big" onclick="runEdtf()">📅 Normalisieren</button>
+    <span id="step3-running" class="running" style="display:none"><span class="spinner"></span>läuft …</span>
+  </div>
+
+  <div id="step3-results" style="display:none">
+    <div class="kpis" id="edtf-kpis"></div>
+    <div class="scroll"><table id="edtf-tbl"></table></div>
+    <div class="btn-row">
+      <button class="btn big" onclick="goto(4)">Weiter: GND-Anreicherung →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============== STEP 4: GND ============== -->
+<div class="panel" data-panel="4">
+  <h2>4. GND-Anreicherung via lobid.org</h2>
+  <p class="lede">Die erkannten Entitäten werden gegen die <strong>Gemeinsame Normdatei</strong> der Deutschen Nationalbibliothek abgeglichen — echte API, kein KI-Raten.</p>
+
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:flex-end">
+    <label class="field"><span>Limit</span>
+      <select id="gnd-limit">
+        <option value="20" selected>20 Einträge</option>
+        <option value="50">50 Einträge</option>
+        <option value="100">100 Einträge</option>
+      </select>
+    </label>
+    <button class="btn big" onclick="runGnd()">🌐 GND-Lookup starten</button>
+    <span id="step4-running" class="running" style="display:none"><span class="spinner"></span>frage lobid.org …</span>
+  </div>
+
+  <div id="step4-results" style="display:none">
+    <div class="kpis" id="gnd-kpis"></div>
+    <div class="scroll"><table id="gnd-tbl"></table></div>
+    <div class="btn-row">
+      <button class="btn big" onclick="goto(5)">Weiter: Export →</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============== STEP 5: EXPORT ============== -->
+<div class="panel" data-panel="5">
+  <h2>5. Goobi-XML-Export</h2>
+  <p class="lede">Der kuratierte Datensatz wird im Goobi-Import-Format exportiert — inklusive aller validierten Entitäten und Normdaten-IDs.</p>
+
+  <div class="btn-row">
+    <button class="btn big" onclick="runExport()">📤 Goobi-XML generieren</button>
+    <button class="btn secondary" onclick="downloadXml()" id="dl-btn" disabled>💾 XML herunterladen</button>
+    <span id="step5-running" class="running" style="display:none"><span class="spinner"></span>Export läuft …</span>
+  </div>
+
+  <div id="step5-results" style="display:none">
+    <div class="callout ok">
+      <div class="ttl">✓ Export erfolgreich</div>
+      <div id="export-msg"></div>
+    </div>
+    <details style="margin-top:1rem">
+      <summary style="cursor:pointer;color:var(--muted)">XML-Vorschau anzeigen</summary>
+      <pre id="xml-preview" style="background:var(--bg);padding:1rem;border-radius:8px;overflow:auto;max-height:400px;font-size:0.78rem"></pre>
+    </details>
+    <div class="callout" style="margin-top:1.5rem">
+      <div class="ttl">🎉 Demo abgeschlossen</div>
+      Von der rohen CSV bis zum kuratierten, normdatenverknüpften Goobi-XML — in fünf Schritten.
+    </div>
+  </div>
+</div>
+
+</main>
+
+<div id="toast"></div>
+
+<script>
+// ============ STATE ============
+const state = {
+  dataset: null,         // filename of uploaded dataset
+  columns: [],           // [{name, fill_rate, ...}]
+  nerEntities: [],       // [{text, type, confidence, ...}]
+  edtfResults: [],
+  gndResults: [],
+  xml: null,
+  xmlRecordCount: 0,
+};
+
+// ============ API BASE URL ============
+// Three plausible setups:
+//  1. served from Debussy at /demo (any port)         → same-origin
+//  2. served by `python -m http.server 8080` after    → http://localhost:8765
+//     download                                          (page is on :8080,
+//                                                       Debussy on :8765)
+//  3. opened from file://                             → http://localhost:8765
+//                                                       (will fail CORS;
+//                                                       banner explains)
+// We can't decide 1 vs 2 from location alone (port 8080 could in principle
+// be Debussy too), so we *probe* on init: try same-origin first, fall back
+// to localhost:8765 if same-origin has no Debussy API.
+const DEBUSSY_FALLBACK_API = 'http://localhost:8765';
+function isFileProtocol() {
+  return location.protocol === 'file:' || location.hostname === '';
+}
+function syncDefaultApiBase() {
+  // Synchronous best-guess used before the probe completes.
+  if (isFileProtocol()) return DEBUSSY_FALLBACK_API;
+  return '';
+}
+async function probeApiBase() {
+  // Returns the first base that responds 200 to /api/pipeline/status,
+  // or '' if none.
+  const candidates = isFileProtocol()
+    ? [DEBUSSY_FALLBACK_API]
+    : ['', DEBUSSY_FALLBACK_API];
+  for (const base of candidates) {
+    try {
+      const r = await fetch(base + '/api/pipeline/status', { method: 'GET' });
+      if (r.ok) return base;
+    } catch (e) { /* try next */ }
+  }
+  return null;
+}
+function getApiBase() {
+  let v = (document.getElementById('api-base').value || '').trim();
+  return v.replace(/\/+$/, '');
+}
+function setApiBase(v) {
+  document.getElementById('api-base').value = v;
+  try { localStorage.setItem('debussy.demo.apiBase', v); } catch (e) {}
+}
+function url(path) {
+  return getApiBase() + path;
+}
+
+// ============ HELPERS ============
+function toast(msg, kind) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'show ' + (kind || '');
+  setTimeout(() => { t.className = ''; }, 4000);
+}
+
+function setRunning(stepNum, on) {
+  const el = document.getElementById('step' + stepNum + '-running');
+  if (el) el.style.display = on ? 'inline-flex' : 'none';
+}
+
+function goto(n) {
+  document.querySelectorAll('.step').forEach(s => {
+    s.classList.toggle('active', +s.dataset.step === n);
+  });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('active', +p.dataset.panel === n);
+  });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function markDone(n) {
+  document.querySelector('.step[data-step="' + n + '"]').classList.add('done');
+}
+
+function fmt(n) {
+  if (n == null) return '–';
+  if (typeof n !== 'number') return String(n);
+  return n.toLocaleString('de-DE');
+}
+
+function pct(v) {
+  if (v == null) return '–';
+  return (v * 100).toFixed(0) + ' %';
+}
+
+async function apiPost(path, body, isForm) {
+  const opts = { method: 'POST' };
+  if (isForm) {
+    opts.body = body;
+  } else {
+    opts.headers = { 'Content-Type': 'application/json' };
+    opts.body = JSON.stringify(body);
+  }
+  const r = await fetch(url(path), opts);
+  if (!r.ok) {
+    let msg = 'HTTP ' + r.status;
+    try { const j = await r.json(); if (j.error) msg = j.error; } catch (e) {}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+
+async function apiGet(path) {
+  const r = await fetch(url(path));
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  return r.json();
+}
+
+// ============ STATUS CHECK ============
+async function checkStatus() {
+  // API — use a public endpoint that doesn't require auth.
+  // fetch() only rejects on network errors; treat non-2xx as offline too.
+  const apiDot = document.getElementById('api-dot');
+  const apiLbl = document.getElementById('api-label');
+  try {
+    const r = await fetch(url('/api/pipeline/status'));
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    apiDot.className = 'dot on';
+    apiLbl.textContent = 'API online';
+  } catch (e) {
+    apiDot.className = 'dot off';
+    apiLbl.textContent = 'API nicht erreichbar';
+  }
+  // GPU/KI — distinguish online/mock/offline. Always clear the inline
+  // background that the mock branch sets, so transitions out of mock mode
+  // don't leave the dot stuck on yellow.
+  const dot = document.getElementById('gpu-dot');
+  const lbl = document.getElementById('gpu-label');
+  dot.style.background = '';
+  try {
+    const j = await apiGet('/api/gpu/status');
+    const s = j.status || '';
+    if (s === 'ok' || s === 'online' || j.reachable) {
+      dot.className = 'dot on'; lbl.textContent = 'KI bereit';
+    } else if (s === 'mock') {
+      dot.className = 'dot';
+      dot.style.background = 'var(--warn)';
+      lbl.textContent = 'KI: Mock-Modus';
+    } else {
+      dot.className = 'dot off'; lbl.textContent = 'KI offline';
+    }
+  } catch (e) {
+    dot.className = 'dot off';
+    lbl.textContent = 'KI offline';
+  }
+}
+
+// ============ STEP 1: UPLOAD ============
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('over');
+  if (e.dataTransfer.files.length) uploadFiles(e.dataTransfer.files);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) uploadFiles(fileInput.files);
+});
+
+async function uploadFiles(files) {
+  // A new upload invalidates everything downstream. /api/analyze
+  // replaces the loaded datasets but NOT the workspace's entities /
+  // dates / dictionary / field mappings — those would otherwise leak
+  // into the new dataset's Goobi export whenever a record_id happens
+  // to match. Explicitly wipe the server-side workspace first.
+  clearDownstreamState();
+  try { await apiPost('/api/workspace/reset', {}); } catch (e) { /* best-effort */ }
+  setRunning(1, true);
+  document.getElementById('step1-results').style.display = 'none';
+  const fd = new FormData();
+  for (const f of files) fd.append('files', f);
+  try {
+    const j = await apiPost('/api/analyze', fd, true);
+    // Normalise the detected id column to "record_id" so the Goobi
+    // export (which keys on row["record_id"]) finds it. No-op if the
+    // column is already called record_id.
+    try {
+      const fname = files[0].name;
+      await apiPost('/api/dataset/' + encodeURIComponent(fname) +
+                    '/normalize-id-to-record-id', {});
+    } catch (e) { /* best-effort: export will still work for sample */ }
+    renderStep1(j, files[0].name);
+    markDone(1);
+  } catch (e) {
+    toast('Upload fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    setRunning(1, false);
+  }
+}
+
+function clearDownstreamState() {
+  state.nerEntities = [];
+  state.edtfResults = [];
+  state.gndResults = [];
+  state.xml = null;
+  state.xmlRecordCount = 0;
+  for (let n = 2; n <= 5; n++) {
+    document.querySelector('.step[data-step="' + n + '"]').classList.remove('done');
+    const r = document.getElementById('step' + n + '-results');
+    if (r) r.style.display = 'none';
+  }
+  const dl = document.getElementById('dl-btn');
+  if (dl) dl.disabled = true;
+}
+
+function renderStep1(j, filename) {
+  // /api/analyze keys datasets by full filename (with extension);
+  // id_columns is keyed by source_name (stem) — don't overwrite.
+  state.dataset = filename;
+  // Get column info for later steps
+  fetch(url('/api/dataset/' + encodeURIComponent(state.dataset) + '/columns'))
+    .then(r => r.json())
+    .then(c => {
+      state.columns = c.columns || [];
+      populateEdtfCols();
+    });
+
+  // KPIs from quality_analysis if available, else from datasets[0]
+  const qa = j.quality_analysis || {};
+  const ds = (j.datasets || [])[0] || {};
+  const dsLevel = qa.dataset_level || {};
+
+  const kpis = [
+    { lbl: 'Datei', val: filename, sub: state.dataset },
+    { lbl: 'Datensätze', val: fmt(ds.row_count ?? dsLevel.row_count) },
+    { lbl: 'Spalten', val: fmt(ds.column_count ?? (ds.columns || []).length) },
+    { lbl: 'ID-Spalte', val: ds.id_column || '–' },
+    { lbl: 'Encoding', val: ds.encoding || '–' },
+  ];
+  const dupes = ds.duplicate_count;
+  if (dupes != null) kpis.push({ lbl: 'Duplikate', val: fmt(dupes), sub: dupes === 0 ? 'sauber' : 'Prüfung empfohlen' });
+
+  // Avg fill rate
+  if (Array.isArray(ds.columns) && ds.columns.length) {
+    const avg = ds.columns.reduce((s, c) => s + (c.fill_rate || 0), 0) / ds.columns.length;
+    kpis.push({ lbl: 'Ø Füllgrad', val: pct(avg) });
+  }
+
+  renderKpis('kpis', kpis);
+
+  // Per-column table preview (top 8 by fill rate)
+  let cols = ds.columns || [];
+  cols = [...cols].sort((a, b) => (b.fill_rate || 0) - (a.fill_rate || 0)).slice(0, 8);
+  let detail = '';
+  if (cols.length) {
+    detail = `
+      <h3 style="margin-top:1.5rem;font-size:1.05rem">Spalten-Profil (Top 8 nach Füllgrad)</h3>
+      <div class="scroll"><table>
+        <thead><tr><th>Spalte</th><th>Füllgrad</th><th>Eindeutige Werte</th><th>Beispiele</th></tr></thead>
+        <tbody>${cols.map(c => `
+          <tr>
+            <td><strong>${esc(c.name)}</strong></td>
+            <td class="${(c.fill_rate || 0) > 0.8 ? 'ok' : (c.fill_rate || 0) > 0.4 ? 'warn' : 'err'}">${pct(c.fill_rate)}</td>
+            <td>${fmt(c.unique_count)}</td>
+            <td class="mono" style="color:var(--muted)">${esc((c.sample_values || []).slice(0, 3).join(' · '))}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table></div>`;
+  }
+  document.getElementById('step1-detail').innerHTML = detail;
+  document.getElementById('step1-results').style.display = 'block';
+}
+
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// Render a list of KPI cards. Always escapes — KPI values can include
+// user-controlled data (uploaded filename, CSV column headers, ID column
+// name) which would otherwise be injected into innerHTML verbatim.
+function renderKpis(targetId, kpis) {
+  document.getElementById(targetId).innerHTML = kpis.map(k =>
+    `<div class="kpi"><div class="lbl">${esc(k.lbl)}</div>` +
+    `<div class="val">${esc(k.val)}</div>` +
+    (k.sub ? `<div class="sub">${esc(k.sub)}</div>` : '') +
+    `</div>`
+  ).join('');
+}
+
+// ============ SAMPLE DATA ============
+// 30 records, 13 columns. Curated to exercise every demo step:
+//  - Famous artists/places → GND finds many of them
+//  - Mixed date formats (year, approximate, century, range, season,
+//    ISO, slash-year, before/after, undated, empty) → EDTF showcase
+//  - Missing values in several rows → structural analysis flags them
+//  - Diversified entity types (PER, LOC, WORK, MAT, TEC, TOP, DATE)
+async function loadSampleData() {
+  const csv = [
+    // Header: ID column is named `record_id` so the Goobi export (which
+    // looks up `row["record_id"]` to attach NER/GND entities and to
+    // auto-inject CatalogIDDigital) actually sees the inventory numbers.
+    'record_id;titel;kuenstler;lebensdaten;datierung;ort;technik;material;hoehe_cm;breite_cm;ikonografie;provenienz;bemerkungen',
+    'INV-001;"Bildnis Johann Wolfgang von Goethe in der römischen Campagna";"Tischbein, Johann Heinrich Wilhelm";"1751-1829";"1787";"Rom, Italien";"Öl auf Leinwand";"Leinwand";164;206;"Porträt; Goethe; Italien-Reise";"Familie Goethe, Frankfurt; ab 1887 Städelsches Kunstinstitut";""',
+    'INV-002;"Pariser Straße bei Regen";"Caillebotte, Gustave";"1848-1894";"1877";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";212.2;276.2;"Stadtansicht; Regen; Impressionismus";"Albert Caillebotte (Bruder); 1964 Art Institute of Chicago";""',
+    'INV-003;"Selbstbildnis mit zwei Kreisen";"Rembrandt Harmenszoon van Rijn";"1606-1669";"um 1665";"Amsterdam, Niederlande";"Öl auf Leinwand";"Leinwand";114.3;94.0;"Selbstporträt; Maler; Spätwerk";"Sammlung Iveagh; seit 1927 Kenwood House";""',
+    'INV-004;"Das Mädchen mit dem Perlenohrgehänge";"Vermeer, Johannes";"1632-1675";"um 1665";"Delft, Niederlande";"Öl auf Leinwand";"Leinwand";44.5;39.0;"Tronie; Frauenporträt; Perle";"Auktion Den Haag 1881; Schenkung Des Tombe";""',
+    'INV-005;"Schlafende Muse";"Brâncuși, Constantin";"1876-1957";"1910";"Paris, Frankreich";"Bronze, poliert";"Bronze";16.0;27.5;"Skulptur; Kopf; Abstraktion";"Atelier des Künstlers; ab 1928 Centre Pompidou";""',
+    'INV-006;"Komposition mit Rot, Gelb und Blau";"Mondrian, Piet";"1872-1944";"1930";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";46.0;46.0;"Neoplastizismus; Geometrie; Primärfarben";"Sammlung Sophie Küppers, Hannover; 1937 beschlagnahmt; Restitution 1955";"Provenienzlücke 1937-1955 dokumentiert"',
+    'INV-007;"Die Lesende";;"";"17. Jh.";"Niederlande";"Öl auf Holz";"Eichenholz";45.7;36.8;"Genre; Frau; Leser";"Auktion Sotheby\'s London 1971";"Maler vermutlich Schule des Gerard Dou"',
+    'INV-008;"Der Wanderer über dem Nebelmeer";"Friedrich, Caspar David";"1774-1840";"um 1818";"Dresden, Sachsen";"Öl auf Leinwand";"Leinwand";94.8;74.8;"Romantik; Landschaft; Rückenfigur";"Familie Friedrich; ab 1970 Hamburger Kunsthalle";""',
+    'INV-009;"Guernica — Studie für das Pferd";"Picasso, Pablo";"1881-1973";"1937-05-02/1937-05-08";"Paris, Frankreich";"Bleistift auf Papier";"Papier";24.2;45.4;"Spanischer Bürgerkrieg; Pferd; Studie";"Atelier des Künstlers; 1981 Museo Reina Sofía Madrid";""',
+    'INV-010;"Stillleben mit Krügen";;"";"undatiert";"";"Öl auf Leinwand";"Leinwand";;;"Stillleben; Geschirr";"Auktion Köln 1923";"Maler unbekannt; restaurierungsbedürftig"',
+    'INV-011;"Bildnis der Königin Marie Antoinette mit Rose";"Vigée-Lebrun, Élisabeth-Louise";"1755-1842";"1783";"Versailles, Frankreich";"Öl auf Leinwand";"Leinwand";273;193.5;"Höfisches Porträt; Königin; Rose";"Königliche Sammlung; nach 1789 Privatbesitz; ab 1860 Versailles";""',
+    'INV-012;"Sonnenblumen";"van Gogh, Vincent";"1853-1890";"1888-08";"Arles, Frankreich";"Öl auf Leinwand";"Leinwand";92.1;73.0;"Blumen; Sonnenblumen; Stillleben";"Theo van Gogh; ab 1924 National Gallery London";"Eines von sieben Sonnenblumen-Bildern der Arles-Serie"',
+    'INV-013;"Die Geburt der Venus";"Botticelli, Sandro";"um 1445-1510";"um 1485";"Florenz, Italien";"Tempera auf Leinwand";"Leinwand";172.5;278.5;"Mythologie; Venus; Frührenaissance";"Villa Castello, Medici; ab 1815 Uffizien Florenz";""',
+    'INV-014;"Liegender weiblicher Akt";"Modigliani, Amedeo";"1884-1920";"1917";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";60.0;92.0;"Akt; Frauenporträt; Moderne";"Galerie Berthe Weill Paris; Privatsammlung New York";""',
+    'INV-015;"Die neue Hofgartenbrücke in München";"Stieler, Joseph Karl";"1781-1858";"um 1838";"München, Bayern";"Aquarell auf Papier";"Papier";32.5;46.0;"Architektur; Brücke; Stadtansicht";"Bayerische Staatsgemäldesammlungen seit 1909";""',
+    'INV-016;"Maskenball in der Oper";"Manet, Édouard";"1832-1883";"1873";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";59.1;72.5;"Genre; Gesellschaft; Maskerade";"Sammlung Havemeyer New York; National Gallery of Art Washington";""',
+    'INV-017;"Wiener Hofmuseum bei Nacht";"Pettenkofen, August von";"1822-1889";"1883/84";"Wien, Österreich";"Öl auf Leinwand";"Leinwand";48.0;65.0;"Stadtansicht; Nacht; Museum";"Privatsammlung Wien; Albertina ab 1956";""',
+    'INV-018;"Studie zu einer sitzenden Frau";"Kollwitz, Käthe";"1867-1945";"vor 1920";"Berlin, Deutschland";"Kohle auf Papier";"Papier";63.5;48.5;"Studie; Frau; Sitzfigur";"Atelier der Künstlerin; Käthe-Kollwitz-Museum Köln";""',
+    'INV-019;"Eiffelturm im Bau";"Durandelle, Louis-Émile";"1839-1917";"1888-07-15";"Paris, Frankreich";"Albuminabzug";"Papier";43.2;33.0;"Architektur; Eiffelturm; Industrie";"Atelier Durandelle; Bibliothèque nationale de France";"Aus der Serie \'Construction de la Tour Eiffel\'"',
+    'INV-020;"Die vier Reiter der Apokalypse";"Dürer, Albrecht";"1471-1528";"1497/98";"Nürnberg, Heiliges Römisches Reich";"Holzschnitt";"Papier";39.4;28.1;"Apokalypse; Reiter; Druckgrafik";"Kurfürst Friedrich der Weise; Kupferstichkabinett Berlin";""',
+    'INV-021;"Bildnis der Madame Récamier";"David, Jacques-Louis";"1748-1825";"1800";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";174.0;244.0;"Porträt; Klassizismus; Salondame";"Atelier David; Familie Récamier; Louvre 1826";""',
+    'INV-022;"Madonna mit dem Kind";;"";"15. Jh.";"Toskana, Italien";"Tempera auf Pappelholz";"Pappelholz";82.5;58.0;"Religiös; Marienbild; Kind";"Kirche San Niccolò Florenz; ab 1923 Pinakothek München";"Werkstatt eines unbekannten Florentiner Meisters"',
+    'INV-023;"Komposition VII";"Kandinsky, Wassily";"1866-1944";"1913";"München, Deutschland";"Öl auf Leinwand";"Leinwand";200.0;300.0;"Abstraktion; Expressionismus; Komposition";"Sammlung Nina Kandinsky; Tretjakow-Galerie Moskau";""',
+    'INV-024;"Der Schrei";"Munch, Edvard";"1863-1944";"1893";"Kristiania, Norwegen";"Tempera und Pastell auf Karton";"Karton";91.0;73.5;"Symbolismus; Angst; Selbstausdruck";"Atelier des Künstlers; Nasjonalmuseet Oslo";"Kristiania heute Oslo"',
+    'INV-025;"Bauerntanz";"Bruegel der Ältere, Pieter";"um 1525-1569";"um 1568";"Brüssel, Spanische Niederlande";"Öl auf Eichenholz";"Eichenholz";114.0;164.0;"Genre; Tanz; Bauern";"Erzherzog Leopold Wilhelm; Kunsthistorisches Museum Wien";""',
+    'INV-026;"Studie nach Velázquez";"Bacon, Francis";"1909-1992";"1953";"London, Vereinigtes Königreich";"Öl auf Leinwand";"Leinwand";152.0;118.0;"Porträt; Studie; Verzerrung";"Marlborough Fine Art London; Privatsammlung";""',
+    'INV-027;"Frühling — Allegorie";;"";"undatiert";"vermutlich Frankreich";"Gouache auf Papier";"Papier";35.5;28.0;"Allegorie; Frühling; Personifikation";"Auktion Drouot Paris 1958";"Signatur unleserlich; restaurierungsbedürftig"',
+    'INV-028;"Hofdame mit Sonnenschirm";"Stieglitz, Alfred";"1864-1946";"1907";"New York, USA";"Photogravüre";"Papier";20.3;16.5;"Photographie; Frauenporträt; Mode";"Camera Work Magazine; Metropolitan Museum of Art";""',
+    'INV-029;"Landschaft mit Mühle";"unbekannt";"";"17. Jh.";"Niederlande";"Öl auf Leinwand";"Leinwand";;;"Landschaft; Mühle; Holländische Schule";"Privatsammlung; Auktion Christie\'s London 1995";"Zuschreibung an einen Schüler des Jacob van Ruisdael"',
+    'INV-030;"Tea Time";"Cassatt, Mary";"1844-1926";"1880";"Paris, Frankreich";"Öl auf Leinwand";"Leinwand";64.8;92.7;"Genre; Frauen; Tee";"Sammlung Havemeyer; Museum of Fine Arts Boston";""',
+  ].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const file = new File([blob], 'demo_sammlung.csv', { type: 'text/csv' });
+  await uploadFiles([file]);
+}
+
+// ============ STEP 2: NER ============
+function populateEdtfCols() {
+  const sel = document.getElementById('edtf-col');
+  const dateLike = state.columns.filter(c =>
+    /dat|jahr|year|date|zeit/i.test(c.name)
+  );
+  const candidates = dateLike.length ? dateLike : state.columns;
+  sel.innerHTML = candidates.map(c =>
+    `<option value="${esc(c.name)}">${esc(c.name)}</option>`
+  ).join('');
+}
+
+async function runNer() {
+  if (!state.dataset) { toast('Bitte zuerst Daten laden', 'err'); return; }
+  setRunning(2, true);
+  document.getElementById('ner-btn').disabled = true;
+  document.getElementById('step2-results').style.display = 'none';
+  document.getElementById('ner-progress').style.display = 'block';
+  document.getElementById('ner-bar').style.width = '5%';
+
+  const body = {
+    dataset: state.dataset,
+    method: document.getElementById('ner-method').value,
+    sample_size: parseInt(document.getElementById('ner-sample').value),
+    chunk_size: 50,
+  };
+
+  try {
+    // Use streaming endpoint for live progress
+    const resp = await fetch(url('/api/ner/stream'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) throw new Error('HTTP ' + resp.status);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    let result = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const events = buf.split('\n\n');
+      buf = events.pop();
+      for (const evt of events) {
+        const line = evt.split('\n').find(l => l.startsWith('data:'));
+        if (!line) continue;
+        try {
+          const j = JSON.parse(line.slice(5).trim());
+          if (j.type === 'progress') {
+            const pctv = Math.min(95, (j.chunk / Math.max(1, j.total_chunks)) * 100);
+            document.getElementById('ner-bar').style.width = pctv + '%';
+          } else if (j.type === 'done') {
+            result = j.result;
+          }
+        } catch (e) {}
+      }
+    }
+    document.getElementById('ner-bar').style.width = '100%';
+    if (!result) throw new Error('Keine Ergebnisse');
+    renderNer(result);
+    markDone(2);
+  } catch (e) {
+    toast('NER fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    setRunning(2, false);
+    document.getElementById('ner-btn').disabled = false;
+    setTimeout(() => { document.getElementById('ner-progress').style.display = 'none'; }, 600);
+  }
+}
+
+const ENTITY_LABELS = {
+  PER: 'Personen', LOC: 'Orte', ORG: 'Organisationen',
+  WORK: 'Werke', TOP: 'Themen', DATE: 'Datierungen',
+  EVENT: 'Ereignisse', OBJ: 'Objekte', MAT: 'Material',
+  TEC: 'Technik', CON: 'Konzepte',
+};
+
+function renderNer(j) {
+  state.nerEntities = j.entities || [];
+  const kpis = [
+    { lbl: 'Entitäten gesamt', val: fmt(j.total) },
+    { lbl: 'Hohe Konfidenz', val: fmt(j.succeeded), sub: '> 30 %' },
+    { lbl: 'Typen erkannt', val: Object.keys(j.by_type || {}).length },
+    { lbl: 'Modell', val: j.model || '–' },
+    { lbl: 'Laufzeit', val: (j.run_metrics?.elapsed_seconds ?? '–') + ' s' },
+  ];
+  renderKpis('ner-kpis', kpis);
+
+  // Group entities by type
+  const byType = {};
+  for (const e of state.nerEntities) {
+    const t = e.type || 'CON';
+    (byType[t] = byType[t] || []).push(e);
+  }
+  const sortedTypes = Object.keys(byType).sort((a, b) => byType[b].length - byType[a].length);
+
+  document.getElementById('entgrid').innerHTML = sortedTypes.map(t => {
+    const items = byType[t].slice(0, 30);
+    return `<div class="enttype">
+      <div class="hdr">
+        <span class="nm">${esc(ENTITY_LABELS[t] || t)}</span>
+        <span class="ct">${byType[t].length}</span>
+      </div>
+      <div class="chips">${items.map(e =>
+        `<span class="chip" title="Konfidenz: ${(e.confidence || 0).toFixed(2)}">${esc(e.text)}</span>`
+      ).join('')}${byType[t].length > 30 ? `<span class="chip" style="opacity:0.6">+${byType[t].length - 30}</span>` : ''}</div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('step2-results').style.display = 'block';
+}
+
+// ============ STEP 3: EDTF ============
+async function runEdtf() {
+  if (!state.dataset) { toast('Bitte zuerst Daten laden', 'err'); return; }
+  const col = document.getElementById('edtf-col').value;
+  if (!col) { toast('Bitte Datums-Spalte wählen', 'err'); return; }
+  setRunning(3, true);
+  document.getElementById('step3-results').style.display = 'none';
+
+  const body = {
+    dataset: state.dataset,
+    column: col,
+    use_llm: document.getElementById('edtf-mode').value === 'llm',
+    chunk_size: 50,
+  };
+
+  try {
+    const j = await apiPost('/api/edtf', body);
+    renderEdtf(j);
+    markDone(3);
+  } catch (e) {
+    toast('EDTF fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    setRunning(3, false);
+  }
+}
+
+function renderEdtf(j) {
+  state.edtfResults = j.results || [];
+  const kpis = [
+    { lbl: 'Verarbeitet', val: fmt(j.total) },
+    { lbl: 'Konvertiert', val: fmt(j.converted) },
+    { lbl: 'Undatiert', val: fmt(j.undated) },
+    { lbl: 'Fehlgeschlagen', val: fmt(j.failed) },
+    { lbl: 'Erfolgsquote', val: j.total ? pct(j.converted / j.total) : '–' },
+  ];
+  renderKpis('edtf-kpis', kpis);
+
+  document.getElementById('edtf-tbl').innerHTML = `
+    <thead><tr><th>ID</th><th>Original</th><th>EDTF</th><th>Konfidenz</th><th>Methode</th></tr></thead>
+    <tbody>${(j.results || []).slice(0, 100).map(r => `
+      <tr>
+        <td class="mono" style="color:var(--muted)">${esc(r.record_id)}</td>
+        <td>${esc(r.original)}</td>
+        <td class="mono ${r.edtf ? 'ok' : 'warn'}">${esc(r.edtf || '—')}</td>
+        <td>${(r.confidence ?? 0).toFixed(2)}</td>
+        <td style="color:var(--muted);font-size:0.8rem">${esc(r.method)}</td>
+      </tr>`).join('')}
+    </tbody>`;
+
+  document.getElementById('step3-results').style.display = 'block';
+}
+
+// ============ STEP 4: GND ============
+async function runGnd() {
+  if (!state.nerEntities.length) { toast('Bitte zuerst NER ausführen (Schritt 2)', 'err'); return; }
+  setRunning(4, true);
+  document.getElementById('step4-results').style.display = 'none';
+
+  const body = { limit: parseInt(document.getElementById('gnd-limit').value) };
+
+  try {
+    const j = await apiPost('/api/gnd/batch', body);
+    renderGnd(j);
+    markDone(4);
+  } catch (e) {
+    toast('GND-Lookup fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    setRunning(4, false);
+  }
+}
+
+function renderGnd(j) {
+  state.gndResults = j.results || [];
+  const kpis = [
+    { lbl: 'Geprüft', val: fmt(j.total) },
+    { lbl: 'In GND gefunden', val: fmt(j.matched) },
+    { lbl: 'Trefferquote', val: j.total ? pct(j.matched / j.total) : '–' },
+    { lbl: 'Kandidaten erzeugt', val: fmt(j.candidates_created) },
+  ];
+  renderKpis('gnd-kpis', kpis);
+
+  document.getElementById('gnd-tbl').innerHTML = `
+    <thead><tr><th>Begriff</th><th>Typ</th><th>GND-Treffer</th><th>GND-ID</th><th>Konfidenz</th></tr></thead>
+    <tbody>${(j.results || []).slice(0, 100).map(r => {
+      const tm = r.top_match;
+      if (!tm) return `<tr>
+        <td><strong>${esc(r.text)}</strong></td>
+        <td style="color:var(--muted)">${esc(r.type)}</td>
+        <td colspan="3" style="color:var(--muted);font-style:italic">kein Treffer</td>
+      </tr>`;
+      const url = 'https://d-nb.info/gnd/' + tm.gnd_id;
+      return `<tr>
+        <td><strong>${esc(r.text)}</strong></td>
+        <td style="color:var(--muted)">${esc(r.type)}</td>
+        <td>${esc(tm.preferred_name)}</td>
+        <td class="mono"><a href="${url}" target="_blank">${esc(tm.gnd_id)}</a></td>
+        <td class="ok">${(tm.confidence ?? 0).toFixed(2)}</td>
+      </tr>`;
+    }).join('')}
+    </tbody>`;
+
+  document.getElementById('step4-results').style.display = 'block';
+}
+
+// ============ STEP 5: EXPORT ============
+// Heuristic CSV-column → Goobi-metadata-type lookup. The Goobi exporter
+// only emits columns that have an explicit mapping, so without this every
+// <data> element comes out empty. Keys are lowercased column names.
+// Repeatable=true splits semicolon-separated values into multiple elements.
+const COL_HEURISTIC = {
+  // identifier
+  'record_id':       { type: 'CatalogIDDigital',     label: 'Inventarnummer' },
+  'id':              { type: 'CatalogIDDigital',     label: 'Identifier' },
+  'inv_nr':          { type: 'InventoryNumber',      label: 'Inventarnummer' },
+  'inventarnummer':  { type: 'InventoryNumber',      label: 'Inventarnummer' },
+  // title
+  'titel':           { type: 'TitleDocMain',         label: 'Titel' },
+  'title':           { type: 'TitleDocMain',         label: 'Title' },
+  // person — Artist is in _PERSON_TYPES, so firstname/lastname get split
+  'kuenstler':       { type: 'Artist',               label: 'Künstler:in' },
+  'künstler':        { type: 'Artist',               label: 'Künstler:in' },
+  'creator':         { type: 'Creator',              label: 'Creator' },
+  'autor':           { type: 'Author',               label: 'Autor:in' },
+  'author':          { type: 'Author',               label: 'Author' },
+  'photograph':      { type: 'Photographer',         label: 'Fotograf:in' },
+  // date
+  'datierung':       { type: 'DateCreated',          label: 'Datierung' },
+  'date':            { type: 'DateCreated',          label: 'Date' },
+  'jahr':            { type: 'DateCreated',          label: 'Jahr' },
+  'datum':           { type: 'DateCreated',          label: 'Datum' },
+  // place
+  'ort':             { type: 'PlaceOfPublication',   label: 'Ort' },
+  'place':           { type: 'PlaceOfPublication',   label: 'Place' },
+  // technique / material
+  'technik':         { type: 'Technique',            label: 'Technik' },
+  'technique':       { type: 'Technique',            label: 'Technique' },
+  'material':        { type: 'MaterialDescription',  label: 'Material' },
+  // dimensions
+  'hoehe_cm':        { type: 'Dimensions',           label: 'Höhe (cm)' },
+  'breite_cm':       { type: 'Dimensions',           label: 'Breite (cm)' },
+  'masse':           { type: 'Dimensions',           label: 'Maße' },
+  'dimensions':      { type: 'Dimensions',           label: 'Dimensions' },
+  // subjects (repeatable because demo uses "; "-separated lists)
+  'ikonografie':     { type: 'SubjectTopic',         label: 'Ikonografie', repeatable: true },
+  'subject':         { type: 'SubjectTopic',         label: 'Subject',     repeatable: true },
+  'schlagwort':      { type: 'SubjectTopic',         label: 'Schlagwort',  repeatable: true },
+  // descriptive
+  'lebensdaten':     { type: 'Description',          label: 'Lebensdaten' },
+  'provenienz':      { type: 'Description',          label: 'Provenienz' },
+  'bemerkungen':     { type: 'Description',          label: 'Bemerkungen' },
+  'beschreibung':    { type: 'Description',          label: 'Beschreibung' },
+  'description':     { type: 'Description',          label: 'Description' },
+};
+
+function buildFieldMapping(columns) {
+  // Skip columns we don't recognise; they would otherwise become empty
+  // <metadata> elements with type="Custom" or get auto-injected wrong.
+  const out = [];
+  for (const c of columns) {
+    const key = (c.name || '').toLowerCase().trim();
+    const m = COL_HEURISTIC[key];
+    if (!m) continue;
+    out.push({
+      csv_column: c.name,
+      goobi_type: m.type,
+      label: m.label || c.name,
+      repeatable: !!m.repeatable,
+      enabled: true,
+    });
+  }
+  return out;
+}
+
+async function runExport() {
+  if (!state.dataset) { toast('Bitte zuerst Daten laden', 'err'); return; }
+  setRunning(5, true);
+  document.getElementById('step5-results').style.display = 'none';
+  document.getElementById('dl-btn').disabled = true;
+
+  try {
+    // Configure a field mapping for the loaded columns BEFORE export —
+    // without it the Goobi exporter emits empty <data> records and drops
+    // the NER/GND results that the previous steps produced.
+    const mappings = buildFieldMapping(state.columns);
+    if (!mappings.length) {
+      throw new Error('Keine bekannten Spaltennamen — Mapping unmöglich. Bitte Beispieldaten verwenden.');
+    }
+    await apiPost('/api/workspace/field-mapping', { mappings });
+
+    const j = await apiPost('/api/export/goobi-batch', { dataset: state.dataset, limit: 50 });
+    state.xml = j.xml;
+    state.xmlRecordCount = j.record_count;
+    document.getElementById('export-msg').textContent =
+      `${fmt(j.record_count)} Datensätze als Goobi-XML exportiert ` +
+      `(${(j.xml.length / 1024).toFixed(1)} KB, ${mappings.length} gemappte Spalten).`;
+    document.getElementById('xml-preview').textContent = j.xml.slice(0, 4000) + (j.xml.length > 4000 ? '\n…' : '');
+    document.getElementById('dl-btn').disabled = false;
+    document.getElementById('step5-results').style.display = 'block';
+    markDone(5);
+  } catch (e) {
+    toast('Export fehlgeschlagen: ' + e.message, 'err');
+  } finally {
+    setRunning(5, false);
+  }
+}
+
+function downloadXml() {
+  if (!state.xml) return;
+  const blob = new Blob([state.xml], { type: 'application/xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'debussy_export_' + new Date().toISOString().slice(0, 10) + '.xml';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ============ RESET ============
+async function resetDemo() {
+  state.dataset = null;
+  state.columns = [];
+  state.nerEntities = [];
+  state.edtfResults = [];
+  state.gndResults = [];
+  state.xml = null;
+  document.querySelectorAll('.step').forEach(s => s.classList.remove('done'));
+  document.querySelectorAll('[id$="-results"]').forEach(el => el.style.display = 'none');
+  fileInput.value = '';
+  // Also wipe server-side workspace state so a subsequent export can't
+  // pick up leftover NER/EDTF/GND results.
+  try { await apiPost('/api/workspace/reset', {}); } catch (e) { /* best-effort */ }
+  goto(1);
+  toast('Demo zurückgesetzt');
+}
+
+// ============ DOWNLOAD DEMO ============
+async function downloadDemo() {
+  // When served from a server, just grab /demo/download (preserves single-file
+  // shape). Always try /demo/download first — even when getApiBase() is
+  // empty (served from /demo same-origin), the relative fetch hits the
+  // server's clean copy. Falling through to DOM serialization without
+  // trying would embed any uploaded data and result panels currently
+  // rendered into the downloaded file.
+  try {
+    const r = await fetch(getApiBase() + '/demo/download');
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const txt = await r.text();
+    saveBlob(txt, 'debussy-demo.html', 'text/html;charset=utf-8');
+    toast('Demo heruntergeladen', 'ok');
+    return;
+  } catch (e) {
+    // Only reachable when the API is unreachable (e.g. file://). The
+    // serialized DOM may contain whatever the presenter loaded — warn
+    // explicitly so it doesn't get shared by accident.
+    toast('API offline — speichere Live-DOM (kann geladene Daten enthalten!)', 'warn');
+  }
+  const html = '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
+  saveBlob(html, 'debussy-demo.html', 'text/html;charset=utf-8');
+}
+
+function saveBlob(content, filename, mime) {
+  const blob = new Blob([content], { type: mime });
+  const u = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = u;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(u);
+}
+
+// ============ INIT ============
+(async function initApiBase() {
+  if (isFileProtocol()) {
+    document.getElementById('file-warn').style.display = 'block';
+  }
+  // Honour an explicit user override stored in localStorage, otherwise
+  // synchronously seed a best-guess so the UI isn't blank, then probe.
+  let saved = '';
+  try { saved = localStorage.getItem('debussy.demo.apiBase') || ''; } catch (e) {}
+  if (saved !== '') {
+    setApiBase(saved);
+  } else {
+    setApiBase(syncDefaultApiBase());
+    const probed = await probeApiBase();
+    if (probed !== null) {
+      // Don't persist the probe result — let the next page load probe
+      // again in case the user moved Debussy to a different port.
+      document.getElementById('api-base').value = probed;
+    }
+  }
+  const inp = document.getElementById('api-base');
+  inp.addEventListener('change', () => { setApiBase(inp.value.trim()); checkStatus(); });
+  inp.addEventListener('blur', () => { setApiBase(inp.value.trim()); });
+  checkStatus();
+})();
+setInterval(checkStatus, 15000);
+</script>
+</body>
+</html>

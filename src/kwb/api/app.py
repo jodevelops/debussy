@@ -21,7 +21,8 @@ from pathlib import Path
 
 try:
     from fastapi import FastAPI
-    from fastapi.responses import HTMLResponse
+    from fastapi.responses import HTMLResponse, Response
+    from fastapi.middleware.cors import CORSMiddleware
     import uvicorn
 except ImportError:
     print("pip install fastapi uvicorn python-multipart")
@@ -60,6 +61,21 @@ app = FastAPI(
     title="Debussy",
     version="0.6.0",
     description="KI-gestützte Kuratierungswerkbank für GLAM-Sammlungen",
+)
+
+# CORS: keep this narrow on purpose. The API has unauthenticated
+# upload/analyze/export endpoints, so a wildcard origin would let any
+# website a curator visits read their uploaded collection data. We allow
+# only localhost (so the demo served at /demo plus any local tooling
+# works). We deliberately do NOT allow "null" — that origin is sent by
+# file:// but also by any sandboxed iframe/data: URL on a malicious page,
+# which would re-open the same exfiltration path.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0)(:\d+)?$",
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 app.include_router(analyze_router)
@@ -247,6 +263,25 @@ def _build_html() -> str:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return _build_html()
+
+
+@app.get("/demo", response_class=HTMLResponse)
+async def demo():
+    """Vereinfachte Pipeline-Demo für Messen und Präsentationen."""
+    return (_HTML_DIR / "demo.html").read_text(encoding="utf-8")
+
+
+@app.get("/demo/download")
+async def demo_download():
+    """Serve the demo HTML as a single downloadable file."""
+    content = (_HTML_DIR / "demo.html").read_text(encoding="utf-8")
+    return Response(
+        content=content,
+        media_type="text/html; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="debussy-demo.html"',
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

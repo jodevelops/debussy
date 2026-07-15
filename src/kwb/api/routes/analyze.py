@@ -605,6 +605,48 @@ async def set_id_column(name: str, request: dict):
     return {"ok": True, "id_column": pr.id_column}
 
 
+@router.post("/api/dataset/{name}/normalize-id-to-record-id")
+async def normalize_id_to_record_id(name: str):
+    """Rename the detected ID column to literal ``record_id``.
+
+    The Goobi exporter reads ``row.get("record_id", ...)`` to attach
+    NER/EDTF/GND results and to auto-inject the CatalogIDDigital element.
+    A CSV whose identifier column is called e.g. ``inv_nr`` would
+    therefore export with empty catalog IDs and unattached entities even
+    though the workspace stored them under the right keys. This endpoint
+    normalises in place so downstream steps can rely on the canonical
+    name.
+
+    No-op if the column is already called ``record_id``, the dataset
+    has no detected id column, or renaming would clobber an existing
+    ``record_id`` column.
+    """
+    ds = get_datasets().get(name)
+    if not ds:
+        return JSONResponse({"error": f"'{name}' nicht geladen"}, 404)
+    df, pr = ds
+    src = pr.id_column or ""
+    if src == "record_id":
+        return {"renamed": False, "id_column": "record_id"}
+    if not src or src not in df.columns:
+        return {"renamed": False, "id_column": src}
+    if "record_id" in df.columns:
+        return JSONResponse(
+            {"renamed": False, "id_column": src,
+             "error": "Spalte 'record_id' existiert bereits"},
+            409,
+        )
+    df.rename(columns={src: "record_id"}, inplace=True)
+    pr.id_column = "record_id"
+    for col in getattr(pr, "columns", []) or []:
+        if getattr(col, "name", None) == src:
+            col.name = "record_id"
+    ws = get_workspace()
+    ws.id_column = "record_id"
+    ws._touch()
+    return {"renamed": True, "id_column": "record_id", "from": src}
+
+
 @router.get("/api/dataset/{name}/columns")
 async def dataset_columns(name: str):
     ds = get_datasets().get(name)

@@ -24,6 +24,21 @@ from kwb.core.workspace import FieldMapping, Workspace
 router = APIRouter()
 
 
+@router.post("/api/workspace/reset")
+async def reset_workspace():
+    """Replace the in-memory workspace with a fresh one.
+
+    Wipes entities, dates, dictionary, field mappings, image analyses,
+    authority candidates and reviews. Used by the demo to make sure a
+    new upload doesn't inherit enrichment results from the previous
+    dataset (which would otherwise leak into Goobi export via record_id
+    matches). Datasets in the global state dict are not touched here —
+    /api/analyze already replaces those on each upload.
+    """
+    set_workspace(Workspace())
+    return {"ok": True}
+
+
 @router.post("/api/workspace/field-mapping")
 async def set_field_mapping(request: dict):
     # Expected payload: {"mappings": [{"csv_column": str, "goobi_type": str,
